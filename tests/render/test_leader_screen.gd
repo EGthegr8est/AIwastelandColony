@@ -34,6 +34,14 @@ func _press(text: String) -> void:
 	fail("no visible button starting with \"%s\"" % text)
 
 
+## Looks at one of the side panel's tabs (only the tab being looked at is kept up to date).
+func _show_tab(tab_name: String) -> void:
+	for i in hud.tabs.get_tab_count():
+		if hud.tabs.get_tab_title(i) == tab_name:
+			hud.tabs.current_tab = i
+	await wait_frames(2)
+
+
 func _cards() -> Array:
 	return hud.menu_box.find_children("*", "PanelContainer", true, false).filter(func(p): return p.has_meta("leader_card"))
 
@@ -134,6 +142,7 @@ func test_the_colony_panel_shows_the_leaders_face_and_what_every_perk_and_the_fl
 	var leader: Dictionary = Leaders.offer()[0].duplicate(true)
 	_click(_cards()[0])
 	await wait_frames(4)
+	await _show_tab("Colony")
 	var box: Control = hud.boxes["Colony"]
 	var text := _texts(box)
 	assert_has(text, leader.name)
@@ -153,6 +162,7 @@ func test_the_colony_panel_shows_the_leaders_face_and_what_every_perk_and_the_fl
 func test_the_effects_listed_are_the_live_ones_after_a_change() -> void:
 	Game.new_game("raider", {"name": "General Test Case", "perks": ["haggler", "sharp_nose"], "flaw": "short_sight", "image": "raider_3"})
 	await wait_frames(4)
+	await _show_tab("Colony")
 	var text := _texts(hud.boxes["Colony"])
 	assert_has(text, "General Test Case")
 	assert_has(text, "+ Haggler: Market sales pay 25% more gold, purchases cost 20% less.")
@@ -163,6 +173,7 @@ func test_the_effects_listed_are_the_live_ones_after_a_change() -> void:
 func test_a_colony_with_no_named_leader_just_shows_its_class() -> void:
 	Game.new_game("trader")
 	await wait_frames(4)
+	await _show_tab("Colony")
 	var box: Control = hud.boxes["Colony"]
 	assert_eq(box.find_children("*", "TextureRect", true, false).size(), 0)
 	assert_has(_texts(box), "Trader: 2 caravan slots, Commerce upgrades 25% off")
@@ -180,6 +191,7 @@ func test_every_portrait_has_an_orange_line_round_it_and_the_picture_sits_inside
 		assert_eq(frame.size, face.size + Vector2(4, 4))
 	_click(_cards()[0])
 	await wait_frames(4)
+	await _show_tab("Colony")
 	var colony_frames: Array = hud.boxes["Colony"].find_children("LeaderFrame*", "PanelContainer", true, false)
 	assert_eq(colony_frames.size(), 1, "and round the one in the colony panel")
 	assert_eq(colony_frames[0].get_theme_stylebox("panel").border_color, hud.AMBER)

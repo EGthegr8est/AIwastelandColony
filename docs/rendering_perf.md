@@ -116,3 +116,26 @@ showing (the glyphs keep the default). That also makes the building text blockie
 - **Outside the map:** `hud.gd` rebuilds every panel on each `Game.changed`. `Game.update_fog()`
   also runs on every change and re-remembers every visible tile. Neither is measured yet; a
   benchmark that clicks through the real `main.tscn` would show whether they now dominate a click.
+
+
+## The game's turn and the side panel (2026-10-12)
+
+Not drawing but the work around it. Measured with `.	estsun.ps1 -Windowed --bench --filter=bench_game_logic` (the new
+`tests/bench/bench_game_logic.gd`) on the same machine, a mid-game colony: 25 seasons in, 36 buildings, 60 Rust Kings walls, the whole map
+explored.
+
+| What | Before | After | Change |
+|---|---|---|---|
+| One change to the game (select, build, anything): fog, map and every panel | 88 ms | 27 ms | The side panel rebuilt all four tabs, three out of sight. Only the tab in view is rebuilt now; the others are marked stale and rebuild when opened. |
+| Rebuild the whole HUD | 84 ms | 26 ms | (same) |
+| One Rust Kings scout (2 to 4 a season) | 28.5 ms | 2.1 ms | The map scan for their frontier asked `knows_tile` and `neighbors` for each of the 8,640 tiles. It reads the memory array directly now. |
+| The Rust Kings' whole turn | 149 ms | 18 ms | (same) |
+| End a season | 177 ms | 81 ms | Of the 81 ms, about 42 is the autosave. |
+
+Map drawing against version 3, with `--compare`: every number within 3%, so the points of interest and the new tiles cost nothing
+measurable. Other costs, for scale (per call): `owned()` and `count_building()` scan the whole map in about 1.2 ms each; `update_fog` 4.6 ms;
+saving 40 ms (282 KB), loading 317 ms; opening the leader screen 13 ms; making three leaders 0.14 ms.
+
+Left alone: the tile panel (15 ms) and the Colony and Upgrades panels (31 and 22 ms) are slow to build when they are the tab in view, and a
+whole-map scan like `count_building` is called several times by one panel. Caching the counts would need every place that changes a tile to
+clear the cache, which is easy to get wrong, so it is not done.

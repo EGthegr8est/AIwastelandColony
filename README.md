@@ -222,6 +222,10 @@ There are eight resources: **wood, stone, metal, fuel, grain, veg, meat and gold
   one that's out lives off its own tank.
 - Old saves load fine: any scrap or silver in them is simply dropped.
 
+The top bar shows a tiny picture before each resource's name (`art/icons/res_<id>.png`, 8 x 8, with `res_<id>_bar.png` the doubled
+18 x 16 copy the bar actually uses; `_resource_icon` in `scripts/hud.gd`). With three-digit amounts in all eight resources the bar still holds
+two lines; with all eight in the thousands the last amount wraps to a third line, which still fits inside the bar.
+
 ## Scavenging: the d20 rolls
 A scavenger party that reaches a ruin stops there and waits. Select it and the right panel shows **Scavenge**, a clickable pixel-art
 d20 below it (`d20_dice/`, played at 1.25x), and what the next roll is. Click the die: it tumbles, lands on the number that was rolled,

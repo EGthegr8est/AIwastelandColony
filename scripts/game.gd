@@ -1759,15 +1759,6 @@ func _contact_log(viewer: int, other: int) -> void:
 		add_log("Strange riders were seen watching your borders...")
 
 
-func _near_known(viewer: int, c: Vector2i) -> bool:
-	if knows_tile(viewer, c):
-		return true
-	for n in neighbors(c):
-		if knows_tile(viewer, n):
-			return true
-	return false
-
-
 ## How many scouting parties you can have in the field at once.
 func scout_parties() -> int:
 	return 2 + mini(vehicles["horse"] + vehicles["car"], 3)
@@ -1776,13 +1767,20 @@ func scout_parties() -> int:
 ## Rust Kings outriders push into the unknown, heading west toward you. Returns where this one ended its move (off the
 ## map, (-1, -1), if there was nowhere left to go).
 func _ai_scout() -> Vector2i:
+	# The frontier is every unexplored tile with an explored tile beside it. It is worked out straight from the memory
+	# array: asking knows_tile() and neighbors() for each of the 8,640 tiles took about 28 ms a scout (2 to 4 a season).
+	var mem: Array = memory[Data.AI]
 	var frontier := []
 	var min_x := w
 	for y in h:
+		var row := y * w
 		for x in w:
-			var c := Vector2i(x, y)
-			if not knows_tile(Data.AI, c) and _near_known(Data.AI, c):
-				frontier.append(c)
+			var i := row + x
+			if mem[i] != null:
+				continue
+			if (x > 0 and mem[i - 1] != null) or (x < w - 1 and mem[i + 1] != null) \
+					or (y > 0 and mem[i - w] != null) or (y < h - 1 and mem[i + w] != null):
+				frontier.append(Vector2i(x, y))
 				min_x = mini(min_x, x)
 	var west := frontier.filter(func(c): return c.x <= min_x + 2)
 	if west.is_empty():

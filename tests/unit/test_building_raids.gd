@@ -623,3 +623,41 @@ func test_a_scout_reports_where_it_ended_its_move() -> void:
 	var at := Game._ai_scout()
 	assert_true(Game.in_bounds(at))
 	assert_true(Game.knows_tile(Data.AI, at))
+
+
+func test_a_scouts_frontier_is_every_unexplored_tile_beside_an_explored_one() -> void:
+	# the brute force way, one tile at a time through the public calls
+	var frontier := []
+	var min_x := Game.w
+	for y in Game.h:
+		for x in Game.w:
+			var c := Vector2i(x, y)
+			if not Game.knows_tile(Data.AI, c) and Game.neighbors(c).any(func(n): return Game.knows_tile(Data.AI, n)):
+				frontier.append(c)
+				min_x = mini(min_x, x)
+	assert_gt(frontier.size(), 0)
+	for s in range(1, 30):
+		seed(s)
+		var at := Game._ai_scout()
+		assert_has(frontier, at, "the scout picks a frontier tile (seed %d)" % s)
+		assert_le(at.x, min_x + 2, "on the western edge")
+		assert_true(Game.knows_tile(Data.AI, at), "and now knows it")
+		# put the world back for the next draw
+		World.new_game(7)
+		Units.tribes = []
+		Units.wild_spawns = false
+		frontier = []
+		min_x = Game.w
+		for y in Game.h:
+			for x in Game.w:
+				var c := Vector2i(x, y)
+				if not Game.knows_tile(Data.AI, c) and Game.neighbors(c).any(func(n): return Game.knows_tile(Data.AI, n)):
+					frontier.append(c)
+					min_x = mini(min_x, x)
+
+
+func test_a_scout_with_nothing_unexplored_beside_anything_goes_nowhere() -> void:
+	var mem: Array = Game.memory[Data.AI]
+	for i in mem.size():
+		mem[i] = [Data.NONE, ""]
+	assert_eq(Game._ai_scout(), Vector2i(-1, -1))

@@ -18,6 +18,7 @@ const LEGEND_ICON_SCALE := 3   # screen pixels per pixel of legend art
 const LOGO_WIDTH := 440        # how wide the slab-stack logo is on the character selection screen
 const CARD_WIDTH := 440        # one leader card on that screen, and the face on it (480 px pictures shown at half size)
 const CARD_FACE := 240
+const RESOURCE_ICON := Vector2i(18, 16)   # the little picture beside each resource in the top bar: 8 x 8 doubled, and a 2 px gap
 const LEADER_FACE := 192       # the small picture (48 px) in the colony panel, shown at 4x
 const CLASS_COLORS := {"raider": Color("ff8c3c"), "builder": Color("6ad0e8"), "trader": Color("e8d84a")}   # not the perks' green or the flaws' red
 const AMBER := Color("ffb642")
@@ -33,6 +34,8 @@ var root := Control.new()
 var top_text := RichTextLabel.new()
 var tabs := TabContainer.new()
 var boxes := {}           # tab name -> VBoxContainer
+var _icon_tags := {}      # resource id -> the BBCode image tag for it (or "" if it has no picture)
+var stale_tabs := {}      # tab names whose contents are out of date: only the tab being looked at is rebuilt on a change
 var log_text := RichTextLabel.new()
 var bottom := HBoxContainer.new()        # the strip along the bottom: selected party, then the log
 var party_panel := PanelContainer.new()  # who you have selected, StarCraft style: a portrait each
@@ -135,6 +138,7 @@ func _build_side_panel() -> void:
 		scroll.add_child(box)
 		tabs.add_child(scroll)
 		boxes[tab_name] = box
+	tabs.tab_changed.connect(_on_tab_changed)
 
 
 func _build_log() -> void:
@@ -537,19 +541,53 @@ func refresh() -> void:
 	if not Game.in_game:
 		return
 	_refresh_top()
-	_refresh_tile()
+	# Rebuilding all four panels cost about 90 ms a change, three of them out of sight. Only the tab being looked
+	# at is rebuilt now; the others are marked stale and rebuild when you switch to them.
+	for tab_name in boxes:
+		stale_tabs[tab_name] = true
+	_refresh_tab(tabs.current_tab)
 	_refresh_party()
-	_refresh_upgrades()
-	_refresh_colony()
-	_refresh_diplomacy()
 	log_text.text = "\n".join(Game.log_lines)
+
+
+## Rebuilds one side panel tab (by its position) and marks it up to date.
+func _refresh_tab(index: int) -> void:
+	if index < 0 or index >= tabs.get_tab_count():
+		return
+	var tab_name := tabs.get_tab_title(index)
+	match tab_name:
+		"Tile":
+			_refresh_tile()
+		"Upgrades":
+			_refresh_upgrades()
+		"Colony":
+			_refresh_colony()
+		"Diplomacy":
+			_refresh_diplomacy()
+	stale_tabs.erase(tab_name)
+
+
+## Switching to a tab that changed while it was out of sight brings it up to date.
+func _on_tab_changed(index: int) -> void:
+	if Game.in_game and stale_tabs.has(tabs.get_tab_title(index)):
+		_refresh_tab(index)
+
+
+## The tiny picture before a resource's name in the top bar, as BBCode: art/icons/res_<id>_bar.png, the 8 x 8 picture
+## doubled with a 2 px clear gap on its right, so the name does not touch it. Nothing if the picture is missing, so the bar
+## still reads. (No space after it either: the pictures already use up room the bar's amounts need.)
+func _resource_icon(id: String) -> String:
+	if not _icon_tags.has(id):
+		var path := "res://art/icons/res_%s_bar.png" % id
+		_icon_tags[id] = "[img=%dx%d]%s[/img]" % [RESOURCE_ICON.x, RESOURCE_ICON.y, path] if ResourceLoader.exists(path) else ""
+	return _icon_tags[id]
 
 
 func _refresh_top() -> void:
 	var t := "[color=#ffd88a]%s[/color]   Pop [b]%d[/b]/%d   Troops %d   Prisoners %d   Leader: %s\n" % [
 		Game.season_name(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Leaders.label(Game.leader_info)]
 	for r in Data.RESOURCES:
-		t += "%s [color=#ffd88a]%d[/color]  " % [r, Game.res[r]]
+		t += "%s%s [color=#ffd88a]%d[/color] " % [_resource_icon(r), r, Game.res[r]]   # one space between them: the pictures use the room
 	top_text.text = t
 	var views := {Data.PLAYER: "Map: what you know", Data.AI: "Map: what Rust Kings know", Data.NONE: "Map: no fog (debug)"}
 	view_button.text = views[Game.view]
