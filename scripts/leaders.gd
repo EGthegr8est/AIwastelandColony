@@ -24,8 +24,8 @@ const TITLES := {
 # it by chance (the sheriff is never a "Chief", and nobody else is a "General"). Other pictures draw from TITLES.
 const PICTURE_TITLES := {
 	"raider_1": "Sheriff", "raider_2": "Sheriff", "raider_3": "General",
-	"builder_3": "Elder",
-	"trader_3": "Executive",
+	"builder_3": "Elder", "builder_4": "Doctor",
+	"trader_3": "Executive", "trader_4": "Professor",
 }
 const SURNAMES := ["Harlan", "Voss", "Kessler", "Marrow", "Quill", "Rask", "Dunmore", "Thorne", "Vance", "Crowe", "Ashby", "Brandt",
 	"Calloway", "Draven", "Everett", "Fenwick", "Garrow", "Holloway", "Ingram", "Jarrow", "Kestrel", "Lowry", "Mercer", "Navarro"]

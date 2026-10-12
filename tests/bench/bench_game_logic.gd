@@ -111,7 +111,7 @@ func bench_leaders() -> void:
 	await measure("make three leaders x100", func():
 		for i in 100:
 			Leaders.make_three(), 20)
-	await measure("first portrait load (big and small, 9 pictures)", func():
+	await measure("first portrait load (big and small, 11 pictures)", func():
 		Leaders._textures.clear()
 		for cls in Data.LEADERS:
 			for id in Leaders.pictures(cls):

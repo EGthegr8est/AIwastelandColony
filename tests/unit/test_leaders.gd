@@ -80,9 +80,13 @@ func test_new_leaders_each_time_and_the_same_three_until_a_reroll() -> void:
 	assert_eq(Leaders.offer().map(func(l): return l.name), rerolled.map(func(l): return l.name), "and those stay")
 
 
-func test_each_class_has_three_pictures_and_a_leader_gets_one_of_their_class() -> void:
+func test_each_class_has_its_pictures_and_a_leader_gets_one_of_their_class() -> void:
+	var counts := {"raider": 3, "builder": 4, "trader": 4}   # the doctor is builder_4 and the hooded professor trader_4
 	for cls in Data.LEADERS:
-		assert_eq(Leaders.pictures(cls), ["%s_1" % cls, "%s_2" % cls, "%s_3" % cls], cls)
+		var wanted := []
+		for n in counts[cls]:
+			wanted.append("%s_%d" % [cls, n + 1])
+		assert_eq(Leaders.pictures(cls), wanted, cls)
 	for leader in Leaders.make_three():
 		assert_has(Leaders.pictures(leader["class"]), leader.image)
 
@@ -138,10 +142,35 @@ func test_the_general_is_always_a_general_and_nobody_else_is() -> void:
 	assert_gt(generals, 20, "he turns up now and then (a third of the raider draws)")
 
 
-func test_the_sheriff_elder_and_executive_keep_their_titles_too() -> void:
+func test_the_sheriff_elder_executive_doctor_and_professor_keep_their_titles_too() -> void:
 	assert_eq(Leaders.title_for("raider", "raider_1"), "Sheriff")
 	assert_eq(Leaders.title_for("builder", "builder_3"), "Elder")
 	assert_eq(Leaders.title_for("trader", "trader_3"), "Executive")
+	assert_eq(Leaders.title_for("builder", "builder_4"), "Doctor")
+	assert_eq(Leaders.title_for("trader", "trader_4"), "Professor")
 	for i in 100:
 		assert_false(Leaders.title_for("raider", "raider_9") in ["Sheriff", "General"])
 		assert_ne(Leaders.title_for("builder", "builder_1"), "Elder")
+		assert_false(Leaders.title_for("builder", "builder_1") in ["Doctor", "Professor"])
+		assert_false(Leaders.title_for("trader", "trader_1") in ["Doctor", "Professor"])
+
+
+func test_the_doctor_and_the_professor_are_named_with_their_titles_when_their_pictures_come_up() -> void:
+	var doctors := 0
+	var professors := 0
+	for s in range(1, 200):
+		seed(s)
+		for leader in Leaders.make_three():
+			var title: String = leader.name.get_slice(" ", 0)
+			if leader.image == "builder_4":
+				doctors += 1
+				assert_eq(title, "Doctor", "seed %d" % s)
+				assert_eq(leader["class"], "builder")
+			elif leader.image == "trader_4":
+				professors += 1
+				assert_eq(title, "Professor", "seed %d" % s)
+				assert_eq(leader["class"], "trader")
+			else:
+				assert_false(title in ["Doctor", "Professor"], "only their pictures carry those titles (seed %d)" % s)
+	assert_gt(doctors, 20, "the doctor turns up now and then (a quarter of the builder draws)")
+	assert_gt(professors, 20, "so does the professor")

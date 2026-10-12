@@ -18,7 +18,7 @@ const LEGEND_ICON_SCALE := 3   # screen pixels per pixel of legend art
 const LOGO_WIDTH := 440        # how wide the slab-stack logo is on the character selection screen
 const CARD_WIDTH := 440        # one leader card on that screen, and the face on it (480 px pictures shown at half size)
 const CARD_FACE := 240
-const RESOURCE_ICON := Vector2i(18, 16)   # the little picture beside each resource in the top bar: 8 x 8 doubled, and a 2 px gap
+const RESOURCE_ICON := Vector2i(18, 16)   # the little picture beside each resource in the top bar: 8 x 8 doubled, behind a 2 px gap
 const LEADER_FACE := 192       # the small picture (48 px) in the colony panel, shown at 4x
 const CLASS_COLORS := {"raider": Color("ff8c3c"), "builder": Color("6ad0e8"), "trader": Color("e8d84a")}   # not the perks' green or the flaws' red
 const AMBER := Color("ffb642")
@@ -573,9 +573,9 @@ func _on_tab_changed(index: int) -> void:
 		_refresh_tab(index)
 
 
-## The tiny picture before a resource's name in the top bar, as BBCode: art/icons/res_<id>_bar.png, the 8 x 8 picture
-## doubled with a 2 px clear gap on its right, so the name does not touch it. Nothing if the picture is missing, so the bar
-## still reads. (No space after it either: the pictures already use up room the bar's amounts need.)
+## The tiny picture after a resource's amount in the top bar, as BBCode: art/icons/res_<id>_bar.png, the 8 x 8 picture
+## doubled with a 2 px clear gap on its left, so the amount does not touch it. Nothing if the picture is missing, so the bar
+## still reads. (The gap is all that sits between the amount and the picture: the pictures already use up room the bar needs.)
 func _resource_icon(id: String) -> String:
 	if not _icon_tags.has(id):
 		var path := "res://art/icons/res_%s_bar.png" % id
@@ -587,7 +587,7 @@ func _refresh_top() -> void:
 	var t := "[color=#ffd88a]%s[/color]   Pop [b]%d[/b]/%d   Troops %d   Prisoners %d   Leader: %s\n" % [
 		Game.season_name(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Leaders.label(Game.leader_info)]
 	for r in Data.RESOURCES:
-		t += "%s%s [color=#ffd88a]%d[/color] " % [_resource_icon(r), r, Game.res[r]]   # one space between them: the pictures use the room
+		t += "%s [color=#ffd88a]%d[/color]%s " % [r, Game.res[r], _resource_icon(r)]   # name, amount, picture; one space before the next
 	top_text.text = t
 	var views := {Data.PLAYER: "Map: what you know", Data.AI: "Map: what Rust Kings know", Data.NONE: "Map: no fog (debug)"}
 	view_button.text = views[Game.view]

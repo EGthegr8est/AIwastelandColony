@@ -12,10 +12,15 @@ A 2D post-nuclear colony sim for Godot 4.7. Pixel-art tiles (or, if you like, AS
   keeps its shape, with black bars. If the art can't be read it's the same choices in a plain text panel.
 - **Character selection.** **New colony** leads to three randomly made leaders side by side (see "Leaders" below), with the slab-stack
   logo (`art/logo.png`, cropped to the lettering by `LOGO_CROP` in `scripts/sprites.gd`) above them. **Back** returns to the title screen.
-- **Music.** `audio/` holds six tracks. `wasteland_menu.wav` plays, looping, on the title screen, the character selection screen and the
-  load screen, and carries on across them without restarting. Starting or loading a colony crossfades into the five `wasteland_OST_*`
-  tracks, which play one after another in a shuffled order, then shuffle again, and never repeat a track back to back. Opening the menu in
-  the middle of a game leaves the game music alone. `scripts/music.gd` does it all (an autoload called `Music`).
+- **Music.** `audio/` holds eight tracks. `wasteland_menu.wav` plays, looping, on the title screen, the character selection screen and the
+  load screen, and carries on across them without restarting. Starting or loading a colony crossfades into the seven `wasteland_OST_*`
+  tracks (`dread`, `breath`, `ashfall`, `winter`, `dustpunk`, and the victory and defeat pieces, `lastcall_Victory` and `signallost_DEFEAT`),
+  which play one after another in a shuffled order (about 13 minutes before the shuffle comes round), then shuffle again, and never repeat a
+  track back to back. The shuffle is remembered between launches (`last_game_track` and `game_queue` in `settings.cfg`), so a new launch
+  carries on through the tracks it has not played yet. The victory and defeat tracks play once in the shuffle but loop under their ending
+  screens (if one is already playing when its ending arrives, it carries on and loops). A new `wasteland_OST_*.wav` dropped in `audio/` has
+  to be added to `Music.GAME` (a test fails until it is). Opening the menu in the middle of a game leaves the game music alone.
+  `scripts/music.gd` does it all (an autoload called `Music`).
 - **Volume.** The **Music** slider (bottom right of the title screen, on the character selection and load screens, and a small **♪** one in
   the top bar during a game) sets the music volume. All the way down is **completely off**: the music bus is muted, not just very quiet.
   They all show the same volume, and it's remembered between runs in `user://settings.cfg` (`%APPDATA%\Godot\app_userdata\Wasteland Colony\settings.cfg`,
@@ -36,8 +41,9 @@ keeps the same three.
   Every portrait is shown with a 2 px orange (`AMBER`) line round it, like the rest of the UI's lines.
   The game finds them by itself, so adding `raider_4.png` needs no code. A picture is chosen at random for each class each launch. A class with no
   pictures gets a face from the survivor portrait generator instead. A picture that is plainly one kind of person keeps that title
-  (`PICTURE_TITLES`): the monocle general is always a "General", the sheriffs "Sheriff", the elder "Elder", the suited man "Executive", and nobody
-  else is given those titles by chance.
+  (`PICTURE_TITLES`): the monocle general is always a "General", the sheriffs "Sheriff", the elder "Elder", the suited man "Executive", the
+  head-mirror doctor (`builder_4`) "Doctor", the hooded figure (`trader_4`) "Professor", and nobody else is given those titles by chance.
+  There are 11 pictures: three Raider, four Builder and four Trader.
 - **In the game.** The leader is saved with the colony (`leader_info` in the save; older saves load with just their class). The top bar names them,
   and the **Colony** tab opens with their small picture, name, class buffs and a line for each perk and the flaw with what it does, so the numbers
   can be checked mid game.
@@ -45,7 +51,7 @@ keeps the same three.
 ## Sending it to a friend (Windows)
 Run `.\tools\build_windows.ps1`. It exports the game as a single `WastelandColony.exe` (the art and music are inside it), runs the
 game's own self-check on the result (`WastelandColony.exe -- --selftest` prints one ok/FAIL line per thing the game loads: the atlas, the
-title screen and logo, all six tracks, the data), and zips it with `tools/PLAY_ME.txt` (how to run it, the Windows "unrecognized app"
+title screen and logo, all eight tracks, the data), and zips it with `tools/PLAY_ME.txt` (how to run it, the Windows "unrecognized app"
 warning, where saves live). The zip lands in `..\WastelandColony3-release\`: send `WastelandColony-Windows.zip`.
 - It needs Godot's Windows **export templates** once (Editor > Manage Export Templates), and the `Windows Desktop` preset in `export_presets.cfg`.
 - Files the game reads at run time that aren't pictures or sound (`art/atlas.json`) have to be listed in that preset's include filter, and the
@@ -222,8 +228,8 @@ There are eight resources: **wood, stone, metal, fuel, grain, veg, meat and gold
   one that's out lives off its own tank.
 - Old saves load fine: any scrap or silver in them is simply dropped.
 
-The top bar shows a tiny picture before each resource's name (`art/icons/res_<id>.png`, 8 x 8, with `res_<id>_bar.png` the doubled
-18 x 16 copy the bar actually uses; `_resource_icon` in `scripts/hud.gd`). With three-digit amounts in all eight resources the bar still holds
+The top bar shows each resource as its name, its amount, then a tiny picture to the right of the amount (`art/icons/res_<id>.png`, 8 x 8,
+with `res_<id>_bar.png` the doubled 18 x 16 copy the bar actually uses, its 2 px gap on the left; `_resource_icon` in `scripts/hud.gd`). With three-digit amounts in all eight resources the bar still holds
 two lines; with all eight in the thousands the last amount wraps to a third line, which still fits inside the bar.
 
 ## Scavenging: the d20 rolls

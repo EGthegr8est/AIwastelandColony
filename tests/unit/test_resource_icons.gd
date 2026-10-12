@@ -1,5 +1,5 @@
 extends "res://tests/framework/test_case.gd"
-## The little pictures beside each resource in the top bar (art/icons/res_<id>.png, 8 x 8, and res_<id>_bar.png, 18 x 16: doubled with a 2 px gap).
+## The little pictures beside each resource in the top bar (art/icons/res_<id>.png, 8 x 8, and res_<id>_bar.png, 18 x 16: doubled, behind a 2 px gap on its left: the picture follows the amount in the top bar).
 
 const Data = preload("res://scripts/data.gd")
 
@@ -21,8 +21,8 @@ func test_the_pictures_are_see_through_at_the_corners_and_all_different() -> voi
 		assert_eq(img.get_pixel(0, 0).a, 0.0, "%s has a clear corner" % id)
 		var solid := 0
 		for y in 16:
-			assert_eq(img.get_pixel(16, y).a + img.get_pixel(17, y).a, 0.0, "%s keeps a clear gap on the right" % id)
-			for x in 16:
+			assert_eq(img.get_pixel(0, y).a + img.get_pixel(1, y).a, 0.0, "%s keeps a clear gap on the left, next to the amount" % id)
+			for x in range(2, 18):
 				if img.get_pixel(x, y).a > 0.5:
 					solid += 1
 		assert_gt(solid, 20, "%s is something, not a blank" % id)
@@ -39,7 +39,7 @@ func test_the_bar_copy_is_the_small_one_with_every_pixel_doubled() -> void:
 			for x in 8:
 				var c := small.get_pixel(x, y)
 				for d in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
-					var doubled := big.get_pixel(x * 2 + d.x, y * 2 + d.y)
+					var doubled := big.get_pixel(2 + x * 2 + d.x, y * 2 + d.y)   # (2 px in, past the gap)
 					assert_eq(doubled.a, c.a, "%s at %d,%d: the same see-through" % [id, x, y])
 					if c.a > 0.0:   # (the colour of a clear pixel is nothing: the importer changes it)
 						assert_true(doubled.is_equal_approx(c), "%s at %d,%d: the same colour" % [id, x, y])

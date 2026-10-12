@@ -1,5 +1,5 @@
 extends "res://tests/framework/test_case.gd"
-## The top bar: each resource has its tiny picture before its name, and the bar still reads without one.
+## The top bar: each resource is its name, its amount, then its tiny picture to the right of the amount, and the bar still reads without one.
 
 const Data = preload("res://scripts/data.gd")
 const Leaders = preload("res://scripts/leaders.gd")
@@ -27,14 +27,15 @@ func before_each() -> void:
 	await wait_frames(4)
 
 
-func test_each_resource_has_its_picture_then_its_name_then_its_amount_in_order() -> void:
+func test_each_resource_has_its_name_then_its_amount_then_its_picture_in_order() -> void:
 	var text: String = hud.top_text.text
 	var at := 0
 	for id in Data.RESOURCES:
-		var tag := "[img=18x16]res://art/icons/res_%s_bar.png[/img]%s [color=#ffd88a]%d[/color]" % [id, id, Game.res[id]]
+		var tag := "%s [color=#ffd88a]%d[/color][img=18x16]res://art/icons/res_%s_bar.png[/img]" % [id, Game.res[id], id]
 		var found := text.find(tag, at)
-		assert_ne(found, -1, "%s: picture, name and amount, after the one before" % id)
+		assert_ne(found, -1, "%s: name, amount and picture, after the one before" % id)
 		at = found + tag.length()
+	assert_false(text.contains("[img=18x16]res://art/icons/res_gold_bar.png[/img]gold"), "the picture is no longer in front of the name")
 
 
 func test_the_bar_shows_the_names_and_amounts_as_text_with_the_pictures_inline() -> void:
@@ -56,6 +57,6 @@ func test_the_bar_is_still_two_lines_with_nothing_wrapped() -> void:
 func test_a_resource_without_a_picture_is_just_its_name() -> void:
 	hud._icon_tags["gold"] = ""
 	hud._refresh_top()
-	assert_has(hud.top_text.text, " gold [color=#ffd88a]")
+	assert_has(hud.top_text.text, "gold [color=#ffd88a]%d[/color] " % Game.res["gold"])
 	assert_false(hud.top_text.text.contains("res_gold_bar"))
 	assert_true(hud.top_text.text.contains("res_wood_bar"), "the others keep theirs")
