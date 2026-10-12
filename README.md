@@ -60,11 +60,11 @@ warning, where saves live). The zip lands in `..\WastelandColony3-release\`: sen
 - The layout is designed for 1600 x 900 and is always scaled to the window (`Main._fit_window`, content scale mode `canvas_items`, aspect
   `expand`): maximize it or go fullscreen and everything, type and pictures included, grows to fill the screen (a 4K screen shows it
   2.4 times as big), and a wider screen than 16:9 gets the extra room at the sides. On a screen smaller than 1600 x 900, the game also opens
-  maximized. `tests/render/test_window_scaling.gd` pins it.
+  maximized. F11 toggles fullscreen (`Main.toggle_fullscreen`). `tests/render/test_window_scaling.gd` pins both.
 - The exe has Godot's default icon and isn't code-signed. Setting a custom icon needs Godot's `rcedit` setting.
 
 ## Controls
-- **WASD / arrows**: pan. **Mouse wheel**: zoom. **Right-drag**: pan.
+- **WASD / arrows**: pan. **Mouse wheel**: zoom. **Right-drag**: pan. **F11**: fullscreen, and back to the window (or maximized) it came from.
 - **Left-click** a tile to inspect, claim or build on it. Click one of your scouting parties to pick it. **Esc** deselects it.
 - **END SEASON** runs gather, upkeep and the AI turn, then autosaves.
 - **Map: ...** button (top bar) switches whose knowledge the map shows: yours, the Rust Kings', or no fog (debug).

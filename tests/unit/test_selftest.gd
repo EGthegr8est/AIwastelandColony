@@ -71,3 +71,11 @@ func test_scaling_to_fit_keeps_the_designed_layout() -> void:
 	assert_eq(window.content_scale_size, Main.design_size())
 	assert_eq(window.content_scale_mode, Window.CONTENT_SCALE_MODE_CANVAS_ITEMS)
 	assert_eq(window.content_scale_aspect, Window.CONTENT_SCALE_ASPECT_EXPAND)
+
+
+func test_f11_goes_to_fullscreen_and_back_to_the_mode_it_came_from() -> void:
+	assert_eq(Main.next_window_mode(Window.MODE_WINDOWED, Window.MODE_WINDOWED), Window.MODE_FULLSCREEN)
+	assert_eq(Main.next_window_mode(Window.MODE_MAXIMIZED, Window.MODE_WINDOWED), Window.MODE_FULLSCREEN)
+	assert_eq(Main.next_window_mode(Window.MODE_FULLSCREEN, Window.MODE_MAXIMIZED), Window.MODE_MAXIMIZED, "back to maximized")
+	assert_eq(Main.next_window_mode(Window.MODE_FULLSCREEN, Window.MODE_WINDOWED), Window.MODE_WINDOWED, "back to windowed")
+	assert_eq(Main.next_window_mode(Window.MODE_FULLSCREEN, Window.MODE_FULLSCREEN), Window.MODE_WINDOWED, "never stuck in fullscreen")

@@ -8,12 +8,14 @@ const Main = preload("res://scripts/main.gd")
 var main: Node2D
 var window: Window
 var first_size: Vector2i
+var first_mode: Window.Mode
 
 
 func before_each() -> void:
 	seed(5)
 	window = get_window()
 	first_size = window.size
+	first_mode = window.mode
 	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]
 	main = add_autofree(load("res://scenes/main.tscn").instantiate())
 	await wait_frames(2)
@@ -29,6 +31,8 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	window.mode = first_mode
+	await wait_frames(3)
 	window.size = first_size
 	await wait_frames(2)
 
@@ -77,3 +81,41 @@ func test_a_wider_screen_gets_the_extra_room_on_the_long_side_and_the_bar_stretc
 	assert_almost_eq(visible.y, 900.0, 1.0, "the height is the designed one")
 	assert_gt(visible.x, 2000.0, "and the width is the room that is left")
 	assert_gt(_menu_button().get_global_rect().end.x, visible.x - 40.0, "the top bar fills the whole width")
+
+
+func _press_f11() -> void:
+	var press := InputEventKey.new()
+	press.keycode = KEY_F11
+	press.pressed = true
+	Input.parse_input_event(press)
+	await wait_frames(6)
+	var release := InputEventKey.new()
+	release.keycode = KEY_F11
+	release.pressed = false
+	Input.parse_input_event(release)
+	await wait_frames(2)
+
+
+func test_f11_toggles_fullscreen_and_back_and_the_layout_still_fills_the_window() -> void:
+	if _needs_window():
+		return
+	window.mode = Window.MODE_WINDOWED
+	await wait_frames(4)
+	await _press_f11()
+	assert_eq(window.mode, Window.MODE_FULLSCREEN, "F11 goes fullscreen")
+	var visible := get_viewport().get_visible_rect().size
+	assert_almost_eq(visible.x / visible.y, float(window.size.x) / float(window.size.y), 0.02, "the layout is scaled to the fullscreen window's shape")
+	assert_gt(_menu_button().get_global_rect().end.x, visible.x - 40.0, "and the top bar reaches its right edge")
+	await _press_f11()
+	assert_eq(window.mode, Window.MODE_WINDOWED, "F11 again goes back")
+
+
+func test_f11_goes_back_to_maximized_when_that_is_where_it_came_from() -> void:
+	if _needs_window():
+		return
+	window.mode = Window.MODE_MAXIMIZED
+	await wait_frames(4)
+	await _press_f11()
+	assert_eq(window.mode, Window.MODE_FULLSCREEN)
+	await _press_f11()
+	assert_eq(window.mode, Window.MODE_MAXIMIZED)

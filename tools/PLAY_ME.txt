@@ -18,6 +18,7 @@ Windows 10 or 11 (64-bit) and a graphics card from the last 8 years or so (it ne
 
 THE BASICS
 - Pan the map: WASD / arrow keys, or right-drag. Zoom: mouse wheel.
+- F11 goes fullscreen, and F11 again goes back. The game fills whatever size the window is.
 - Left-click a tile to look at it, claim it or build on it.
 - END SEASON (top right) moves time on. The game autosaves every season.
 - Menu (top right) goes back to the title screen: Resume, Load, Quit.

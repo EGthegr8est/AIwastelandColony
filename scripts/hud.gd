@@ -893,7 +893,7 @@ func _refresh_tile() -> void:
 	_clear(box)
 	var c := Game.selected
 	if not Game.in_bounds(c):
-		_label(box, "Click a tile on the map.\n\nWASD / arrows: pan\nMouse wheel: zoom\nRight-drag: pan")
+		_label(box, "Click a tile on the map.\n\nWASD / arrows: pan\nMouse wheel: zoom\nRight-drag: pan\nF11: fullscreen")
 		_header(box, "Legend")
 		_legend_style_row(box)
 		for id in Data.TERRAIN:

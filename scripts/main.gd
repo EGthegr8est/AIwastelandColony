@@ -1,5 +1,5 @@
 extends Node2D
-## Sets up the map, camera and UI. WASD/arrows pan, mouse wheel zooms, right-drag pans.
+## Sets up the map, camera and UI. WASD/arrows pan, mouse wheel zooms, right-drag pans, F11 toggles fullscreen.
 
 const MapView = preload("res://scripts/map_view.gd")
 const Hud = preload("res://scripts/hud.gd")
@@ -7,6 +7,7 @@ const SelfTest = preload("res://scripts/selftest.gd")
 const PAN_SPEED := 700.0
 
 var cam := Camera2D.new()
+var _mode_before_fullscreen := Window.MODE_WINDOWED   # what F11 goes back to
 
 
 func _ready() -> void:
@@ -51,6 +52,23 @@ static func too_small(usable: Vector2i, design: Vector2i) -> bool:
 	return usable.x < design.x or usable.y < design.y
 
 
+## F11: fullscreen, and F11 again goes back to whatever the window was (windowed or maximized).
+func toggle_fullscreen() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var window := get_window()
+	if window.mode != Window.MODE_FULLSCREEN:
+		_mode_before_fullscreen = window.mode
+	window.mode = next_window_mode(window.mode, _mode_before_fullscreen)
+
+
+## The mode F11 asks for: fullscreen, unless it already is, then the mode it was in before.
+static func next_window_mode(current: Window.Mode, before: Window.Mode) -> Window.Mode:
+	if current == Window.MODE_FULLSCREEN:
+		return before if before != Window.MODE_FULLSCREEN else Window.MODE_WINDOWED
+	return Window.MODE_FULLSCREEN
+
+
 ## Lays `window` out for the design size and scales that to the window, adding room on the longer side.
 static func scale_to_fit(window: Window) -> void:
 	window.content_scale_size = design_size()
@@ -69,6 +87,12 @@ func _process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
 		dir.y += 1
 	cam.position += dir * PAN_SPEED * delta / cam.zoom.x
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
+		toggle_fullscreen()
+		get_viewport().set_input_as_handled()
 
 
 func _unhandled_input(event: InputEvent) -> void:
