@@ -2,7 +2,6 @@ extends "res://tests/framework/test_case.gd"
 ## The fuel gauges: three hand-drawn pixel instruments (a car's dashboard dial, a plane's cockpit
 ## dial, a boat's brass sight tube), drawn into an Image so we can look at the pixels.
 
-const Data = preload("res://scripts/data.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 
 

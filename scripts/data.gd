@@ -167,6 +167,7 @@ const BUILDINGS := {
 	"hq":       {"name": "Colony HQ",     "glyph": "Ω", "color": Color("ffd27a"), "buildable": false, "sight": 5, "desc": "Your colony's heart. Sees 5 tiles."},
 	"ai_hq":    {"name": "Raider fort",   "glyph": "¥", "color": Color("ff5a3c"), "buildable": false, "sight": 5, "desc": "Rust Kings stronghold."},
 	"town":     {"name": "Settlement",    "glyph": "Π", "color": Color("8fc4ff"), "buildable": false, "sight": 4, "desc": "The local settlement."},
+	"ai_wall":  {"name": "Raider wall",   "glyph": "▓", "color": Color("d0603c"), "buildable": false, "desc": "A stretch of Rust Kings wall, standing for 4 of their walls. A scouting party next to it can attack it."},
 	"farm":     {"name": "Farm",          "glyph": "≡", "color": Color("b8d060"), "cost": {"wood": 5}, "on": ["sand", "scrub"], "yield": {"grain": 3, "veg": 2}, "desc": "Grows grain and vegetables."},
 	"lodge":    {"name": "Hunting lodge", "glyph": "h", "color": Color("d08050"), "cost": {"wood": 8}, "on": ["sand", "scrub", "trees", "dunes", "grove"], "yield": {"meat": 3}, "desc": "Hunts in the wastes for meat (+2 in a green grove). Hunters sometimes don't come back."},
 	"mine":     {"name": "Mine",          "glyph": "∩", "color": Color("c8c0b0"), "cost": {"wood": 10}, "on": ["rock"], "yield": {"stone": 2, "metal": 2}, "desc": "Digs stone and metal."},
@@ -218,6 +219,22 @@ const POI_TERRAIN := ["sand", "dunes", "scrub", "rock", "trees", "waste"]   # wh
 # A site's packages (the dice outcomes are in d20_data.gd, SITES) pay this many times what the same package
 # pays at an ordinary ruin, on top of the loot scale.
 const POI_LOOT_MULT := 1.5
+
+# Prison breaks. A season that ends with more than PRISON_HIGH prisoners and fewer than PRISON_OUTPOSTS of your
+# outposts within PRISON_CIRCLE tiles of the HQ (your circle of control) starts one: PRISON_ESCAPE of the prisoners
+# (rounded up) get out and you lose a troop guarding them. The escapees become a raider band at the edge of your
+# land, as strong as they are many.
+const PRISON_HIGH := 4
+const PRISON_CIRCLE := 6
+const PRISON_OUTPOSTS := 2
+const PRISON_ESCAPE := 0.5
+
+# Building raids (the attack rolls and each building's DC are in d20_data.gd). One Raider wall tile stands for
+# WALLS_PER_TILE of the Rust Kings' walls. At most RAID_LOSS_CAP of your buildings can be destroyed in a season,
+# whoever attacks, and each Rust Kings building you destroy costs RAID_RELATIONS relations with them.
+const WALLS_PER_TILE := 4
+const RAID_LOSS_CAP := 3
+const RAID_RELATIONS := 10
 
 const LEADERS := {
 	"raider":  {"name": "Raider",  "branch": "warfare",       "attack": 1.25, "defense": 1.0,  "caravans": 1, "desc": "Best attack. 25% off Warfare upgrades."},

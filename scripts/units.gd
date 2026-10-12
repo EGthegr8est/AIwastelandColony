@@ -9,7 +9,8 @@ extends Node
 ##   pos, target, home   map cells; stage is "out" until the job is done, then "back".
 ##                       Scouting parties have a third stage, "station": they stay put until given orders.
 ##                       A scavenger party that reaches its ruin is at the "site" and holds a "visit" (see
-##                       d20_visit.gd) that the player rolls through, one button press at a time.
+##                       d20_visit.gd) that the player rolls through, one button press at a time. A scouting party
+##                       attacking a Rust Kings building does the same, then goes back to "station".
 ##   crew     colonists on board (they rejoin the population when they get home)
 ##   survivors   the named people on board: {"name", "age", "traits" (ids from d20_data.gd), "injury" (none, light
 ##               or severe, until the party is home), "hunger", "face"}. crew is their count ("face" seeds their
@@ -327,7 +328,7 @@ func stage_text(u: Dictionary) -> String:
 		"station":
 			return "keeping watch"
 		"site":
-			return "at the ruins"
+			return "attacking a building" if u.get("visit", {}).get("ruin", "") == "building" else "at the ruins"
 	return "heading home"
 
 
@@ -361,7 +362,7 @@ func order_scouts(id: int, target: Vector2i) -> void:
 
 func recall_scouts(id: int) -> void:
 	var u := unit_by_id(id)
-	if u.is_empty() or u.stage == "back":
+	if u.is_empty() or u.stage in ["back", "site"]:   # an attack in progress is finished first
 		return
 	u.stage = "back"
 	u.path = Game.route(u.mover, u.pos, u.home).slice(1)
@@ -680,6 +681,8 @@ func _scout_turn(u: Dictionary) -> void:
 		return
 	if u.stage == "station":
 		_idle(u)
+	elif u.stage == "site":
+		pass   # in the middle of an attack, waiting for the player's roll
 	elif _advance(u):
 		_arrive(u)
 
@@ -870,6 +873,9 @@ func visit_finish(uid: int) -> void:
 	if u.is_empty() or u.get("stage", "") != "site" or not u.has("visit") or u.visit.stage != "done":
 		return
 	var v: Dictionary = u.visit
+	if v.ruin == "building":
+		_finish_strike(u, v)
+		return
 	var poi: String = v.get("poi", "")
 	var t: Dictionary = Game.tile(Game.poi_anchor(u.target) if poi != "" else u.target)
 	var where := "%d,%d" % [u.target.x, u.target.y]
@@ -909,6 +915,67 @@ func visit_finish(uid: int) -> void:
 	else:
 		Game.add_log("Scavengers stripped the %s at %s: %s. Heading home." % [place, where, Game.cost_text(u.carry)])
 	_turn_back(u)
+	Game.changed.emit()
+
+
+## The Rust Kings' buildings a stationed scouting party can attack: the one on its own tile and the ones next to it.
+func strike_targets(u: Dictionary) -> Array:
+	var out := []
+	if u.get("job", "") != "scout" or u.get("stage", "") != "station":
+		return out
+	for c in [u.pos] + Game.neighbors(u.pos):
+		if Game.tile(c)["o"] == Data.AI and Game.can_hit(c):
+			out.append(c)
+	return out
+
+
+## A stationed scouting party starts an attack on the building at `cell`: a "visit" like a ruin's, with one roll a press.
+func begin_strike(uid: int, cell: Vector2i) -> bool:
+	var u := unit_by_id(uid)
+	if u.is_empty() or not cell in strike_targets(u):
+		return false
+	var building: String = Game.tile(cell)["b"]
+	Game.measure(u.pos)
+	u["visit"] = D20Visit.begin_strike(visit_ctx(u), D20.loot_scale, dice, u.survivors, cell, building, Game.building_dc(cell))
+	u.stage = "site"
+	Game.add_log("%s get ready to attack the %s at %d,%d." % [names_text(u), Data.BUILDINGS[building].name.to_lower(), cell.x, cell.y])
+	_sync_visit(u)
+	Game.changed.emit()
+	return true
+
+
+## "Continue" after an attack: the building comes down if the roll hit it, the party takes its package (and loses a share of
+## what it carries if the roll went badly) and goes back to keeping watch. A party the attack wiped out is gone.
+func _finish_strike(u: Dictionary, v: Dictionary) -> void:
+	u.erase("visit")
+	var cell := Vector2i(int(v.cell[0]), int(v.cell[1]))
+	var what: String = Data.BUILDINGS[v.building].name.to_lower() if Data.BUILDINGS.has(v.building) else "building"
+	if v.wiped:
+		Game.note("survivors_lost", u.crew)
+		u.crew = 0
+		u.survivors = []
+		_lost(u)
+		Game.add_log("The party was wiped out attacking the %s at %d,%d." % [what, cell.x, cell.y])
+		Game.changed.emit()
+		return
+	if float(v.carried_loss) > 0.0 and not u.carry.is_empty():
+		var split := D20.lose_share(u.carry, float(v.carried_loss))
+		u.carry = split.kept
+		if not split.lost.is_empty():
+			Game.add_log("They lost %s from their packs." % Game.cost_text(split.lost))
+	if not v.loot.is_empty():
+		var goods: Dictionary = u.carry.duplicate()
+		for r in v.loot:
+			goods[r] = goods.get(r, 0) + v.loot[r]
+		_haul(u, goods)
+	u.stage = "station"
+	if v.destroyed:
+		Game.destroy_building(cell)
+		Game.add_log("%s destroyed the %s at %d,%d. Relations with the Rust Kings fall by %d." % [names_text(u), what, cell.x, cell.y, Data.RAID_RELATIONS])
+	elif v.outcome == "left":
+		Game.add_log("%s backed off from the %s at %d,%d." % [names_text(u), what, cell.x, cell.y])
+	else:
+		Game.add_log("%s could not bring down the %s at %d,%d." % [names_text(u), what, cell.x, cell.y])
 	Game.changed.emit()
 
 
@@ -992,6 +1059,20 @@ func _spawn_band(pos: Vector2i, strength: int) -> void:
 	units.append(u)
 
 
+## Escaped prisoners form a raider band as strong as they are many, on a free land tile at the edge of your land.
+## False (and no band) if your land has no such tile.
+func spawn_escaped_band(strength: int) -> bool:
+	var spots := []
+	for c in Game.owned(Data.PLAYER):
+		for n in Game.neighbors(c):
+			if Game.tile(n)["o"] == Data.NONE and Game.tile(n)["t"] != "water" and not n in spots:
+				spots.append(n)
+	if spots.is_empty():
+		return false
+	_spawn_band(spots.pick_random(), maxi(strength, 1))
+	return true
+
+
 func _random_edge_land() -> Vector2i:
 	for attempt in 20:
 		var c := Vector2i(randi_range(0, Game.w - 1), [0, Game.h - 1].pick_random())
@@ -1039,6 +1120,7 @@ func _band_turn(u: Dictionary) -> void:
 				loot[k] = int(Game.res[k] * 0.1)
 				Game.res[k] -= loot[k]
 			Game.add_log("A raider band hit your outskirts and made off with %s." % Game.cost_text(loot))
+			Game.raider_strike(u.pos, u.strength, def)
 		else:
 			Game.prisoners += 1
 			Game.note("prisoners_taken")

@@ -3,7 +3,6 @@ extends "res://tests/framework/test_case.gd"
 ## saved, and scavenged as one tile.
 
 const Data = preload("res://scripts/data.gd")
-const D20Visit = preload("res://scripts/d20_visit.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const World = preload("res://tests/helpers/world.gd")
 const ForcedDice = preload("res://tests/helpers/forced_dice.gd")

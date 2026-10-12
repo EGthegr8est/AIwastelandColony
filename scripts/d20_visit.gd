@@ -7,6 +7,7 @@ extends RefCounted
 ## roll that hurts one marks "injury" on it.
 ##
 ## The stages, in the order a visit can reach them:
+##   strike   a scouting party's attack on a building: one combat check against the building's DC, repeatable until it falls
 ##   site     a point of interest: one check against the site's DC, whose tier picks that site's outcome (see SITES in
 ##            d20_data.gd); an outcome may hurt someone, poison the party, force a fight, or hand the colony a reward
 ##   event    a plain d20 for what the ruin holds (a safe ruin never rolls a hazard: those rows are rerolled)
@@ -26,7 +27,6 @@ const D20 = preload("res://scripts/d20.gd")
 
 const EVENT_NAMES := {"nothing": "nothing of note", "minor_find": "a small find", "cache": "a pre-war cache"}
 const CHECK_NAMES := {"cache": "Cache check", "trap": "Trap check", "ambush": "Ambush check", "combat": "Fight", "site": "Site check"}
-const INJURY_RANK := ["none", "light", "severe"]
 
 
 # ---------------------------------------------------------------- the situation
@@ -145,10 +145,24 @@ static func begin(ruin: String, ctx: Dictionary, scale: float, dice, party := []
 		"fight_sit": 0, "fight_bonus": "", "after": "loot",
 		"loot": {}, "site_loot": {}, "packages": [], "prisoners": 0, "camp_revealed": false, "wiped": false,
 		"reveal": 0, "reveal_fort": false, "trust": 0, "colonists": 0, "troops": 0,
+		"strike_dc": 0, "building": "", "cell": [-1, -1], "destroyed": false, "carried_loss": 0.0,
 		"injuries": {}, "outcome": "", "log": [], "last": [], "shown": 0, "rerolls": D20.party_rerolls(party),
 	}
 	if ruin == "rogue":
 		visit["enemy"] = enemy_strength(dice)
+	return visit
+
+
+## A scouting party's attack on the building `building` on tile `cell`, which takes `dc` to destroy: one combat check
+## (the party's own traits and condition), then the party goes on or stays. Winning pays the usual package for a won fight
+## and the game removes the building when the party presses Continue; see Units.visit_finish.
+static func begin_strike(ctx: Dictionary, scale: float, dice, party: Array, cell: Vector2i, building: String, dc: int) -> Dictionary:
+	var visit := begin("safe", ctx, scale, dice, party)
+	visit["ruin"] = "building"
+	visit["stage"] = "strike"
+	visit["strike_dc"] = dc
+	visit["building"] = building
+	visit["cell"] = [cell.x, cell.y]
 	return visit
 
 
@@ -164,11 +178,13 @@ static func _dc_for(visit: Dictionary) -> int:
 			return visit.ambush_dc
 		"fight":
 			return enemy_dc(visit.enemy)
+		"strike":
+			return visit.strike_dc
 	return 0
 
 
 static func _check_for(visit: Dictionary) -> String:
-	return "combat" if visit.stage == "fight" else str(visit.stage)
+	return "combat" if visit.stage in ["fight", "strike"] else str(visit.stage)
 
 
 static func _extra_for(visit: Dictionary) -> Array:
@@ -193,7 +209,7 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 		"event":
 			out["text"] = "Search the ruins: a plain d20, no modifiers."
 			out["buttons"] = [{"id": "roll", "label": "Search the ruins (d20)"}, {"id": "home", "label": "Leave without searching"}]
-		"site", "cache", "trap", "ambush", "fight":
+		"site", "cache", "trap", "ambush", "fight", "strike":
 			var check := _check_for(visit)
 			var extra := _extra_for(visit)
 			var ctx := _ctx(visit, check)
@@ -204,16 +220,19 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			var mod := D20.clamp_mod(parts_total(parts))
 			out["who"] = scout.name
 			out["traits"] = D20.trait_names(scout)
-			out["check"] = CHECK_NAMES[check]
+			var check_name: String = "Attack" if visit.stage == "strike" else CHECK_NAMES[check]
+			out["check"] = check_name
 			out["dc"] = dc
 			out["mod"] = mod
 			out["parts"] = parts
-			out["text"] = "%s rolls. %s, DC %d, %+d" % [scout.name, CHECK_NAMES[check], dc, mod]
+			out["text"] = "%s rolls. %s, DC %d, %+d" % [scout.name, check_name, dc, mod]
 			if visit.stage == "fight":
 				out["text"] += " (enemy strength %d)" % visit.enemy
 			out["buttons"] = [{"id": "roll", "label": "Roll d20 (%+d vs DC %d)" % [mod, dc]}]
 			if visit.stage == "site":
 				out["buttons"].append({"id": "home", "label": "Leave without searching"})
+			elif visit.stage == "strike":
+				out["buttons"].append({"id": "home", "label": "Back off"})
 		"choice":
 			out["text"] = "Spotted in time. Fight (DC %d) or slip away?" % enemy_dc(visit.enemy)
 			out["buttons"] = [{"id": "fight", "label": "Fight"}, {"id": "slip", "label": "Slip away"}]
@@ -223,11 +242,17 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			out["buttons"] = [{"id": "deeper", "label": "Search deeper (DC %d)" % next_dc}, {"id": "home", "label": "Head home"}]
 		_:
 			out["text"] = _outcome_text(visit)
-			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped else "Head home"}]
+			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped or visit.ruin == "building" else "Head home"}]
 	return out
 
 
 static func _outcome_text(visit: Dictionary) -> String:
+	if visit.ruin == "building":
+		if visit.outcome == "wiped":
+			return "The party was wiped out."
+		if visit.outcome == "left":
+			return "You backed off."
+		return "The building came down." if visit.destroyed else "The building held."
 	if visit.ruin == "poi" and visit.outcome in ["looted", "empty", ""]:
 		return "There was nothing here." if visit.outcome == "empty" else "The site is picked clean."
 	match visit.outcome:
@@ -266,6 +291,8 @@ static func step(visit: Dictionary, dice, party: Array, choice := "roll") -> voi
 			_choice(visit, choice)
 		"fight":
 			_fight(visit, dice, party)
+		"strike":
+			_strike(visit, dice, party, choice)
 		"deeper":
 			_deeper(visit, dice, choice)
 	visit["log"].append_array(visit.last)
@@ -298,7 +325,7 @@ static func _roll(visit: Dictionary, dice, party: Array) -> Dictionary:
 static func _hurt(visit: Dictionary, scout: Dictionary, level: String) -> void:
 	if level == "none":
 		return
-	if INJURY_RANK.find(level) > INJURY_RANK.find(scout.get("injury", "none")):
+	if Data.INJURY_RANK.find(level) > Data.INJURY_RANK.find(scout.get("injury", "none")):
 		scout["injury"] = level
 	visit.injuries[scout.name] = scout["injury"]
 	visit.last.append("%s is %s." % [scout.name, "badly hurt" if level == "severe" else "hurt"])
@@ -504,17 +531,8 @@ static func _fight(visit: Dictionary, dice, party: Array) -> void:
 	var scout: Dictionary = rolled.scout
 	var tier: String = result.tier
 	var row: Dictionary = Data.COMBAT[tier]
-	if not "no_injury" in result.flags:
-		_hurt(visit, rolled.roller, row.injury)
-	if D20.fumble_applies("combat", tier, _dc_for(visit)):
-		var fumble: int = dice.d20()
-		visit.last.append("%s fumbles: d20 %d" % [scout.name, fumble])
-		if fumble <= Data.FATAL_FUMBLE.roll_max:
-			visit["wiped"] = true
-			visit["stage"] = "done"
-			visit["outcome"] = "wiped"
-			visit.last.append("The whole party is dead." if Data.FATAL_FUMBLE.scope == "party" else "%s is dead." % scout.name)
-			return
+	if _combat_toll(visit, dice, rolled, _dc_for(visit)):
+		return
 	var won := tier == Data.SUCCESS or tier == Data.CRITICAL_SUCCESS
 	if won:
 		if row.enemy_package != "":
@@ -538,6 +556,50 @@ static func _fight(visit: Dictionary, dice, party: Array) -> void:
 		visit["stage"] = "done"
 		visit["outcome"] = "lost_fight" if visit.ruin == "rogue" and visit.ambush_kind == "rogue" else ""
 		visit.last.append("You are driven off.")
+
+
+## The injury a combat-type roll leaves and, against a hard enough DC, the fatal fumble. True if it wiped the party out.
+static func _combat_toll(visit: Dictionary, dice, rolled: Dictionary, dc: int) -> bool:
+	var tier: String = rolled.result.tier
+	if not "no_injury" in rolled.result.flags:
+		_hurt(visit, rolled.roller, Data.COMBAT[tier].injury)
+	if not D20.fumble_applies("combat", tier, dc):
+		return false
+	var fumble: int = dice.d20()
+	visit.last.append("%s fumbles: d20 %d" % [rolled.scout.name, fumble])
+	if fumble > Data.FATAL_FUMBLE.roll_max:
+		return false
+	visit["wiped"] = true
+	visit["stage"] = "done"
+	visit["outcome"] = "wiped"
+	visit.last.append("The whole party is dead." if Data.FATAL_FUMBLE.scope == "party" else "%s is dead." % rolled.scout.name)
+	return true
+
+
+## A scouting party's attack on a building: one combat check against the building's DC. A hit destroys it (the game
+## removes it when the party presses Continue) and pays the usual package for a won fight; a miss leaves it standing,
+## and the party can attack again. What a miss costs the party is carried to the game in "carried_loss".
+static func _strike(visit: Dictionary, dice, party: Array, choice: String) -> void:
+	if choice == "home":
+		visit["stage"] = "done"
+		visit["outcome"] = "left"
+		visit.last.append("The party backs off.")
+		return
+	var rolled := _roll(visit, dice, party)
+	var tier: String = rolled.result.tier
+	var row: Dictionary = Data.COMBAT[tier]
+	if _combat_toll(visit, dice, rolled, visit.strike_dc):
+		return
+	visit["stage"] = "done"
+	visit["carried_loss"] = row.carried_loss
+	if tier == Data.SUCCESS or tier == Data.CRITICAL_SUCCESS:
+		visit["destroyed"] = true
+		visit.last.append("The building comes down.")
+		if row.enemy_package != "":
+			var size := D20.size_shifted(rolled.scout, "combat", tier, row.enemy_package)
+			_add_package(visit, D20.random_package(dice, rolled.scout, size, "", visit.scale))
+	else:
+		visit.last.append("The building holds.")
 
 
 static func _deeper(visit: Dictionary, dice, choice: String) -> void:
@@ -564,6 +626,11 @@ static func normalize(visit: Dictionary) -> Dictionary:
 	for k in ["reveal", "trust", "colonists", "troops"]:   # a visit saved before sites had outcomes lacks these
 		visit[k] = int(visit.get(k, 0))
 	visit["reveal_fort"] = bool(visit.get("reveal_fort", false))
+	visit["strike_dc"] = int(visit.get("strike_dc", 0))   # and these, before scouting parties could attack
+	visit["cell"] = (visit.get("cell", [-1, -1]) as Array).map(func(n): return int(n))
+	visit["destroyed"] = bool(visit.get("destroyed", false))
+	visit["carried_loss"] = float(visit.get("carried_loss", 0.0))
+	visit["building"] = str(visit.get("building", ""))
 	visit["scale"] = float(visit["scale"])
 	visit["rerolls"] = int(visit["rerolls"])
 	visit["ctx"] = {"radiation": float(visit.ctx.radiation), "party_strength": int(visit.ctx.party_strength)}

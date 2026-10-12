@@ -263,6 +263,34 @@ more, then a d20 of 5 or less kills the whole party) therefore applies to the st
 Dustwell's trust, troops and colonists are recorded by the visit and handed over when the party heads home (colonists only up to the
 population cap; trust only while Dustwell is still neutral).
 
+## Prison breaks
+A season whose upkeep finds more than 4 prisoners and fewer than 2 of your outposts within 6 tiles of the HQ (your circle of control; the
+numbers are `PRISON_*` in `scripts/data.gd`) ends in a prison break, with no warning: half the prisoners (rounded up) escape, you lose a
+guard, and the escapees form a raider band at the edge of your land as strong as they are many, which then attacks like any wild band. Ransom
+prisoners or build the two outposts to stop it. The older revolt (prisoners above three times your troops, 30% a season) still happens when
+the new rule does not apply, and a season never has both.
+
+## Building raids
+Any building can be destroyed with one attack roll: d20 plus a modifier against the building's DC (`BUILDING_DC` in `scripts/d20_data.gd`).
+Farms, lodges, horse farms, salvage yards and trading posts are DC 8; mines, refineries, motor pools, ports and airfields 10; outposts 11;
+walls and watchtowers 12 (14 for your walls with Stone walls); keeps 15. Your HQ, the Rust Kings' fort, Dustwell, the citadel and the points
+of interest cannot be destroyed. A destroyed building leaves its tile bare and with its owner. At most 3 of your buildings fall in a season,
+whoever attacks (`RAID_LOSS_CAP`).
+- **The Rust Kings' walls are tiles now.** Their wall count is still what counts in a raid (2 defense each), but each 4 walls stand as one
+  Raider wall tile (`▓`) on their land nearest your HQ. Destroying a tile removes its 4 walls and costs 10 relations with them; a wall tile
+  you take with their land takes its 4 walls with it, and you cannot buy one.
+- **Your raid** (the Raid button) also rolls at their walls nearest your HQ when it wins: once, twice if you had double their defense.
+- **Raider bands** that beat your guards at your edge also roll once at the building nearest them.
+- **A raid or band's modifier** comes from its strength against the defense it meets: +4 at double, +2 at 1.5 times, 0 at even, -2 below.
+  Each roll is written to the log with its d20, modifier and DC.
+- **Your scouting parties** attack in person: a party keeping watch on or next to a Raider wall gets an "Attack the raider wall" button. The
+  right panel then shows "Attack" and the clickable die, and the party rolls like a fight at a ruin (its traits, injuries and the radiation
+  all count). A hit pays the usual package for a won fight and the wall comes down when you press Continue; a miss injures the roller (light,
+  or severe on a bad miss, which also loses half of what the party carries) and the party can try again or "Back off". Walls are DC 12, so the
+  fatal fumble never applies to them.
+The Rust Kings' own war parties and scouts do not attack your buildings yet; only wild bands and escaped prisoners do.
+`tests/unit/test_prison_break.gd` and `test_building_raids.gd` pin all of it.
+
 ## How the game ends
 There are three endings (`Data.ENDINGS` holds the numbers), each shown once: the ending picture (click, or press Enter, to continue), then a
 stats screen, then a click on **Return to main menu**. The win or defeat music loops the whole way (`wasteland_OST_lastcall_Victory.wav` for
@@ -274,7 +302,7 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 - **Defeat:** a raid of theirs that wins with attack at least 3 times your defense overruns the colony (a Citadel stops that), your land falls
   to 6 tiles or fewer, or the colony starves down to 2 people.
 - **Stats** (`Game.stats`, saved with the game) cover seasons survived, peak colonists and land, buildings, upgrades, vehicles, raids won and
-  lost both ways, bands and tribes beaten, prisoners, survivors lost, parties sent, ruins and sites stripped, d20 rolls with natural 20s and
+  lost both ways, bands and tribes beaten, prisoners, survivors lost, buildings lost and Rust Kings buildings destroyed, parties sent, ruins and sites stripped, d20 rolls with natural 20s and
   1s, trade runs and resources gathered.
 
 ## Files

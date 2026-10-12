@@ -1019,7 +1019,8 @@ func _fill_stats() -> void:
 			["Their raids on you", "%d beaten back, %d got through" % [s.raids_beaten_back, s.raids_suffered]],
 			["Raider bands driven off", str(s.bands_driven_off)], ["Tribe camps scattered", str(s.tribes_scattered)],
 			["Troops trained", str(s.troops_trained)], ["Prisoners taken", str(s.prisoners_taken)],
-			["Survivors lost", str(s.survivors_lost + s.colonists_starved)]]],
+			["Survivors lost", str(s.survivors_lost + s.colonists_starved)],
+			["Buildings", "%d lost, %d of theirs destroyed" % [s.buildings_lost, s.enemy_buildings_destroyed]]]],
 		["Expeditions", [
 			["Parties sent", "%d scavenging, %d scouting, %d caravans, %d boats, %d flights" % [
 				sent.get("scav", 0), sent.get("scout", 0), sent.get("caravan", 0), sent.get("boat", 0), sent.get("plane", 0)]],
@@ -1077,7 +1078,7 @@ func _visit_panel(box: VBoxContainer, u: Dictionary) -> void:
 		dice_phase = "idle"   # the die was busy for another party: its result is already in the game
 		dice_lines = []
 	dice_uid = uid
-	_header(box, "Scavenge")
+	_header(box, "Attack" if view.ruin == "building" else "Scavenge")
 	var wants_roll: bool = view.buttons.any(func(b): return b.id == "roll")
 	if dice_phase == "landed" or dice_phase == "rolling":
 		box.add_child(dice_holder)
@@ -1170,8 +1171,12 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 			" (overloaded: x%.1f slower)" % slow if slow > 1.0 else ""], RED if slow > 1.0 else DIM)
 	if u.job != "scout":
 		return
-	if u.stage != "back":
-		var uid: int = u.id
+	var uid: int = u.id
+	for target in Units.strike_targets(u):
+		var cell: Vector2i = target
+		_button(box, "Attack the %s at %d,%d (DC %d)" % [Data.BUILDINGS[Game.tile(cell)["b"]].name.to_lower(), cell.x, cell.y, Game.building_dc(cell)],
+			func(): Units.begin_strike(uid, cell))
+	if u.stage != "back" and u.stage != "site":
 		_button(box, "Recall %s to camp" % Units.names_text(u), func(): Units.recall_scouts(uid))
 
 

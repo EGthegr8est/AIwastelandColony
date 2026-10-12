@@ -181,13 +181,22 @@ const SITES := {
 	}},
 }
 
-# Injuries. Light: roll_mod to every roll for "days" game days. Severe: out of action for "out_days", then
-# roll_mod for "roll_mod_days" more. (Days are the design doc's unit; how that maps to the game's clock is
-# still an open question.)
-const INJURY := {
-	"light": {"roll_mod": -1, "days": 1},
-	"severe": {"out_days": 3, "roll_mod": -2, "roll_mod_days": 3},
+# Building raids. Destroying a building is one attack roll, d20 + a modifier against the building's DC here (a building
+# that isn't listed, such as an HQ, the Rust Kings' fort, the citadel, Dustwell or a point of interest, can't be
+# destroyed). A scouting party rolls like a fight, with its own traits. A raid or a raider band is a number: its
+# modifier is RAID_BONUS's value for the first row its strength reaches, in multiples of the defense it meets
+# (RAID_PENALTY below that). Stone walls (the f2 upgrade) make your own walls STONE_WALL_DC harder.
+const BUILDING_DC := {
+	"farm": 8, "lodge": 8, "horse_farm": 8, "salvage": 8, "market": 8,
+	"mine": 10, "refinery": 10, "motor_pool": 10, "port": 10, "airfield": 10,
+	"outpost": 11, "wall": 12, "tower": 12, "keep": 15, "ai_wall": 12,
 }
+const STONE_WALL_DC := 2
+const RAID_BONUS := [[2.0, 4], [1.5, 2], [1.0, 0]]
+const RAID_PENALTY := -2
+
+# An injury lasts until the party is home and costs the survivor SITUATION's injury_light / injury_severe on every roll.
+# Worst last: a worse injury replaces a lighter one, never the other way round.
 const INJURY_RANK := ["none", "light", "severe"]
 
 # Permadeath is on. A fatal fumble: a CRITICAL_FAILURE on a "check" against an enemy of DC "min_dc" or more (Hard

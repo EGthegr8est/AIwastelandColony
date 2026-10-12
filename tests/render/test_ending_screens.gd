@@ -2,8 +2,6 @@ extends "res://tests/framework/test_case.gd"
 ## The ending through the real HUD: the picture, a click, the stats, a click, the main menu, with the win or defeat
 ## music playing the whole way until the menu takes over.
 
-const Data = preload("res://scripts/data.gd")
-
 var main: Node2D
 var hud: Node
 

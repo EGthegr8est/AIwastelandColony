@@ -171,6 +171,58 @@ func test_a_site_is_one_check_in_the_panel_and_the_panel_says_what_it_gave() -> 
 	assert_eq(party.carry, {"metal": 9})
 
 
+func test_a_scout_party_next_to_a_raider_wall_attacks_it_through_the_panel() -> void:
+	Game.ai["walls"] = 8
+	Game._sync_ai_walls()
+	var wall := Vector2i(-1, -1)
+	for c in Game.owned(Data.AI):
+		if Game.tile(c)["b"] == "ai_wall":
+			wall = c
+			break
+	assert_true(Game.in_bounds(wall), "they have a Raider wall")
+	var spot := wall
+	for n in Game.neighbors(wall):
+		if Game.tile(n)["t"] != "water":
+			spot = n
+			break
+	Units.dice = ForcedDice.new([20, 5], [4])   # a natural 20, then the spoils (5 is metal, 4 on the dice)
+	party = Units._make_unit("scout", Data.PLAYER, "foot", spot, spot)
+	party.home = Game.home(Data.PLAYER)
+	party.crew = 3
+	party.survivors = Units._make_crew(3)
+	for s in party.survivors:
+		s.traits = []
+	party.stage = "station"
+	party.food = {"grain": 5}
+	Units.units.append(party)
+	Game.reveal(Data.PLAYER, spot, 3)
+	Game.select(spot)
+	Game.changed.emit()
+	await wait_frames(3)
+	_press("Attack the raider wall")
+	await wait_frames(3)
+	assert_eq(party.stage, "site")
+	var text := _tile_labels()
+	assert_has(text, "ATTACK")
+	assert_has(text, "Attack, DC 12")
+	assert_has(text, "Click the die to roll")
+	hud.dice.clicked.emit()
+	await wait_seconds(1.1)
+	assert_eq(hud.dice_phase, "landed")
+	assert_has(_tile_labels(), "The building comes down.")
+	await wait_seconds(1.0)
+	hud.dice.clicked.emit()
+	await wait_frames(3)
+	assert_has(_tile_labels(), "The building came down.")
+	assert_eq(Game.tile(wall)["b"], "ai_wall", "it falls when the party presses Continue")
+	_press("Continue")
+	await wait_frames(3)
+	assert_eq(party.stage, "station")
+	assert_eq(Game.tile(wall)["b"], "")
+	assert_eq(Game.ai["walls"], 4)
+	assert_eq(party.carry, {"metal": 12})
+
+
 func test_choices_that_are_not_rolls_are_buttons() -> void:
 	await _go_to_ruin(ForcedDice.new([]))
 	var view := Units.visit_view(party)

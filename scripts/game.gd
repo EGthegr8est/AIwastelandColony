@@ -9,6 +9,8 @@ signal tile_selected
 signal game_ended(kind: String)   # the game has ended: "raiders_defeated", "colony_prospers" or "defeat"
 
 const Data = preload("res://scripts/data.gd")
+const D20Data = preload("res://scripts/d20_data.gd")
+const D20 = preload("res://scripts/d20.gd")
 const SAVE_DIR := "user://saves/"
 
 var save_dir := SAVE_DIR       # tests point this at their own folder so they never touch real saves
@@ -46,6 +48,7 @@ var ending := {}               # {} while the game runs; {"kind", "why", "season
 var stats := {}                # what the stats screen after an ending shows, see new_stats()
 var prosper_streak := 0        # seasons in a row the Rust Kings have been too weak to threaten you
 var starved_now := false       # the colony starved this season
+var buildings_lost := 0        # your buildings destroyed this season, by anyone (capped by RAID_LOSS_CAP)
 
 # Fog of war. memory[viewer] has one entry per tile: null if that colony has never
 # seen it, otherwise [owner, building] as it looked the last time it was in sight.
@@ -78,6 +81,7 @@ func new_game(leader_id: String) -> void:
 	stats = new_stats()
 	prosper_streak = 0
 	starved_now = false
+	buildings_lost = 0
 	selected = Vector2i(-1, -1)
 	selected_scout = -1
 	preview = {}
@@ -97,6 +101,7 @@ func new_game(leader_id: String) -> void:
 	w = Data.MAP_W
 	h = Data.MAP_H
 	_generate_map()
+	_sync_ai_walls()
 	measured = PackedByteArray()
 	measured.resize(w * h)
 	show_radiation = false
@@ -977,7 +982,7 @@ func claim_status(c: Vector2i) -> String:
 	if t["o"] == Data.AI:
 		if not has("c5"):
 			return "Enemy land (Merchant empire lets you buy it)"
-		if ai["relations"] < 0 or t["b"] == "ai_hq":
+		if ai["relations"] < 0 or t["b"] in ["ai_hq", "ai_wall"]:
 			return "They won't sell this tile"
 	elif t["o"] != Data.NONE:
 		return "Owned by Dustwell"
@@ -1055,6 +1060,130 @@ func demolish(c: Vector2i) -> void:
 		t["b"] = ""
 		refinery_on.erase(idx(c))
 		changed.emit()
+
+
+# ---------------------------------------------------------------- destroying buildings
+
+## The DC to destroy the building on tile `c`, or 0 if it can't be destroyed (an HQ, the Rust Kings' fort, the
+## citadel, Dustwell, a point of interest, or no building at all).
+func building_dc(c: Vector2i) -> int:
+	var b: String = tile(c)["b"]
+	var dc: int = D20Data.BUILDING_DC.get(b, 0)
+	if b == "wall" and tile(c)["o"] == Data.PLAYER and has("f2"):
+		dc += D20Data.STONE_WALL_DC
+	return dc
+
+
+## Can `c` be attacked now? Your own buildings stop being targets once RAID_LOSS_CAP of them fell this season.
+func can_hit(c: Vector2i) -> bool:
+	if building_dc(c) <= 0:
+		return false
+	return tile(c)["o"] != Data.PLAYER or buildings_lost < Data.RAID_LOSS_CAP
+
+
+## What a raid or a raider band brings to an attack roll: RAID_BONUS for the first row its strength reaches, in
+## multiples of the defense it meets, and RAID_PENALTY below the last row.
+func raid_modifier(att: float, def: float) -> int:
+	if def <= 0.0:
+		return D20Data.RAID_BONUS[0][1]
+	var ratio := att / def
+	for row in D20Data.RAID_BONUS:
+		if ratio >= row[0]:
+			return row[1]
+	return D20Data.RAID_PENALTY
+
+
+## The buildings of `owner` that can be destroyed, nearest to `from` first.
+func buildings_of(owner: int, from: Vector2i) -> Array:
+	var out := []
+	for c in owned(owner):
+		if building_dc(c) > 0:
+			out.append(c)
+	out.sort_custom(func(a, b):
+		var da := Vector2(a - from).length()
+		var db := Vector2(b - from).length()
+		return da < db or (da == db and (a.y < b.y or (a.y == b.y and a.x < b.x))))
+	return out
+
+
+## One attack roll at the building on `c` by a party that is only a number (a raid, a raider band): d20 plus `mod`
+## against the building's DC, written to the log with the numbers. A hit destroys it. False if it can't be attacked.
+func attack_building(c: Vector2i, mod: int, who: String) -> bool:
+	if not can_hit(c):
+		return false
+	var dc := building_dc(c)
+	var total_mod := D20.clamp_mod(mod)
+	var d20: int = Units.dice.d20()
+	var tier := D20.tier_from_roll(d20, total_mod, dc)
+	var hit := tier == D20Data.SUCCESS or tier == D20Data.CRITICAL_SUCCESS
+	add_log("%s struck the %s at %d,%d: d20 %d %+d vs DC %d, %s." % [who, Data.BUILDINGS[tile(c)["b"]].name.to_lower(), c.x, c.y,
+		d20, total_mod, dc, "destroyed" if hit else "it held"])
+	if hit:
+		destroy_building(c)
+	return hit
+
+
+## Removes the building on `c` (the tile stays with its owner). Losing one of yours counts toward the season's cap;
+## a Raider wall takes its walls with it and costs you relations with the Rust Kings.
+func destroy_building(c: Vector2i) -> void:
+	if building_dc(c) <= 0:
+		return
+	var t := tile(c)
+	var b: String = t["b"]
+	t["b"] = ""
+	refinery_on.erase(idx(c))
+	if t["o"] == Data.PLAYER:
+		buildings_lost += 1
+		note("buildings_lost")
+	elif t["o"] == Data.AI:
+		note("enemy_buildings_destroyed")
+		ai["relations"] = maxi(ai["relations"] - Data.RAID_RELATIONS, -100)
+		if b == "ai_wall":
+			ai["walls"] = maxi(ai["walls"] - Data.WALLS_PER_TILE, 0)
+			_sync_ai_walls()
+	changed.emit()
+
+
+## A raider band that has beaten your guards at the edge of your land also rolls at the building nearest it.
+func raider_strike(from: Vector2i, att: float, def: float) -> void:
+	for c in buildings_of(Data.PLAYER, from).slice(0, 1):
+		attack_building(c, raid_modifier(att, def), "A raider band")
+
+
+## A won raid on the Rust Kings also rolls at their walls nearest your HQ: once, twice if you had double their defense.
+func _raid_strikes(att: float, def: float) -> void:
+	var rolls := 2 if att >= def * 2.0 else 1
+	var mod := raid_modifier(att, def)
+	for c in buildings_of(Data.AI, home(Data.PLAYER)).slice(0, rolls):
+		attack_building(c, mod, "Your raid")
+
+
+## The Rust Kings' walls are a number, and one Raider wall tile stands for WALLS_PER_TILE of them. This makes the tiles
+## match the number: any missing ones go on their land nearest your HQ (the side facing you), any extra ones go.
+func _sync_ai_walls() -> void:
+	if tiles.is_empty() or ai.is_empty():
+		return
+	var want := ceili(float(ai["walls"]) / Data.WALLS_PER_TILE)
+	var from := home(Data.PLAYER)
+	var standing := []
+	var free := []
+	for c in owned(Data.AI):
+		if tile(c)["b"] == "ai_wall":
+			standing.append(c)
+		elif tile(c)["b"] == "" and tile(c)["t"] != "water":
+			free.append(c)
+	var nearer := func(a: Vector2i, b: Vector2i) -> bool:
+		var da := Vector2(a - from).length()
+		var db := Vector2(b - from).length()
+		return da < db or (da == db and (a.y < b.y or (a.y == b.y and a.x < b.x)))
+	if standing.size() > want:
+		standing.sort_custom(func(a, b): return nearer.call(b, a))   # the ones furthest from you go first
+		for c in standing.slice(0, standing.size() - want):
+			tile(c)["b"] = ""
+	elif standing.size() < want:
+		free.sort_custom(nearer)
+		for c in free.slice(0, want - standing.size()):
+			tile(c)["b"] = "ai_wall"
 
 
 # ---------------------------------------------------------------- upgrade tree
@@ -1213,7 +1342,10 @@ func _take_land(from: int, to: int, count: int, keep_buildings: bool) -> int:
 		if t["b"] in ["hq", "ai_hq", "town", "citadel"] or not borders(c, to):
 			continue
 		t["o"] = to
-		if not keep_buildings:
+		if t["b"] == "ai_wall":
+			ai["walls"] = maxi(ai["walls"] - Data.WALLS_PER_TILE, 0)   # a Raider wall that changes hands takes its walls with it
+			t["b"] = "wall" if keep_buildings else ""
+		elif not keep_buildings:
 			t["b"] = ""
 		taken += 1
 	return taken
@@ -1243,6 +1375,7 @@ func raid_ai() -> void:
 		troops -= int(troops * 0.15)
 		var land := _take_land(Data.AI, Data.PLAYER, 3 if has("w5") else 1, has("w5"))
 		add_log("RAID WON! Looted %s, took %d prisoners and %d tiles." % [cost_text(loot), caught, land])
+		_raid_strikes(att, def)
 		if att >= def * Data.ENDINGS.decisive_win:
 			add_log("Your attack was overwhelming: the Rust Kings' fort has fallen.")
 			_end("raiders_defeated", "stormed")
@@ -1582,6 +1715,7 @@ func end_season() -> void:
 	Units.season_turn()
 	season += 1
 	raided_this_season = false
+	buildings_lost = 0
 	update_fog()
 	_update_peaks()
 	check_ending()
@@ -1752,12 +1886,39 @@ func _upkeep() -> void:
 				vehicles[v] -= 1
 				add_log("Couldn't maintain %s: one was lost." % Data.VEHICLES[v].name)
 
-	# Prisoners revolt if under-guarded
-	if prisoners > troops * 3 and randf() < 0.3:
+	# Too many prisoners and too few outposts round the HQ: a prison break. Otherwise they revolt if under-guarded
+	if prison_break_due():
+		_prison_break()
+	elif prisoners > troops * 3 and randf() < 0.3:
 		var escaped := prisoners / 2
 		prisoners -= escaped
 		troops = maxi(troops - 1, 0)
 		add_log("PRISONER REVOLT! %d escaped." % escaped)
+
+
+## Your outposts inside the circle of control round the HQ (PRISON_CIRCLE tiles).
+func outposts_in_circle() -> int:
+	var n := 0
+	for c in owned(Data.PLAYER):
+		if tile(c)["b"] == "outpost" and c.distance_to(home(Data.PLAYER)) <= Data.PRISON_CIRCLE:
+			n += 1
+	return n
+
+
+## More than PRISON_HIGH prisoners and fewer than PRISON_OUTPOSTS outposts in the circle: the pens will not hold.
+func prison_break_due() -> bool:
+	return prisoners > Data.PRISON_HIGH and outposts_in_circle() < Data.PRISON_OUTPOSTS
+
+
+## Half the prisoners (rounded up) get out and you lose a guard. They form a raider band at the edge of your land.
+func _prison_break() -> void:
+	var escaped := ceili(prisoners * Data.PRISON_ESCAPE)
+	prisoners -= escaped
+	troops = maxi(troops - 1, 0)
+	if Units.spawn_escaped_band(escaped):
+		add_log("PRISON BREAK! %d prisoners got out of the overfull pens and gathered at the edge of your land as a raider band." % escaped)
+	else:
+		add_log("PRISON BREAK! %d prisoners got out of the overfull pens and scattered into the wastes." % escaped)
 
 
 func _ai_turn() -> void:
@@ -1791,6 +1952,7 @@ func _ai_turn() -> void:
 	if not free.is_empty():
 		tile(free.pick_random())["o"] = Data.AI
 	ai["relations"] = maxi(ai["relations"] - 2, -100)
+	_sync_ai_walls()
 	for i in 2 + mini(ai["horse"], 2):
 		_ai_scout()
 
@@ -1813,7 +1975,7 @@ func _ai_turn() -> void:
 func new_stats() -> Dictionary:
 	return {"raids_won": 0, "raids_lost": 0, "raids_beaten_back": 0, "raids_suffered": 0, "bands_driven_off": 0,
 		"tribes_scattered": 0, "tribes_joined": 0, "prisoners_taken": 0, "troops_trained": 0, "survivors_lost": 0,
-		"colonists_starved": 0, "ruins_scavenged": 0, "sites_scavenged": 0, "rolls": 0, "natural_20s": 0, "natural_1s": 0,
+		"colonists_starved": 0, "buildings_lost": 0, "enemy_buildings_destroyed": 0, "ruins_scavenged": 0, "sites_scavenged": 0, "rolls": 0, "natural_20s": 0, "natural_1s": 0,
 		"buildings_built": 0, "tiles_claimed": 0, "upgrades": 0, "vehicles_built": 0, "trade_runs": 0,
 		"peak_pop": pop, "peak_land": 0, "peak_troops": troops,
 		"sent": {"scav": 0, "scout": 0, "caravan": 0, "boat": 0, "plane": 0}, "gathered": {}}
@@ -1919,7 +2081,7 @@ func save_game(slot: String) -> void:
 		"prisoners": prisoners, "res": res, "upgrades": upgrades, "vehicles": vehicles,
 		"units": Units.to_save(), "raided": raided_this_season, "ai": ai, "town": town,
 		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts,
-		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak,
+		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost,
 		"memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
 	}
 	var f := FileAccess.open(_path(slot), FileAccess.WRITE)
@@ -1962,6 +2124,7 @@ func load_game(slot: String) -> bool:
 	preview = {}
 	catastrophes = data.get("catastrophes", []).map(_unpack_catastrophe)   # none in older saves
 	_find_bases()
+	_sync_ai_walls()   # saves from before the Raider walls get their tiles
 	_seed_ruins()   # fills in ruins dangers for saves from before they existed
 	if data["tiles"][0].size() <= 5:
 		_pass_radiation()   # saves from before radiation
@@ -1984,6 +2147,7 @@ func load_game(slot: String) -> bool:
 	ending = {}
 	stats = _load_stats(data.get("stats", {}))
 	prosper_streak = int(data.get("prosper_streak", 0))
+	buildings_lost = int(data.get("buildings_lost", 0))
 	starved_now = false
 	refinery_on = {}
 	for i in data.get("refineries_on", []):   # saves from before the switch have every refinery off
