@@ -1,0 +1,558 @@
+extends Node2D
+## Draws the map: a pixel-art sprite per tile on a dark cell (art/atlas.png, see sprites.gd), or, with
+## the text glyphs chosen, Dwarf Fortress style, one colored glyph per tile. Buildings have no sprites
+## yet, so they are always drawn as text.
+
+const Data = preload("res://scripts/data.gd")
+const Sprites = preload("res://scripts/sprites.gd")
+# Sprites are 8 x 8, so a 16 pixel cell shows them at exactly 2x: every art pixel the same size,
+# and tiles that meet without gaps.
+const CELL := Vector2(16, 16)
+const FONT_SIZE := 16
+# Indexed by owner: none, player, AI, town
+const OWNER_BG := [Color("15100b"), Color("1d2814"), Color("33140f"), Color("132030")]
+const OWNER_EDGE := [Color(0, 0, 0, 0), Color("8fbf3a"), Color("d0402b"), Color("5a8fc5")]
+const SELECT := Color("ffb642")
+const FOG := Color("050403")
+# Where each way of travel puts its route dot inside a tile, so overlapping routes stay visible
+const ROUTE_DOT := {"foot": Vector2(3, 13), "horse": Vector2(8, 13), "car": Vector2(13, 13)}
+# A picked scouting party's route: white while its pack is full, yellow as it runs down, red once it's empty
+const FOOD_FULL := Color("ffffff")
+const FOOD_LOW := Color("ffe03a")
+const FOOD_OUT := Color("ff3a2a")
+const SCOUT_DOT := Vector2(8, 13)
+# What sprites are tinted with when the viewer can't see their tile right now (remembered ground, and
+# camps and your own parties out of sight)
+const SPRITE_DIM := Color(0.4, 0.4, 0.4)
+const UNIT_DIM := Color(0.6, 0.6, 0.6)
+# Slope marks are bright yellow and would drown out the ground they lie on, so they're half see-through
+# (the old contour lines were a quiet shade of the ground too)
+const SLOPE_TINT := Color(1, 1, 1, 0.5)
+const SLOPE_DIM := Color(0.4, 0.4, 0.4, 0.5)
+const CHUNK := 16   # the map is drawn in squares of CHUNK x CHUNK tiles
+
+var font := SystemFont.new()
+var hover := Vector2i(-1, -1)
+var pipe_scale := Vector2.ONE   # stretches box-drawing glyphs to fill a whole cell
+var pipe_ascent := 0.0
+var last_view := Transform2D()
+var tile_layer := Node2D.new()          # holds the chunks
+var chunks: Array[Chunk] = []
+var chunk_map_size := Vector2i.ZERO     # the map size the chunks were made for
+var chunks_across := 0
+var stale := false                      # some chunk has dirty set
+var check_needed := false               # the game changed: look for chunks that changed
+var checked_view := -1                  # Game.view, Game.map_version and Sprites.state() at the last check
+var checked_map := -1
+var checked_art := -1
+var overlay_layer := OverlayLayer.new()
+var _standing := {}                     # cache of _overlay() for the frame in _standing_frame
+var _standing_frame := -1
+# What each tile shows when nothing is built or standing on it. Terrain and contours only change
+# with a new map, so this is worked out once per Game.map_version instead of on every redraw.
+var ground_glyphs := PackedStringArray()
+var ground_colors := PackedColorArray()   # in sight
+var ground_dim := PackedColorArray()      # remembered but out of sight
+var ground_pipes := PackedByteArray()     # 1 where the glyph is a contour pipe
+var ground_bg := PackedColorArray()       # terrain color and height wash over the owner's background
+var ground_bg_dim := PackedColorArray()
+var ground_sprite := PackedStringArray()  # the atlas sprite for the terrain
+var ground_slope := PackedStringArray()   # the atlas sprite for the slope laid over it, or ""
+var ground_map := -1
+var bg_dim: Array[Color] = []             # OWNER_BG and OWNER_EDGE for tiles out of sight
+var edge_dim: Array[Color] = []
+## Render counters for tests and benchmarks: tile-layer redraws, tiles drawn and the CPU time
+## spent drawing them, plus overlay (hover, selection, routes) redraws.
+var stats := {"tile_draws": 0, "tiles": 0, "usec": 0, "overlay_draws": 0}
+
+
+## A square of tiles that draws itself once and keeps the result until the map changes. The
+## renderer skips chunks that are off screen, so panning and zooming cost nothing.
+class Chunk:
+	extends Node2D
+	var map: Node2D
+	var tiles: Rect2i     # which tiles it covers
+	var area: Rect2       # the same, in pixels, grown a cell for glyphs and borders that spill over
+	var dirty := false    # out of date: redraw it next time it's on screen
+	var signature := 0    # hash of everything it shows, from the last check
+
+	func _draw() -> void:
+		map.draw_chunk(self)
+
+
+## What one chunk will draw, collected tile by tile and then drawn in passes (see draw_chunk).
+class Batch:
+	var rects := {}                              # atlas sprite -> its rectangle in the atlas, or empty for text glyphs
+	var glyphs := []                             # [position, glyph, color, is pipe] per piece of text
+	var lines := PackedVector2Array()            # border segments, two points each
+	var line_colors := PackedColorArray()        # one per segment
+	var sprite_pos := PackedVector2Array()       # where each sprite goes
+	var sprite_src: Array[Rect2] = []            # which part of the atlas it is
+	var sprite_tint := PackedColorArray()        # dimmed when out of sight
+	var poi_pos := PackedVector2Array()          # where each quarter of a point-of-interest sprite goes
+	var poi_src: Array[Rect2] = []               # which 8 x 8 piece of the points-of-interest atlas it is
+	var poi_tint := PackedColorArray()           # dimmed when out of sight
+	var heat_pos := PackedVector2Array()         # radiation tints that go over the sprites
+	var heat_color := PackedColorArray()
+
+	func add_sprite(pos: Vector2, sprite: String, tint: Color) -> void:
+		sprite_pos.append(pos)
+		sprite_src.append(rects[sprite])
+		sprite_tint.append(tint)
+
+	func add_poi(pos: Vector2, src: Rect2, tint: Color) -> void:
+		poi_pos.append(pos)
+		poi_src.append(src)
+		poi_tint.append(tint)
+
+
+## Draws the hover box, selection box and route dots over the tiles. It's a canvas item of its
+## own, so moving the mouse redraws a handful of shapes instead of every tile on screen.
+class OverlayLayer:
+	extends Node2D
+	var map: Node2D
+
+	func _draw() -> void:
+		map.draw_overlay(self)
+
+
+func _ready() -> void:
+	font.font_names = PackedStringArray(["Consolas", "DejaVu Sans Mono", "Courier New", "monospace"])
+	Game.changed.connect(func(): check_needed = true)
+	add_child(tile_layer)
+	overlay_layer.map = self
+	add_child(overlay_layer)
+	Game.changed.connect(overlay_layer.queue_redraw)
+	# A monospace glyph is narrower than our square cell, so pipes would leave gaps.
+	# Scale them so the glyph box exactly covers the cell, like a square DF tileset.
+	var glyph_box := font.get_string_size("─", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE)
+	pipe_scale = CELL / glyph_box
+	pipe_ascent = font.get_ascent(FONT_SIZE)
+	for owner in OWNER_BG.size():
+		bg_dim.append(OWNER_BG[owner].darkened(0.4))
+		edge_dim.append(OWNER_EDGE[owner].darkened(0.5))
+
+
+## Chunks keep what they drew, so moving the camera redraws nothing. When the game changes,
+## the chunks on screen redraw right away and the rest wait until they scroll into view.
+func _process(_delta: float) -> void:
+	tile_layer.visible = Game.in_game
+	if not Game.in_game:
+		return
+	if chunk_map_size != Vector2i(Game.w, Game.h):
+		_make_chunks()
+	if check_needed:
+		_find_changed_chunks()
+	if not stale and get_canvas_transform() == last_view:
+		return
+	last_view = get_canvas_transform()
+	var inv := last_view.affine_inverse()
+	var screen := get_viewport_rect()
+	var on_screen := Rect2(inv * screen.position, Vector2.ZERO).expand(inv * screen.end)
+	stale = false
+	for chunk in chunks:
+		if not chunk.dirty:
+			continue
+		if chunk.area.intersects(on_screen):
+			chunk.dirty = false
+			chunk.queue_redraw()
+		else:
+			stale = true
+
+
+## One chunk per CHUNK x CHUNK tiles (smaller at the right and bottom edges).
+func _make_chunks() -> void:
+	for chunk in chunks:
+		chunk.free()
+	chunks = []
+	chunk_map_size = Vector2i(Game.w, Game.h)
+	chunks_across = ceili(Game.w / float(CHUNK))
+	for y in range(0, Game.h, CHUNK):
+		for x in range(0, Game.w, CHUNK):
+			var chunk := Chunk.new()
+			chunk.map = self
+			chunk.tiles = Rect2i(x, y, mini(CHUNK, Game.w - x), mini(CHUNK, Game.h - y))
+			chunk.area = Rect2(Vector2(chunk.tiles.position) * CELL, Vector2(chunk.tiles.size) * CELL).grow(CELL.x)
+			chunks.append(chunk)
+			tile_layer.add_child(chunk)   # entering the tree draws it
+	_find_changed_chunks()   # note what they're drawing now, so the next change compares against it
+
+
+## Marks the chunks whose look changed. Most game changes (selecting a tile, trading, training
+## troops) leave the map alone, and hashing what each chunk shows costs far less than drawing it.
+func _find_changed_chunks() -> void:
+	var t0 := Time.get_ticks_usec()
+	check_needed = false
+	# A new view, a new map, or a different art style (or none) changes every tile
+	var art := Sprites.state()
+	var everything := Game.view != checked_view or Game.map_version != checked_map or art != checked_art
+	checked_view = Game.view
+	checked_map = Game.map_version
+	if art != checked_art:
+		checked_art = art
+		# Pixel art needs nearest-neighbour filtering to stay crisp. The text glyphs keep the default.
+		tile_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if art > 0 else CanvasItem.TEXTURE_FILTER_PARENT_NODE
+	var standing := {}   # chunk index -> what stands in it
+	var on_tiles := _standing_now()
+	for c in on_tiles:
+		var i: int = (c.y / CHUNK) * chunks_across + c.x / CHUNK
+		if not standing.has(i):
+			standing[i] = []
+		standing[i].append([c, on_tiles[c]])
+	for i in chunks.size():
+		var sig := _signature(chunks[i], standing.get(i, []))
+		if everything or sig != chunks[i].signature:
+			chunks[i].signature = sig
+			chunks[i].dirty = true
+			stale = true
+	stats.usec += Time.get_ticks_usec() - t0
+
+
+## A hash of everything that decides how a chunk looks: what the viewer knows and sees of its
+## tiles, plus the ring around it (border lines depend on neighbours), and what stands in it.
+## Terrain and contours only change with a new map, which redraws everything anyway.
+func _signature(chunk: Chunk, standing: Array) -> int:
+	var r := chunk.tiles.grow(1).intersection(Rect2i(0, 0, Game.w, Game.h))
+	var parts := [standing, Game.show_radiation]
+	for y in range(r.position.y, r.end.y):
+		var a := y * Game.w + r.position.x
+		if Game.show_radiation:
+			parts.append(Game.measured.slice(a, a + r.size.x))
+		if Game.view == Data.NONE:
+			parts.append(Game.tiles.slice(a, a + r.size.x))
+		else:
+			parts.append(Game.memory[Game.view].slice(a, a + r.size.x))
+			parts.append(Game.sight[Game.view].slice(a, a + r.size.x))
+	return hash(parts)
+
+
+func _mark_all_stale() -> void:
+	for chunk in chunks:
+		chunk.dirty = true
+	stale = true
+
+
+## A chunk's drawing: every tile it covers. It goes in passes (all backgrounds, then all sprites,
+## then all glyphs, then all border lines in one command) because the renderer can only batch runs
+## of the same kind of primitive. Interleaving them tile by tile cost about one draw call per
+## primitive. Every sprite comes from the one atlas texture, so they batch together too.
+func draw_chunk(chunk: Chunk) -> void:
+	if not Game.in_game:
+		chunk.dirty = true
+		return
+	var t0 := Time.get_ticks_usec()
+	if ground_map != Game.map_version:
+		_build_ground()
+	var standing := _standing_now()
+	# The viewer's memory and sight, fetched once: empty for the no-fog debug view
+	var mem: Array = [] if Game.view == Data.NONE else Game.memory[Game.view]
+	var seen: PackedByteArray = PackedByteArray() if Game.view == Data.NONE else Game.sight[Game.view]
+	var batch := Batch.new()
+	batch.rects = Sprites.rects()
+	var r := chunk.tiles
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			_draw_tile(chunk, Vector2i(x, y), mem, seen, standing, batch)
+	if not batch.sprite_pos.is_empty():
+		var atlas := Sprites.atlas_texture()
+		for k in batch.sprite_pos.size():
+			chunk.draw_texture_rect_region(atlas, Rect2(batch.sprite_pos[k], CELL), batch.sprite_src[k], batch.sprite_tint[k])
+	if not batch.poi_pos.is_empty():
+		var poi_atlas := Sprites.poi_atlas_texture()
+		for k in batch.poi_pos.size():
+			chunk.draw_texture_rect_region(poi_atlas, Rect2(batch.poi_pos[k], CELL), batch.poi_src[k], batch.poi_tint[k])
+	for k in batch.heat_pos.size():
+		chunk.draw_rect(Rect2(batch.heat_pos[k], CELL), batch.heat_color[k])
+	for g in batch.glyphs:
+		if g[3]:
+			chunk.draw_set_transform(g[0] + Vector2(0, pipe_ascent * pipe_scale.y), 0.0, pipe_scale)
+			chunk.draw_string(font, Vector2.ZERO, g[1], HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, g[2])
+			chunk.draw_set_transform(Vector2.ZERO)
+		else:
+			chunk.draw_string(font, g[0] + Vector2(0, CELL.y * 0.8), g[1], HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, g[2])
+	if not batch.lines.is_empty():
+		chunk.draw_multiline_colors(batch.lines, batch.line_colors, 1.0)
+	chunk.dirty = false
+	stats.tile_draws += 1
+	stats.tiles += r.get_area()
+	stats.usec += Time.get_ticks_usec() - t0
+
+
+## The color of a route dot once `ratio` of the party's food would be eaten (0 = none, 1 = all of it):
+## white to yellow by FOOD_WARN, then yellow to red at 1, and red beyond.
+static func food_color(ratio: float) -> Color:
+	if ratio >= 1.0:
+		return FOOD_OUT
+	if ratio <= Data.FOOD_WARN:
+		return FOOD_FULL.lerp(FOOD_LOW, ratio / Data.FOOD_WARN)
+	return FOOD_LOW.lerp(FOOD_OUT, (ratio - Data.FOOD_WARN) / (1.0 - Data.FOOD_WARN))
+
+
+## The overlay layer's drawing: routes from your HQ to the selected tile (one dotted line per
+## way of travel) or, with a scouting party picked, its own route coloured by its food, then the
+## hover and selection boxes.
+func draw_overlay(layer: CanvasItem) -> void:
+	if not Game.in_game:
+		return
+	var t0 := Time.get_ticks_usec()
+	for mover in Game.preview:
+		for p in Game.preview[mover].slice(1):
+			if _known(p) != null:
+				layer.draw_circle(Vector2(p) * CELL + ROUTE_DOT[mover], 2.0, Data.MOVERS[mover].color)
+	_draw_scout_route(layer)
+	if Game.in_bounds(hover):
+		layer.draw_rect(Rect2(Vector2(hover) * CELL, CELL), Color(1, 0.8, 0.4, 0.35), false, 1.0)
+	if Game.in_bounds(Game.selected):
+		layer.draw_rect(Rect2(Vector2(Game.selected) * CELL, CELL), SELECT, false, 2.0)
+	stats.overlay_draws += 1
+	stats.usec += Time.get_ticks_usec() - t0
+
+
+## The picked party's route, a dot per tile from where it stands. Unlike the HQ routes it is drawn
+## through unexplored ground too, because the point is to see how far the food goes. A ring marks
+## the tile where the pack runs out.
+func _draw_scout_route(layer: CanvasItem) -> void:
+	var route: Dictionary = Game.scout_route
+	if route.is_empty():
+		return
+	var ringed := false
+	for i in range(1, route.path.size()):
+		var ratio: float = route.ratio[i]
+		var at: Vector2 = Vector2(route.path[i]) * CELL
+		layer.draw_circle(at + SCOUT_DOT, 2.5, food_color(ratio))
+		if ratio >= 1.0 and not ringed:
+			ringed = true
+			layer.draw_arc(at + CELL * 0.5, CELL.x * 0.5, 0.0, TAU, 20, FOOD_OUT, 1.5)
+
+
+## Throw away anything cached and redraw the whole map.
+func redraw_all() -> void:
+	_mark_all_stale()
+	overlay_layer.queue_redraw()
+
+
+## What the current viewer believes is on a tile: [owner, building], or null if never seen.
+## Tiles out of sight show what was there last time, so enemy land can change behind the fog.
+func _known(c: Vector2i):
+	if Game.view == Data.NONE:
+		return [Game.tile(c)["o"], Game.tile(c)["b"]]
+	return Game.memory[Game.view][Game.idx(c)]
+
+
+## _overlay(), worked out once per frame however many chunks redraw.
+func _standing_now() -> Dictionary:
+	if _standing_frame != Engine.get_process_frames():
+		_standing_frame = Engine.get_process_frames()
+		_standing = _overlay()
+	return _standing
+
+
+## Tribe camps and things on the move, by cell: [glyph, color, sprite]. Camps show on explored
+## tiles; moving units only where the viewer can see right now (your own are always shown).
+func _overlay() -> Dictionary:
+	var out := {}
+	for t in Units.tribes:
+		if Game.view == Data.NONE or Game.knows_tile(Game.view, t.pos):
+			var cls: Dictionary = Data.TRIBE_CLASSES[t.class]
+			out[t.pos] = [cls.glyph, cls.color, Sprites.CAMPS[t.class]]
+	for u in Units.units:
+		if Game.view == Data.NONE or u.owner == Game.view or Game.in_sight(Game.view, u.pos):
+			var id := Units.glyph_kind(u)
+			var kind: Dictionary = Data.UNITS[id]
+			out[u.pos] = [kind.glyph, kind.color, Sprites.UNITS[id]]
+	return out
+
+
+## The ground glyph and shades of every tile, for the current map.
+func _build_ground() -> void:
+	ground_map = Game.map_version
+	var n := Game.w * Game.h
+	ground_glyphs.resize(n)
+	ground_colors.resize(n)
+	ground_dim.resize(n)
+	ground_pipes.resize(n)
+	ground_bg.resize(n)
+	ground_bg_dim.resize(n)
+	ground_sprite.resize(n)
+	ground_slope.resize(n)
+	var z_min := 1000000
+	var z_max := -1000000
+	for t in Game.tiles:
+		if t["t"] != "water":
+			z_min = mini(z_min, t["z"])
+			z_max = maxi(z_max, t["z"])
+	for i in n:
+		var terrain_id: String = Game.tiles[i]["t"]
+		var contour: String = Game.contours[i]
+		var color: Color
+		if contour != "" and terrain_id != "water":
+			# Height contour: drawn in the terrain's color so you can still tell rock from sand
+			ground_glyphs[i] = contour
+			color = Data.TERRAIN[terrain_id].color.lightened(0.1)
+			ground_pipes[i] = 1
+		else:
+			# Pick a glyph and shade from a hash of the position so the ground looks varied
+			var terrain: Dictionary = Data.TERRAIN[terrain_id]
+			var hash_val := absi(i % Game.w * 73856093 ^ i / Game.w * 19349663)
+			ground_glyphs[i] = terrain.glyph[hash_val % terrain.glyph.length()]
+			color = terrain.color.darkened((hash_val % 5) * 0.07)
+			ground_pipes[i] = 0
+		ground_sprite[i] = Sprites.TERRAIN[terrain_id]
+		ground_slope[i] = Sprites.SLOPES.get(Game.slopes[i], "")   # slopes[i] is "" where no contour runs
+		ground_colors[i] = color
+		ground_dim[i] = color.darkened(0.6)   # remembered, not currently seen
+		var bg := _ground_bg(terrain_id, inverse_lerp(z_min, z_max, Game.tiles[i]["z"]))
+		ground_bg[i] = bg
+		ground_bg_dim[i] = Color(bg.r * 0.4, bg.g * 0.4, bg.b * 0.4, bg.a)
+
+
+## The wash drawn over a tile's background: the terrain's own color (if it has one) with sand
+## on top whose opacity grows with height. `height` runs 0 (lowest land) to 1 (highest).
+static func _ground_bg(terrain_id: String, height: float) -> Color:
+	var base: Color = Data.TERRAIN[terrain_id].get("bg", Color(0, 0, 0, 0))
+	if terrain_id == "water":
+		return base   # water has no height wash
+	var alpha := lerpf(Data.SAND_ALPHA.x, Data.SAND_ALPHA.y, clampf(height, 0.0, 1.0))
+	if base.a > 0.0:
+		alpha *= Data.SAND_OVER_BG
+	else:
+		base = Color(Data.SAND, 0.0)
+	# Composite sand over the base into one color, so a tile needs just one extra rectangle
+	var out_a := alpha + base.a * (1.0 - alpha)
+	var rgb := (Vector3(Data.SAND.r, Data.SAND.g, Data.SAND.b) * alpha
+		+ Vector3(base.r, base.g, base.b) * base.a * (1.0 - alpha)) / out_a
+	return Color(rgb.x, rgb.y, rgb.z, out_a)
+
+
+## The radiation overlay's tint for tile i: its band's color, only where the viewer has a reading
+## (the no-fog debug view shows everything).
+func _rad_tint(i: int) -> Color:
+	var r := -1
+	if Game.view == Data.NONE or (Game.view == Data.PLAYER and Game.measured[i] == 1):
+		r = Game.tiles[i]["rad"]
+	if r < 0:
+		return Color(0, 0, 0, 0)
+	return Color(Game.rad_band(r)[1], 0.3 if r < Data.RAD_SAFE else 0.5)
+
+
+## Who the viewer believes owns tile i, or -1 if they've never seen it. `mem` is the viewer's
+## memory, or empty for the no-fog view.
+func _owner_at(i: int, mem: Array) -> int:
+	if mem.is_empty():
+		return Game.tiles[i]["o"]
+	return -1 if mem[i] == null else mem[i][0]
+
+
+## Draws a tile's background now and queues its sprites, glyph and border lines for the later passes.
+## `mem` and `seen` are the viewer's memory and sight, both empty for the no-fog view.
+func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArray,
+		overlay: Dictionary, batch: Batch) -> void:
+	var pos := Vector2(c) * CELL
+	var w := Game.w
+	var i := c.y * w + c.x
+	var owner: int
+	var building: String
+	if mem.is_empty():
+		owner = Game.tiles[i]["o"]
+		building = Game.tiles[i]["b"]
+	elif mem[i] == null:
+		canvas.draw_rect(Rect2(pos, CELL), FOG)
+		return
+	else:
+		owner = mem[i][0]
+		building = mem[i][1]
+	var out_of_sight := not seen.is_empty() and seen[i] == 0
+	canvas.draw_rect(Rect2(pos, CELL), bg_dim[owner] if out_of_sight else OWNER_BG[owner])
+	var wash: Color = ground_bg_dim[i] if out_of_sight else ground_bg[i]
+	if wash.a > 0.0:
+		canvas.draw_rect(Rect2(pos, CELL), wash)
+	var pixel_art := not batch.rects.is_empty()
+	if Game.show_radiation:
+		var heat := _rad_tint(i)
+		if heat.a > 0.0:
+			if out_of_sight:
+				heat = Color(heat.r * 0.5, heat.g * 0.5, heat.b * 0.5, heat.a)
+			if pixel_art:
+				batch.heat_pos.append(pos)   # over the sprite, which would hide it from underneath
+				batch.heat_color.append(heat)
+			else:
+				canvas.draw_rect(Rect2(pos, CELL), heat)
+
+	var glyph: String
+	var color: Color
+	var is_pipe := false
+	if overlay.has(c):
+		# Something is standing here: draw it over the ground, like a creature in Dwarf Fortress
+		canvas.draw_rect(Rect2(pos + Vector2(2, 2), CELL - Vector2(4, 4)), Color(0, 0, 0, 0.7))
+		if pixel_art:
+			batch.add_sprite(pos, overlay[c][2], UNIT_DIM if out_of_sight else Color.WHITE)
+		else:
+			glyph = overlay[c][0]
+			color = overlay[c][1].darkened(0.4 if out_of_sight else 0.0)
+	elif building != "" and Data.BUILDINGS[building].has("poi"):
+		# A point of interest: each of its four tiles draws its quarter of the 16 x 16 sprite over the ground
+		# (in text mode just the top-left tile shows the site's letter)
+		var q := Game.poi_quadrant(c)
+		var src := Sprites.poi_quadrant_rect(Data.BUILDINGS[building].poi, q) if pixel_art else Rect2()
+		if src.size != Vector2.ZERO:
+			batch.add_sprite(pos, ground_sprite[i], SPRITE_DIM if out_of_sight else Color.WHITE)
+			if ground_slope[i] != "":
+				batch.add_sprite(pos, ground_slope[i], SLOPE_DIM if out_of_sight else SLOPE_TINT)
+			batch.add_poi(pos, src, SPRITE_DIM if out_of_sight else Color.WHITE)
+		elif q == Vector2i.ZERO:
+			glyph = Data.BUILDINGS[building].glyph
+			color = Data.BUILDINGS[building].color.darkened(0.6 if out_of_sight else 0.0)
+		else:
+			glyph = ground_glyphs[i]
+			color = ground_dim[i] if out_of_sight else ground_colors[i]
+			is_pipe = ground_pipes[i] == 1
+	elif building != "":
+		# No building art yet: they stay text, on the plain ground
+		glyph = Data.BUILDINGS[building].glyph
+		color = Data.BUILDINGS[building].color
+		if out_of_sight:
+			color = color.darkened(0.6)
+	elif pixel_art:
+		var tint := SPRITE_DIM if out_of_sight else Color.WHITE
+		batch.add_sprite(pos, ground_sprite[i], tint)
+		if ground_slope[i] != "":
+			batch.add_sprite(pos, ground_slope[i], SLOPE_DIM if out_of_sight else SLOPE_TINT)
+	else:
+		glyph = ground_glyphs[i]
+		color = ground_dim[i] if out_of_sight else ground_colors[i]
+		is_pipe = ground_pipes[i] == 1
+	if glyph != "":
+		batch.glyphs.append([pos, glyph, color, is_pipe])
+
+	# Territory border lines where (known) ownership changes, and at the map edge
+	if owner == Data.NONE:
+		return
+	var edge: Color = edge_dim[owner] if out_of_sight else OWNER_EDGE[owner]
+	if c.y == 0 or _owner_at(i - w, mem) != owner:
+		_add_line(batch.lines, batch.line_colors, pos, pos + Vector2(CELL.x, 0), edge)
+	if c.y == Game.h - 1 or _owner_at(i + w, mem) != owner:
+		_add_line(batch.lines, batch.line_colors, pos + Vector2(0, CELL.y), pos + CELL, edge)
+	if c.x == 0 or _owner_at(i - 1, mem) != owner:
+		_add_line(batch.lines, batch.line_colors, pos, pos + Vector2(0, CELL.y), edge)
+	if c.x == w - 1 or _owner_at(i + 1, mem) != owner:
+		_add_line(batch.lines, batch.line_colors, pos + Vector2(CELL.x, 0), pos + CELL, edge)
+
+
+static func _add_line(lines: PackedVector2Array, colors: PackedColorArray, from: Vector2, to: Vector2, color: Color) -> void:
+	lines.append(from)
+	lines.append(to)
+	colors.append(color)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not Game.in_game:
+		return
+	if event is InputEventMouseMotion:
+		var c := Vector2i((get_global_mouse_position() / CELL).floor())
+		if c != hover:
+			hover = c
+			overlay_layer.queue_redraw()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var c := Vector2i((get_global_mouse_position() / CELL).floor())
+		if Game.in_bounds(c):
+			Game.select(c)

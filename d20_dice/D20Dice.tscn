@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://d20_dice/d20_dice.gd" id="1_script"]
+[ext_resource type="SpriteFrames" path="res://d20_dice/d20_sprite_frames.tres" id="2_frames"]
+
+[node name="D20Dice" type="Control"]
+custom_minimum_size = Vector2(64, 80)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 64.0
+offset_bottom = 80.0
+texture_filter = 1
+script = ExtResource("1_script")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(32, 40)
+sprite_frames = ExtResource("2_frames")
+animation = &"idle"

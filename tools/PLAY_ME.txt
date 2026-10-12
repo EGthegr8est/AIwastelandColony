@@ -1,0 +1,37 @@
+WASTELAND COLONY
+A post-nuclear colony sandbox. Coded with AI by Eric B.
+
+HOW TO PLAY
+1. Unzip the whole folder somewhere (Desktop is fine). Don't run it from inside the zip.
+2. Double-click WastelandColony.exe.
+3. Click "New colony", pick a leader, and go.
+
+There is nothing to install, and no other program is needed.
+
+WINDOWS WARNING ("Windows protected your PC")
+The game isn't code-signed (that costs money), so Windows may show a blue warning the
+first time. Click "More info", then "Run anyway". Some antivirus programs also complain
+about new, unsigned programs; it's a false alarm. If one blocks it, allow it.
+
+WHAT YOU NEED
+Windows 10 or 11 (64-bit) and a graphics card from the last 8 years or so (it needs Vulkan).
+
+THE BASICS
+- Pan the map: WASD / arrow keys, or right-drag. Zoom: mouse wheel.
+- Left-click a tile to look at it, claim it or build on it.
+- END SEASON (top right) moves time on. The game autosaves every season.
+- Menu (top right) goes back to the title screen: Resume, Load, Quit.
+- Click a scouting party to pick it, then click somewhere to see how far its food goes.
+  Esc lets go.
+- The ART button switches the map between three pixel-art styles and old-school text.
+- The MUSIC slider is in the top bar (and on the menu screens). All the way down is off.
+
+YOUR SAVES
+They live in your user folder, not in the game folder:
+    %APPDATA%\Godot\app_userdata\Wasteland Colony\
+To remove the game, delete the game folder. To wipe saves too, delete that folder as well.
+
+IF SOMETHING GOES WRONG
+Open a command prompt in the game folder and run:
+    WastelandColony.exe -- --selftest
+and send Eric what it prints (it checks that the art, music and data all loaded).

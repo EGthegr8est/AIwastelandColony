@@ -1,0 +1,254 @@
+extends RefCounted
+## Every number of the d20 roll system for scavenging and combat. The tables are the ones in the design doc
+## "D20 Roll System: Scavenging & Combat" and all of them are starting values to tune here. The logic in
+## d20.gd and d20_visit.gd reads these and never hardcodes a value.
+
+# Tier names, spelled exactly like this everywhere. Worst to best.
+const CRITICAL_FAILURE := "CRITICAL_FAILURE"
+const FAILURE := "FAILURE"
+const SUCCESS := "SUCCESS"
+const CRITICAL_SUCCESS := "CRITICAL_SUCCESS"
+const TIERS := ["CRITICAL_FAILURE", "FAILURE", "SUCCESS", "CRITICAL_SUCCESS"]
+
+# A natural 1 is always a CRITICAL_FAILURE and a natural 20 always a CRITICAL_SUCCESS. Otherwise the margin
+# (d20 + modifiers - DC) decides: CRIT_MARGIN or worse below the DC is critical, any other miss is a FAILURE,
+# a hit by up to CRIT_MARGIN - 1 is a SUCCESS, and CRIT_MARGIN or more over is critical.
+const NAT_FAIL := 1
+const NAT_CRIT := 20
+const CRIT_MARGIN := 6
+# Trait and situational modifiers together are clamped to -MOD_CLAMP..+MOD_CLAMP, so the d20 always matters.
+const MOD_CLAMP := 5
+
+const DC := {"easy": 8, "standard": 11, "hard": 14, "deadly": 17}
+
+# Situational modifiers (they stack with trait modifiers, inside the clamp).
+const SITUATION := {
+	"surprised_light": -2, "surprised_heavy": -4, "springs_ambush": 3, "outnumbered": -2, "night": -1,
+	"injury_light": -1, "injury_severe": -2,
+}
+
+# Which trait modifiers a check adds up.
+const CHECK_MODS := {
+	"combat": ["combat"],
+	"ambush": ["scavenge", "ambush"],
+	"trap": ["scavenge", "trap"],
+	"cache": ["scavenge"],
+	"site": ["scavenge"],
+}
+
+# What a scout runs into: a plain d20, no modifiers, so traits never change what exists at a site.
+const EVENT_TABLE := [
+	{"min": 1, "max": 3, "event": "ambush"},
+	{"min": 4, "max": 6, "event": "trap"},
+	{"min": 7, "max": 11, "event": "cache"},
+	{"min": 12, "max": 16, "event": "minor_find"},
+	{"min": 17, "max": 20, "event": "nothing"},
+]
+
+# Which resource a cache, a minor find or a disarmed trap holds: a plain d20. Metal is the main ruin resource
+# (the design doc had none); "veg" is the preserved vegetables, which sell for little, so it is the rare one.
+const RESOURCE_TABLE := [
+	{"min": 1, "max": 8, "resource": "metal"},
+	{"min": 9, "max": 12, "resource": "fuel"},
+	{"min": 13, "max": 17, "resource": "gold"},
+	{"min": 18, "max": 20, "resource": "veg"},
+]
+
+# Loot packages: the dice rolled once the size is known, per resource.
+const SIZES := ["small", "medium", "large"]
+const PACKAGES := {
+	"small": {"metal": "1d6", "fuel": "1d4", "gold": "1d6", "veg": "1d6"},
+	"medium": {"metal": "2d6", "fuel": "2d4", "gold": "2d6", "veg": "2d6"},
+	"large": {"metal": "4d6", "fuel": "4d4", "gold": "4d6", "veg": "4d6"},
+}
+# Every package roll is multiplied by this before the traits' multipliers. The design doc's dice are sized for a
+# leaner economy than this game's: x3 keeps an average ruin visit near 8.8 gold-equivalent against 10.7 before the
+# d20 system, and a player who searches deeper gets close to 10.
+const LOOT_SCALE := 3.0
+# Trait loot multipliers multiply together and never go above this.
+const LOOT_MULT_CAP := 2.0
+
+# What each tier does. "injury" is none, light or severe. "carried_loss" is the share of the loot the party was
+# already carrying that is lost, rounded down per resource.
+const COMBAT := {
+	"CRITICAL_FAILURE": {"injury": "severe", "carried_loss": 0.5, "enemy_package": "", "camp_revealed": false},
+	"FAILURE": {"injury": "light", "carried_loss": 0.25, "enemy_package": "", "camp_revealed": false},
+	"SUCCESS": {"injury": "none", "carried_loss": 0.0, "enemy_package": "small", "camp_revealed": false},
+	"CRITICAL_SUCCESS": {"injury": "none", "carried_loss": 0.0, "enemy_package": "medium", "camp_revealed": true},
+}
+
+# Ambush: "fight" is true for a forced fight, "choice" when the scout may fight or slip away. "situational" is
+# the modifier on that fight's combat check. A CRITICAL_SUCCESS also pays "bonus_package" on a win.
+const AMBUSH := {
+	"CRITICAL_FAILURE": {"fight": true, "situational": -4, "carried_loss": 0.25, "bonus_package": ""},
+	"FAILURE": {"fight": true, "situational": -2, "carried_loss": 0.0, "bonus_package": ""},
+	"SUCCESS": {"fight": "choice", "situational": 0, "carried_loss": 0.0, "bonus_package": ""},
+	"CRITICAL_SUCCESS": {"fight": true, "situational": 3, "carried_loss": 0.0, "bonus_package": "small"},
+}
+
+const TRAP := {
+	"CRITICAL_FAILURE": {"injury": "severe", "carried_loss": 0.25, "package": ""},
+	"FAILURE": {"injury": "light", "carried_loss": 0.0, "package": ""},
+	"SUCCESS": {"injury": "none", "carried_loss": 0.0, "package": ""},
+	"CRITICAL_SUCCESS": {"injury": "none", "carried_loss": 0.0, "package": "small"},
+}
+
+# Cache: "package" is the size of the rolled resource, "extra_package" a small one of a different resource, and
+# "ambush_situational" (when present) means the noise draws an ambush check at that modifier.
+const CACHE := {
+	"CRITICAL_FAILURE": {"package": "", "extra_package": "", "ambush_situational": -2},
+	"FAILURE": {"package": "small", "extra_package": ""},
+	"SUCCESS": {"package": "medium", "extra_package": ""},
+	"CRITICAL_SUCCESS": {"package": "large", "extra_package": "small"},
+}
+
+# The ten points of interest. A site is one "site" check (the party's scavenge modifiers, the situation) against its
+# "dc", and the tier of the roll picks one outcome: a "name" for the log and a list of "do" effects, done in order.
+# A site is searched once and never searched deeper. The picks are the ones approved in the design doc "Points of
+# Interest: Dice Outcome Options"; the other options in that doc are not built.
+#   {"pkg": size, "res": resource}   a small, medium or large package of that resource
+#   {"pkg": size}                    a package of a rolled resource ("other": true rolls one that differs from the last)
+#   {"each": size}                   one package of every resource
+#   {"injury": "light"|"severe"}     on the survivor who rolled, until the party is home
+#   {"dose": n}                      radiation every survivor in the party takes
+#   {"fight": n}                     a forced fight against strength n (its DC is ENEMY_DC's); winning ends the visit
+#   {"reveal": n}                    the map within n tiles of the site is marked explored when the party heads home
+#   {"reveal_fort": true}            the Rust Kings' fort and the land around it is marked explored
+#   {"trust": n}                     Dustwell's relations rise by n
+#   {"colonists": n} {"troops": n}   join the colony when the party heads home (colonists up to the population cap)
+#   {"lose": share}                  that share of what was found at the site so far is lost
+const SITE_FORT_REVEAL := 6
+const SITES := {
+	"crashed_ship": {"dc": 14, "outcomes": {
+		"SUCCESS": {"name": "Hull salvage", "do": [{"pkg": "medium", "res": "metal"}, {"pkg": "small", "res": "fuel"}]},
+		"CRITICAL_SUCCESS": {"name": "Flight recorder", "do": [{"pkg": "medium", "res": "metal"}, {"reveal": 15}]},
+		"FAILURE": {"name": "Sharp wreckage", "do": [{"injury": "light"}, {"pkg": "small", "res": "metal"}]},
+		"CRITICAL_FAILURE": {"name": "Reactor leak", "do": [{"injury": "severe"}, {"dose": 40}]},
+	}},
+	"weather_station": {"dc": 11, "outcomes": {
+		"SUCCESS": {"name": "Logbook", "do": [{"pkg": "small", "res": "metal"}, {"reveal": 10}]},
+		"CRITICAL_SUCCESS": {"name": "Working radar", "do": [{"pkg": "medium", "res": "metal"}, {"reveal": 20}]},
+		"FAILURE": {"name": "Nothing salvageable", "do": []},
+		"CRITICAL_FAILURE": {"name": "Fall from the tower", "do": [{"injury": "severe"}]},
+	}},
+	"chemical_dump": {"dc": 14, "outcomes": {
+		"SUCCESS": {"name": "Intact drums", "do": [{"pkg": "medium", "res": "fuel"}, {"pkg": "small", "res": "gold"}]},
+		"CRITICAL_SUCCESS": {"name": "Fuel precursors", "do": [{"pkg": "large", "res": "fuel"}]},
+		"FAILURE": {"name": "Fumes", "do": [{"injury": "light"}, {"dose": 10}, {"pkg": "small", "res": "fuel"}]},
+		"CRITICAL_FAILURE": {"name": "Toxic spill", "do": [{"injury": "severe"}, {"dose": 50}]},
+	}},
+	"radio_tower": {"dc": 14, "outcomes": {
+		"SUCCESS": {"name": "Beacon logs", "do": [{"reveal": 15}]},
+		"CRITICAL_SUCCESS": {"name": "Relay still live", "do": [{"reveal": 25}, {"trust": 20}]},
+		"FAILURE": {"name": "Slip on the mast", "do": [{"injury": "light"}]},
+		"CRITICAL_FAILURE": {"name": "The signal draws raiders", "do": [{"fight": 4}]},
+	}},
+	"bunker": {"dc": 14, "outcomes": {
+		"SUCCESS": {"name": "Supply racks", "do": [{"pkg": "medium", "res": "metal"}, {"pkg": "medium", "res": "veg"}]},
+		"CRITICAL_SUCCESS": {"name": "Intact armory", "do": [{"troops": 4}, {"pkg": "medium", "res": "metal"}]},
+		"FAILURE": {"name": "Jammed door", "do": [{"injury": "light"}, {"pkg": "small", "res": "metal"}]},
+		"CRITICAL_FAILURE": {"name": "Squatters", "do": [{"fight": 5}]},
+	}},
+	"pumpjack": {"dc": 14, "outcomes": {
+		"SUCCESS": {"name": "Crude drums", "do": [{"pkg": "medium", "res": "fuel"}]},
+		"CRITICAL_SUCCESS": {"name": "Still pumping", "do": [{"pkg": "large", "res": "fuel"}, {"pkg": "medium", "res": "gold"}]},
+		"FAILURE": {"name": "Pressure burst", "do": [{"injury": "light"}]},
+		"CRITICAL_FAILURE": {"name": "Oil fire", "do": [{"injury": "severe"}, {"lose": 1.0}]},
+	}},
+	"water_tower": {"dc": 11, "outcomes": {
+		"SUCCESS": {"name": "Stored rations", "do": [{"pkg": "medium", "res": "veg"}]},
+		"CRITICAL_SUCCESS": {"name": "Cistern garden", "do": [{"pkg": "large", "res": "veg"}, {"colonists": 2}]},
+		"FAILURE": {"name": "Nothing here", "do": []},
+		"CRITICAL_FAILURE": {"name": "Tower collapse", "do": [{"injury": "severe"}]},
+	}},
+	"gas_station": {"dc": 11, "outcomes": {
+		"SUCCESS": {"name": "Underground tanks", "do": [{"pkg": "medium", "res": "fuel"}]},
+		"CRITICAL_SUCCESS": {"name": "Full tank farm", "do": [{"pkg": "large", "res": "fuel"}, {"pkg": "medium", "res": "metal"}]},
+		"FAILURE": {"name": "Already looted", "do": []},
+		"CRITICAL_FAILURE": {"name": "Raiders' ambush", "do": [{"fight": 3}]},
+	}},
+	"missile_silo": {"dc": 17, "outcomes": {
+		"SUCCESS": {"name": "Fuel store", "do": [{"pkg": "large", "res": "fuel"}]},
+		"CRITICAL_SUCCESS": {"name": "Targeting data", "do": [{"reveal_fort": true}, {"pkg": "medium", "res": "metal"}]},
+		"FAILURE": {"name": "Locked down", "do": []},
+		"CRITICAL_FAILURE": {"name": "Automated defenses", "do": [{"fight": 5}]},
+	}},
+	"cargo_yard": {"dc": 11, "outcomes": {
+		"SUCCESS": {"name": "Mixed containers", "do": [{"each": "small"}]},
+		"CRITICAL_SUCCESS": {"name": "The sealed container", "do": [{"pkg": "large"}, {"pkg": "medium", "other": true}]},
+		"FAILURE": {"name": "Falling crate", "do": [{"injury": "light"}]},
+		"CRITICAL_FAILURE": {"name": "Crushed by a stack", "do": [{"injury": "severe"}]},
+	}},
+}
+
+# Injuries. Light: roll_mod to every roll for "days" game days. Severe: out of action for "out_days", then
+# roll_mod for "roll_mod_days" more. (Days are the design doc's unit; how that maps to the game's clock is
+# still an open question.)
+const INJURY := {
+	"light": {"roll_mod": -1, "days": 1},
+	"severe": {"out_days": 3, "roll_mod": -2, "roll_mod_days": 3},
+}
+const INJURY_RANK := ["none", "light", "severe"]
+
+# Permadeath is on. A fatal fumble: a CRITICAL_FAILURE on a "check" against an enemy of DC "min_dc" or more (Hard
+# and up) rolls a d20, and "roll_max" or less kills the scout ("scope": "roller") or the whole party ("party").
+# That is about 0.8% of ruin visits. The design doc's own rule needed a DC 17 enemy, which scavenging never meets.
+const PERMADEATH := true
+const FATAL_FUMBLE := {"check": "combat", "tier": "CRITICAL_FAILURE", "min_dc": 14, "roll_max": 5, "scope": "party"}
+
+# Searching deeper: a CRITICAL_SUCCESS on a cache check offers another cache check at DC +dc_step for each step
+# already taken, up to max_depth times. Each step down pays packages one size larger (a FAILURE gives the next
+# size up from small, a SUCCESS from medium). A CRITICAL_FAILURE on a deeper search collapses the cache: collapse_loss
+# of everything found at this site is lost (and the noise draws an ambush check, as for any ruined cache).
+const SEARCH_DEEPER := {"trigger": "CRITICAL_SUCCESS", "dc_step": 3, "max_depth": 2, "collapse_loss": 0.5}
+
+# Situational modifiers worked out from the game, on top of the doc's fixed ones in SITUATION:
+#   RADIATION_PENALTY   [reading in R/h after the vehicle's shield, modifier]: the highest band reached counts
+#   SICK_PENALTY        by radiation sickness level (0 healthy, 1 ill, 2 radiation sick, 3 critical)
+#   HUNGER_PENALTY      [seasons hungry, modifier]
+#   HURT_PENALTY        a survivor with the plane-crash injured mark
+# "Outnumbered" (SITUATION) applies when the enemy's strength is above the party's. A fight's DC comes from the
+# enemy's strength: base + per_strength x strength, held between min and max. A noise ambush and a rogue raider
+# have a strength in ENEMY_STRENGTH.
+const RADIATION_PENALTY := [[20, -1], [45, -2], [80, -3]]
+const SICK_PENALTY := [0, -1, -2, -3]
+const HUNGER_PENALTY := [[1, -1], [2, -2]]
+const HURT_PENALTY := -1
+const ENEMY_DC := {"base": 6, "per_strength": 2, "min": 8, "max": 17}
+const ENEMY_STRENGTH := [2, 5]
+
+# The starter traits. Each has "mods" per kind of check, and optionally:
+#   tier_shifts         [{check, from, to}]        a tier moves once, after the roll
+#   outcome_flags       [{check, tier, flag}]      a flag the outcome reads ("no_injury", "injury_severe")
+#   loot_mult           {resource or "all": x}     multiplies loot of that resource
+#   loot_size_shift     [{check, tier, steps}]     bumps the loot package up this many sizes
+#   reroll_charges_per_expedition                  rerolls of one check that landed FAILURE or worse
+#   situation           {name: multiplier}         scales one of the situational penalties (0 ignores it)
+const TRAITS := {
+	"sharp_eyed": {"name": "Sharp-Eyed", "mods": {"combat": 0, "scavenge": 2, "ambush": 0, "trap": 2},
+		"tier_shifts": [
+			{"check": "trap", "from": "CRITICAL_FAILURE", "to": "FAILURE"},
+			{"check": "ambush", "from": "CRITICAL_FAILURE", "to": "FAILURE"},
+		]},
+	"light_footed": {"name": "Light-Footed", "mods": {"combat": -1, "scavenge": 1, "ambush": 3, "trap": 0}},
+	"trigger_happy": {"name": "Trigger-Happy", "mods": {"combat": 2, "scavenge": -1, "ambush": -2, "trap": 0},
+		"loot_size_shift": [{"check": "combat", "tier": "CRITICAL_SUCCESS", "steps": 1}]},
+	"veteran": {"name": "Veteran", "mods": {"combat": 2, "scavenge": 0, "ambush": 1, "trap": 0},
+		"tier_shifts": [{"check": "combat", "from": "CRITICAL_FAILURE", "to": "FAILURE"}],
+		"situation": {"outnumbered": 0.0}},
+	"cowardly": {"name": "Cowardly", "mods": {"combat": -3, "scavenge": 0, "ambush": 2, "trap": 0},
+		"outcome_flags": [{"check": "combat", "tier": "FAILURE", "flag": "no_injury"}],
+		"situation": {"outnumbered": 2.0}},
+	"clumsy": {"name": "Clumsy", "mods": {"combat": -1, "scavenge": -1, "ambush": 0, "trap": -3},
+		"outcome_flags": [{"check": "trap", "tier": "FAILURE", "flag": "injury_severe"}]},
+	"paranoid": {"name": "Paranoid", "mods": {"combat": 0, "scavenge": -1, "ambush": 4, "trap": 2},
+		"loot_mult": {"all": 0.85}},
+	"lucky": {"name": "Lucky", "mods": {"combat": 0, "scavenge": 0, "ambush": 0, "trap": 0},
+		"reroll_charges_per_expedition": 1},
+	"gearhead": {"name": "Gearhead", "mods": {"combat": 0, "scavenge": 0, "ambush": 0, "trap": 0},
+		"loot_mult": {"fuel": 1.5}},
+	"green_thumb": {"name": "Green Thumb", "mods": {"combat": 0, "scavenge": 0, "ambush": 0, "trap": 0},
+		"loot_mult": {"veg": 1.5}},
+	"magpie": {"name": "Magpie", "mods": {"combat": -1, "scavenge": 1, "ambush": 0, "trap": 0},
+		"loot_mult": {"gold": 1.5}},
+}
