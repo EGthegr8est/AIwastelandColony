@@ -63,9 +63,10 @@ func test_the_art_keeps_its_16_by_9_shape_in_any_window() -> void:
 		root.size = shape
 		await wait_frames(3)
 		var stage: Control = hud.title_art.get_parent()
+		var visible := root.get_visible_rect().size   # the layout is scaled to the window, so its room is in layout units
 		assert_almost_eq(stage.size.x / stage.size.y, 16.0 / 9.0, 0.01, "window %s" % shape)
-		assert_le(stage.size.x, float(shape.x) + 0.5)
-		assert_le(stage.size.y, float(shape.y) + 0.5)
+		assert_le(stage.size.x, visible.x + 0.5, "window %s" % shape)
+		assert_le(stage.size.y, visible.y + 0.5, "window %s" % shape)
 	root.size = size
 	await wait_frames(2)
 

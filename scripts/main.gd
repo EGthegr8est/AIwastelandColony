@@ -25,17 +25,19 @@ func _ready() -> void:
 	Game.focus.connect(func(c: Vector2i): cam.position = (Vector2(c) + Vector2(0.5, 0.5)) * MapView.CELL)
 
 
-## The panels are laid out for a 1600 x 900 window. On a screen too small for that (a lot of laptops are
-## 1366 x 768) the game opens maximized, still laid out for 1600 x 900 and scaled down to fit, instead of
+## The panels are laid out for a 1600 x 900 window, and that layout is always scaled to whatever size the window is:
+## maximize it or go fullscreen and everything grows to fill the screen (a 4K screen shows it 2.4 times as big, with the
+## same layout, the type and the pictures included), and shrink it and everything shrinks with it. On a screen too small
+## for 1600 x 900 (a lot of laptops are 1366 x 768) the game also opens maximized, scaled down to fit, instead of
 ## hanging off the edges or squeezing the panels into each other.
 func _fit_window() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	var window := get_window()
+	scale_to_fit(window)
 	var usable := DisplayServer.screen_get_usable_rect(window.current_screen).size
 	if too_small(usable, design_size()):
 		window.mode = Window.MODE_MAXIMIZED
-		scale_to_fit(window)
 
 
 ## The window size the panels are designed for (the project's setting).

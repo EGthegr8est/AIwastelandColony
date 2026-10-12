@@ -57,7 +57,10 @@ warning, where saves live). The zip lands in `..\WastelandColony3-release\`: sen
 - Files the game reads at run time that aren't pictures or sound (`art/atlas.json`) have to be listed in that preset's include filter, and the
   tests and docs are left out. A pixel-art sprite that works from the editor but shows as text in the built game means a file didn't make it:
   run the self-check.
-- On a screen smaller than the 1600 x 900 window, the game opens maximized.
+- The layout is designed for 1600 x 900 and is always scaled to the window (`Main._fit_window`, content scale mode `canvas_items`, aspect
+  `expand`): maximize it or go fullscreen and everything, type and pictures included, grows to fill the screen (a 4K screen shows it
+  2.4 times as big), and a wider screen than 16:9 gets the extra room at the sides. On a screen smaller than 1600 x 900, the game also opens
+  maximized. `tests/render/test_window_scaling.gd` pins it.
 - The exe has Godot's default icon and isn't code-signed. Setting a custom icon needs Godot's `rcedit` setting.
 
 ## Controls
