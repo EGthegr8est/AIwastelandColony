@@ -5,6 +5,7 @@ extends "res://tests/framework/test_case.gd"
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 
 var main: Node2D
 var hud: CanvasLayer
@@ -26,9 +27,9 @@ func _buttons(box: Node) -> Array:
 	return box.find_children("*", "Button", true, false).map(func(b): return b.text)
 
 
-## The leader buttons on the character selection screen ("Builder - Best defense...").
+## The Choose button on each of the three leader cards of the character selection screen.
 func _leader_buttons() -> Array:
-	return hud.menu_box.find_children("*", "Button", true, false).filter(func(b): return b.text.contains(" - "))
+	return hud.menu_box.find_children("*", "Button", true, false).filter(func(b): return b.text == "Choose")
 
 
 func _press(text: String) -> void:
@@ -93,8 +94,8 @@ func test_new_colony_opens_character_selection_with_the_logo_above_the_leaders()
 	var logo: TextureRect = kids[0]
 	assert_true(logo is TextureRect, "the logo is the first thing in the panel")
 	assert_true(logo.texture == Sprites.logo())
-	var first_leader: Node = _leader_buttons()[0]
-	assert_lt(kids.find(logo), kids.find(first_leader), "above the leaders")
+	var cards: Node = kids.filter(func(k): return k is HBoxContainer)[0]   # the row of three leader cards
+	assert_lt(kids.find(logo), kids.find(cards), "above the leaders")
 	assert_eq(_leader_buttons().size(), Data.LEADERS.size())
 
 
@@ -134,8 +135,9 @@ func test_back_returns_to_the_title_screen() -> void:
 
 func test_picking_a_leader_starts_the_colony_and_closes_the_menus() -> void:
 	seed(5)
+	Leaders.offered = [Leaders.fill("raider"), Leaders.fill("builder"), Leaders.fill("trader")]
 	_press("New colony")
-	_press("Raider")
+	_press("Choose")
 	await wait_frames(3)
 	assert_true(Game.in_game)
 	assert_eq(Game.leader, "raider")
@@ -149,8 +151,9 @@ func test_picking_a_leader_starts_the_colony_and_closes_the_menus() -> void:
 
 func _start_colony() -> void:
 	seed(5)
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 
 
@@ -217,7 +220,9 @@ func test_without_the_logo_character_selection_keeps_the_text_banner() -> void:
 	var cache := Sprites._pictures.duplicate()
 	Sprites._pictures["logo"] = null
 	_press("New colony")
-	assert_eq(hud.menu_box.find_children("*", "TextureRect", true, false).size(), 0)
+	var pictures: Array = hud.menu_box.find_children("*", "TextureRect", true, false)
+	assert_eq(pictures.size(), 3, "only the three leaders' faces")
+	assert_false(pictures.any(func(t): return t.texture == Sprites.logo()), "no logo")
 	assert_true(hud.menu_box.find_children("*", "Label", true, false).any(func(l): return l.text.contains("WASTELAND COLONY")))
 	Sprites._pictures = cache
 
@@ -242,8 +247,9 @@ func test_the_menu_music_carries_on_through_character_selection_and_load() -> vo
 
 func test_starting_a_colony_switches_to_the_game_music() -> void:
 	seed(5)
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(2)
 	assert_eq(Music.mode, "game")
 	assert_has(Music.GAME, Music.track)

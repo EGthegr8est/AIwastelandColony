@@ -77,7 +77,12 @@ func unit_by_id(id: int) -> Dictionary:
 ## How far this unit sees. Scouts see by how they travel, everything else by its glyph.
 func sight_of(u: Dictionary) -> int:
 	if u.job == "scout":
-		return Data.SCOUT_SIGHT[u.mover]
+		var sight: int = Data.SCOUT_SIGHT[u.mover]
+		if Game.has_quirk("eagle_eyes"):
+			sight += 1
+		elif Game.has_quirk("short_sight"):
+			sight -= 1
+		return maxi(sight, 1)
 	return Data.UNITS[glyph_kind(u)].sight
 
 
@@ -163,7 +168,7 @@ func boat_trip_fuel(c: Vector2i) -> float:
 	var length := 0.0
 	for i in range(1, path.size()):
 		length += Vector2(path[i] - path[i - 1]).length()
-	return 2.0 * length * Data.VEHICLE_FUEL["boat"].burn
+	return 2.0 * length * Data.VEHICLE_FUEL["boat"].burn * fuel_mult()
 
 
 ## What an expedition costs to send: the ones with a tank also fill it.
@@ -463,7 +468,7 @@ func arrival_days(mover: String, path: Array, slowdown := 1.0) -> Array:
 	var days := [0.0]
 	var day := 0.0
 	var left: float = Data.SEASON_DAYS
-	var days_per_tile: float = Data.MOVERS[mover].days * slowdown
+	var days_per_tile: float = Data.MOVERS[mover].days * slowdown * Game.travel_mult()
 	for i in range(1, path.size()):
 		var cost: float = Vector2(path[i] - path[i - 1]).length() * Game.move_mult(mover, path[i]) * days_per_tile
 		if cost > left:
@@ -508,7 +513,17 @@ func load_weight(u: Dictionary) -> float:
 ## How much the party can carry before it slows down: so much per survivor, plus what its way of
 ## travelling adds (a horse, a war rig, a boat or a plane).
 func load_capacity(u: Dictionary) -> float:
-	return u.crew * Data.CARRY_PER_PERSON + Data.CARRY_BY_MOVER.get(u.mover, 0.0)
+	var mult := 1.0
+	if Game.has_quirk("pack_rat"):
+		mult = 1.25
+	elif Game.has_quirk("poor_packers"):
+		mult = 0.85
+	return (u.crew * Data.CARRY_PER_PERSON + Data.CARRY_BY_MOVER.get(u.mover, 0.0)) * mult
+
+
+## How much fuel your parties burn compared with the usual: a Mechanic's burn 20% less.
+func fuel_mult() -> float:
+	return 0.8 if Game.has_quirk("mechanic") else 1.0
 
 
 ## 1.0 up to the limit. Past it, how many times longer than usual every step takes: twice as long
@@ -581,7 +596,7 @@ func _expose(u: Dictionary) -> void:
 	var exposure := maxf(heat - Data.RAD_SAFE, 0.0)
 	for s in u.survivors.duplicate():
 		var before := sick_level(s)
-		s.dose = s.dose * Data.DOSE_DECAY + exposure * Data.RAD_DOSE_RATE
+		s.dose = s.dose * Data.DOSE_DECAY + exposure * Game.dose_rate()
 		if s.dose < 0.5:
 			s.dose = 0.0
 		s.hp -= s.dose * Data.POISON_DAMAGE
@@ -604,14 +619,14 @@ func fuel_low(u: Dictionary) -> bool:
 	if not u.has("fuel"):
 		return false
 	var tank: Dictionary = Data.VEHICLE_FUEL[u.mover]
-	return u.fuel < maxf(tank.idle * 2.0, tank.tank * Data.FUEL_LOW)
+	return u.fuel < maxf(tank.idle * fuel_mult() * 2.0, tank.tank * Data.FUEL_LOW)
 
 
 ## A party waiting in place: a war rig or plane burns idle fuel.
 func _idle(u: Dictionary) -> void:
 	if not u.has("fuel"):
 		return
-	var idle: float = Data.VEHICLE_FUEL[u.mover].idle
+	var idle: float = Data.VEHICLE_FUEL[u.mover].idle * fuel_mult()
 	if u.fuel < idle:
 		_strand(u)
 		return
@@ -711,13 +726,15 @@ func season_turn() -> void:
 func _advance(u: Dictionary) -> bool:
 	var budget: float = Data.SEASON_DAYS
 	var days_per_tile: float = Data.MOVERS[u.mover].days * load_slowdown(u)   # a heavy load takes longer
+	if u.owner == Data.PLAYER:
+		days_per_tile *= Game.travel_mult()
 	while not u.path.is_empty():
 		var next: Vector2i = u.path[0]
 		var cost: float = Vector2(next - u.pos).length() * Game.move_mult(u.mover, next) * days_per_tile
 		if cost > budget:
 			break
 		if u.has("fuel"):
-			var burn: float = Data.VEHICLE_FUEL[u.mover].burn * Vector2(next - u.pos).length()
+			var burn: float = Data.VEHICLE_FUEL[u.mover].burn * fuel_mult() * Vector2(next - u.pos).length()
 			if u.fuel < burn:
 				_strand(u)
 				return false
@@ -751,7 +768,7 @@ func _arrive(u: Dictionary) -> void:
 		"caravan":
 			_trade(u)
 		"boat":
-			var goods := {"gold": 10 + Game.vehicle_trade("boat") + (Data.CONTRACT_GOLD if Game.has("c2") else 0)}
+			var goods := {"gold": Game.trade_gold(10 + Game.vehicle_trade("boat") + (Data.CONTRACT_GOLD if Game.has("c2") else 0))}
 			_haul(u, goods)
 			Game.note("trade_runs")
 			Game.add_log("Your boat traded with river folk downstream: %s. Heading home." % Game.cost_text(u.carry))
@@ -822,7 +839,16 @@ func _begin_visit(u: Dictionary) -> void:
 
 ## What the site does to a roll: its radiation after the vehicle's shield, and how strong the party is.
 func visit_ctx(u: Dictionary) -> Dictionary:
-	return {"radiation": Game.radiation(u.pos) * Data.MOVERS[u.mover].shield, "party_strength": party_strength(u)}
+	return {"radiation": Game.radiation(u.pos) * Data.MOVERS[u.mover].shield, "party_strength": party_strength(u), "leader": leader_rolls()}
+
+
+## What the leader's perks and flaws do to a party's rolls: a modifier for each kind of check, a reroll every party
+## has at least ("min_rerolls") and whether injuries come one step lighter ("medic").
+func leader_rolls() -> Dictionary:
+	var nose := 1 if Game.has_quirk("sharp_nose") else 0
+	var fingers := -1 if Game.has_quirk("butterfingers") else 0
+	return {"cache": nose + fingers, "trap": nose + fingers, "site": nose,
+		"min_rerolls": 1 if Game.has_quirk("lucky_streak") else 0, "medic": 1 if Game.has_quirk("field_medic") else 0}
 
 
 ## Brings what a roll reads (each survivor's sickness, the site's radiation, the party's strength) up to date.
@@ -1021,7 +1047,7 @@ func _trade(u: Dictionary) -> void:
 			u.crew -= 1
 			Game.add_log("The Rust Kings robbed your caravan at their gates! One trader was killed.")
 			return
-		var goods := {"gold": 8 + (2 * Game.vehicle_trade(u.mover) if u.mover in Data.VEHICLES else 0) + (Data.CONTRACT_GOLD if Game.has("c2") else 0)}
+		var goods := {"gold": Game.trade_gold(8 + (2 * Game.vehicle_trade(u.mover) if u.mover in Data.VEHICLES else 0) + (Data.CONTRACT_GOLD if Game.has("c2") else 0))}
 		_haul(u, goods)
 		Game.ai["relations"] = mini(Game.ai["relations"] + 4, 100)
 		Game.note("trade_runs")
@@ -1032,7 +1058,7 @@ func _trade(u: Dictionary) -> void:
 		Game.add_log("Your caravan found the trader camp abandoned.")
 		return
 	var good: String = Data.TRIBE_GOODS.pick_random()
-	_haul(u, {"gold": 5, good: 6})
+	_haul(u, {"gold": Game.trade_gold(5), good: 6})
 	Game.note("trade_runs")
 	Game.add_log("Caravan traded with the %s: %s. Heading home." % [tribe.name, Game.cost_text(u.carry)])
 

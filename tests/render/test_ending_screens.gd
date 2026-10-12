@@ -2,6 +2,8 @@ extends "res://tests/framework/test_case.gd"
 ## The ending through the real HUD: the picture, a click, the stats, a click, the main menu, with the win or defeat
 ## music playing the whole way until the menu takes over.
 
+const Leaders = preload("res://scripts/leaders.gd")
+
 var main: Node2D
 var hud: Node
 
@@ -13,8 +15,9 @@ func before_each() -> void:
 	for child in main.get_children():
 		if child.has_method("show_new_colony"):
 			hud = child
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 
 
@@ -89,8 +92,9 @@ func test_both_wins_show_their_own_picture_with_the_victory_music() -> void:
 	await wait_frames(3)
 	assert_eq(Music.mode, "menu")
 	# and the long game
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 	Game._end("colony_prospers", "long game")
 	await wait_frames(2)
@@ -132,8 +136,9 @@ func test_a_new_colony_after_an_ending_plays_normally_again() -> void:
 	await wait_frames(2)
 	_press("Return to main menu")
 	await wait_frames(3)
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 	assert_true(Game.in_game)
 	assert_false(hud.ending_screen.visible)

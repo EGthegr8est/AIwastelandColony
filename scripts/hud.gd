@@ -9,12 +9,17 @@ const Geiger = preload("res://scripts/geiger.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const D20 = preload("res://scripts/d20.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 const D20DiceScene = preload("res://d20_dice/D20Dice.tscn")
 const DICE_SCALE := 3          # the pixel-art die is 64 x 80: shown at 3x it is 192 x 240
 const DICE_SPEED := 1.25       # playback speed of the roll animation (1.0 is about 0.75 seconds)
 const DICE_HOLD_MSEC := 1000   # the landed number stays up at least this long before a click moves on
 const LEGEND_ICON_SCALE := 3   # screen pixels per pixel of legend art
 const LOGO_WIDTH := 440        # how wide the slab-stack logo is on the character selection screen
+const CARD_WIDTH := 440        # one leader card on that screen, and the face on it (480 px pictures shown at half size)
+const CARD_FACE := 240
+const LEADER_FACE := 192       # the small picture (48 px) in the colony panel, shown at 4x
+const CLASS_COLORS := {"raider": Color("ff8c3c"), "builder": Color("6ad0e8"), "trader": Color("e8d84a")}   # not the perks' green or the flaws' red
 const AMBER := Color("ffb642")
 const BRIGHT := Color("ffd88a")
 const DIM := Color("9a6a2a")
@@ -331,6 +336,7 @@ func _make_theme() -> Theme:
 ## logo at the top instead of the text banner.
 func _open_menu(heading: String, with_logo := false) -> void:
 	_clear(menu_box)
+	menu_panel.custom_minimum_size = Vector2(520, 0)
 	title_screen.visible = false
 	menu.visible = true
 	var logo: Texture2D = Sprites.logo() if with_logo else null
@@ -393,18 +399,113 @@ func _add_title_buttons(box: Container) -> void:
 	_button(box, "Quit", get_tree().quit)
 
 
-## Character selection: the logo above the three leaders.
+## Character selection: the logo above three randomly made leaders side by side, each with a face, a name, the class's
+## buffs, two perks and a flaw. The three are made once per launch (Leaders.offer) and Reroll draws new ones.
 func show_new_colony() -> void:
 	if not Game.in_game:
 		Music.play_menu()   # already playing, from the title screen: it carries on
 	_open_menu("Choose your leader", true)
-	_label(menu_box, "Start a new colony. Pick your leader:", AMBER)
-	for id in Data.LEADERS:
-		var l: Dictionary = Data.LEADERS[id]
-		_button(menu_box, "%s - %s" % [l.name, l.desc], func(): Game.new_game(id); _close_menu())
+	menu_panel.custom_minimum_size = Vector2((CARD_WIDTH + 10) * 3 + 30, 0)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	menu_box.add_child(row)
+	for leader in Leaders.offer():
+		_leader_card(row, leader)
 	menu_box.add_child(HSeparator.new())
 	_music_row(menu_box)
-	_button(menu_box, "Back", show_main_menu)
+	var bottom := HBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 12)
+	menu_box.add_child(bottom)
+	_button(bottom, "Reroll leaders", func(): Leaders.offer(true); show_new_colony())
+	_button(bottom, "Back", show_main_menu)
+
+
+## One leader on the selection screen. Clicking anywhere on the card picks them.
+func _leader_card(row: HBoxContainer, leader: Dictionary) -> void:
+	var card := PanelContainer.new()
+	card.set_meta("leader_card", true)
+	card.custom_minimum_size = Vector2(CARD_WIDTH, 0)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.add_theme_stylebox_override("panel", _card_style(false))
+	card.mouse_entered.connect(func(): card.add_theme_stylebox_override("panel", _card_style(true)))
+	card.mouse_exited.connect(func(): card.add_theme_stylebox_override("panel", _card_style(false)))
+	card.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_pick_leader(leader))
+	row.add_child(card)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	card.add_child(box)
+	_leader_face(box, leader, CARD_FACE, false)
+	var who := _label(box, leader.name, BRIGHT)
+	who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	who.add_theme_font_size_override("font_size", 18)
+	var cls: Dictionary = Data.LEADERS[leader["class"]]
+	var kind := _label(box, cls.name, CLASS_COLORS[leader["class"]])
+	kind.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	for buff in cls.buffs:
+		_label(box, buff).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(HSeparator.new())
+	for line in Leaders.quirk_lines(leader):
+		var perk: bool = line.kind == "perk"
+		_label(box, "%s %s: %s" % ["+" if perk else "-", line.name, line.text], GREEN if perk else RED)
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(spacer)
+	_button(box, "Choose", func(): _pick_leader(leader))
+
+
+func _card_style(hover: bool) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("1c1610") if hover else Color("140f0a")
+	box.border_color = AMBER if hover else DIM
+	box.set_border_width_all(2)
+	box.set_content_margin_all(10)
+	return box
+
+
+## A leader's face, centred and scaled with crisp pixels. `small` uses their small picture (the colony panel).
+func _leader_face(box: Container, leader: Dictionary, size: int, small: bool) -> void:
+	var frame := PanelContainer.new()   # an orange line round the picture, like the rest of the UI's lines
+	frame.name = "LeaderFrame"
+	var line := StyleBoxFlat.new()
+	line.bg_color = Color(0, 0, 0, 0)
+	line.border_color = AMBER
+	line.set_border_width_all(2)
+	line.set_content_margin_all(2)   # the picture sits inside the line, not under it
+	frame.add_theme_stylebox_override("panel", line)
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(frame)
+	var face := TextureRect.new()
+	face.texture = Leaders.portrait(leader, small)
+	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	face.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	face.custom_minimum_size = Vector2(size, size)
+	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_child(face)
+
+
+func _pick_leader(leader: Dictionary) -> void:
+	Game.new_game(leader["class"], leader)
+	_close_menu()
+
+
+## Who leads the colony, for the colony panel: their face, name and class buffs, and below them what each perk and the
+## flaw is doing for (and against) the colony, so it can be looked up mid game.
+func _leader_block(box: VBoxContainer) -> void:
+	var info: Dictionary = Game.leader_info
+	var cls: Dictionary = Data.LEADERS[Game.leader]
+	if info.get("name", "") != "":
+		_leader_face(box, info, LEADER_FACE, true)
+		_label(box, info.name, BRIGHT).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_label(box, "%s: %s" % [cls.name, ", ".join(cls.buffs)], CLASS_COLORS[Game.leader])
+	for line in Leaders.quirk_lines(info):
+		var perk: bool = line.kind == "perk"
+		_label(box, "%s %s: %s" % ["+" if perk else "-", line.name, line.text], GREEN if perk else RED)
+	box.add_child(HSeparator.new())
 
 
 func show_save_menu() -> void:
@@ -446,7 +547,7 @@ func refresh() -> void:
 
 func _refresh_top() -> void:
 	var t := "[color=#ffd88a]%s[/color]   Pop [b]%d[/b]/%d   Troops %d   Prisoners %d   Leader: %s\n" % [
-		Game.season_name(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Data.LEADERS[Game.leader].name]
+		Game.season_name(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Leaders.label(Game.leader_info)]
 	for r in Data.RESOURCES:
 		t += "%s [color=#ffd88a]%d[/color]  " % [r, Game.res[r]]
 	top_text.text = t
@@ -488,7 +589,7 @@ func _refresh_geiger(scouts: Array) -> void:
 	geiger.known = Game.is_measured(c)
 	var band: Array = Game.rad_band(r)
 	var shield: float = Data.MOVERS[scouts[0].mover].shield
-	var per_season := maxf(r * shield - Data.RAD_SAFE, 0.0) * Data.RAD_DOSE_RATE
+	var per_season := maxf(r * shield - Data.RAD_SAFE, 0.0) * Game.dose_rate()
 	_small_label(geiger_note, band[0].to_upper() + ("  shield x%.1f" % shield if shield < 1.0 else ""), band[1])
 	if per_season <= 0.0:
 		_small_label(geiger_note, "safe to stay", GREEN)
@@ -1160,10 +1261,11 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 	if u.has("fuel"):
 		var tank: Dictionary = Data.VEHICLE_FUEL[u.mover]
 		var left: String
-		if tank.idle > 0.0:
-			left = "%.1f seasons idle" % (u.fuel / tank.idle) if u.stage == "station" else "burns %.1f a season waiting" % tank.idle
+		var idle: float = tank.idle * Units.fuel_mult()
+		if idle > 0.0:
+			left = "%.1f seasons idle" % (u.fuel / idle) if u.stage == "station" else "burns %.1f a season waiting" % idle
 		else:
-			left = "enough for about %d tiles" % int(u.fuel / tank.burn)
+			left = "enough for about %d tiles" % int(u.fuel / (tank.burn * Units.fuel_mult()))
 		_label(box, "   Fuel: %.1f / %d (%s)" % [u.fuel, tank.tank, left], RED if Units.fuel_low(u) else DIM)
 	if Units.load_weight(u) > 0.0:
 		var slow := Units.load_slowdown(u)
@@ -1204,7 +1306,7 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 		var why := Units.send_status("scout", mover, c)
 		var trip := ""
 		if why == "":
-			trip = ", %d days there" % ceili(Game.route_days(mover, Game.route(mover, Game.home(Data.PLAYER), c)))
+			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), c)))
 		_button(box, "%s %s (%d crew, %s%s)" % [e.verb, Data.MOVERS[mover].by, e.crew, Units.send_cost_text("scout", mover), trip],
 			func(): Units.send("scout", mover, c), why)
 	_label(box, "   Parties out: %d/%d" % [Units.scouts_out(), Game.scout_parties()], DIM)
@@ -1240,7 +1342,7 @@ func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest
 		var why := Units.send_status(job, mover, target, dest)
 		var trip := ""
 		if why == "":
-			trip = ", %d days there" % ceili(Game.route_days(mover, Game.route(mover, Game.home(Data.PLAYER), target)))
+			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), target)))
 		_button(box, "%s %s (%d crew, %s%s)" % [e.verb, Data.MOVERS[mover].by, e.crew, Game.cost_text(e.cost), trip],
 			func(): Units.send(job, mover, target, dest), why)
 
@@ -1286,7 +1388,7 @@ func _travel_lines(box: VBoxContainer, routes: Dictionary) -> void:
 		if path.is_empty():
 			_label(box, "  ● %s: no way through (steep inclines)" % m.name, m.color)
 		else:
-			_label(box, "  ● %s: %d days" % [m.name, ceili(Game.route_days(mover, path))], m.color)
+			_label(box, "  ● %s: %d days" % [m.name, ceili(Game.party_route_days(mover, path))], m.color)
 
 
 func _routes_between(from: Vector2i, to: Vector2i) -> Dictionary:
@@ -1331,8 +1433,10 @@ func _refresh_upgrades() -> void:
 func _refresh_colony() -> void:
 	var box: VBoxContainer = boxes["Colony"]
 	_clear(box)
+	_leader_block(box)
 	_label(box, "Land: %d tiles   Population: %d / %d" % [Game.owned(Data.PLAYER).size(), Game.pop, Game.pop_cap()])
-	_label(box, "Everyone eats 1 grain/veg a season. A surplus of 10+ grows the colony. Prisoners work but must be fed.", DIM)
+	_label(box, "Everyone eats 1 grain/veg a season%s. A surplus of %d+ grows the colony. Prisoners work but must be fed." % [
+		", and 1 more for every 5 colonists" if Game.has_quirk("big_appetites") else "", 6 if Game.has_quirk("big_families") else 10], DIM)
 	_header(box, "Military")
 	_label(box, "Troops: %d (each eats %d meat/season)" % [Game.troops, 2 if Game.has("w3") else 1])
 	_label(box, "Attack %.1f   Defense %.1f (walls %.1f)" % [Game.player_attack(),
@@ -1340,7 +1444,7 @@ func _refresh_colony() -> void:
 	_button(box, "Train troop (1 pop, %s)" % Game.cost_text(Game.train_troop_cost()), Game.train_troop,
 		"" if Game.pop > 2 and Game.can_afford(Game.train_troop_cost()) else "Need 3+ pop and " + Game.cost_text(Game.train_troop_cost()))
 	_button(box, "Disband troop (back to pop)", Game.disband_troop, "" if Game.troops > 0 else "No troops")
-	if Game.prisoners > Game.troops * 3:
+	if Game.prisoners > Game.troops * Game.guard_ratio():
 		_label(box, "WARNING: too few guards. Prisoners may revolt.", RED)
 	_header(box, "Vehicles")
 	_label(box, "Vehicle upgrades are in each branch on the Upgrades tab.", DIM)
@@ -1426,13 +1530,14 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void
 	else:
 		for r in Data.MARKET:
 			var amount: int = Data.MARKET[r][0]
-			var price: int = Data.MARKET[r][1]
+			var pays := Game.sell_gold(r)
+			var costs := Game.buy_price(r)
 			var row := HBoxContainer.new()
 			box.add_child(row)
 			var name_label := _label(row, r)
 			name_label.custom_minimum_size.x = 60
-			_button(row, "Sell %d +%dg" % [amount, price], func(): Game.sell(r), "" if Game.res[r] >= amount else "Not enough")
-			_button(row, "Buy %d -%dg" % [amount, price * 2], func(): Game.buy(r), "" if Game.res["gold"] >= price * 2 else "Not enough gold")
+			_button(row, "Sell %d +%dg" % [amount, pays], func(): Game.sell(r), "" if Game.res[r] >= amount else "Not enough")
+			_button(row, "Buy %d -%dg" % [amount, costs], func(): Game.buy(r), "" if Game.res["gold"] >= costs else "Not enough gold")
 
 
 func _diplomacy_town(box: VBoxContainer, raid_why: String) -> void:

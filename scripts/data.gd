@@ -245,9 +245,12 @@ const AI_SCOUT_REACH := 2
 const AI_SCOUT_HOME_GAP := 3
 
 const LEADERS := {
-	"raider":  {"name": "Raider",  "branch": "warfare",       "attack": 1.25, "defense": 1.0,  "caravans": 1, "desc": "Best attack. 25% off Warfare upgrades."},
-	"builder": {"name": "Builder", "branch": "fortification", "attack": 1.0,  "defense": 1.25, "caravans": 1, "desc": "Best defense. 25% off Fortification upgrades."},
-	"trader":  {"name": "Trader",  "branch": "commerce",      "attack": 1.0,  "defense": 1.0,  "caravans": 2, "desc": "Extra caravan, quick profit. 25% off Commerce upgrades."},
+	"raider":  {"name": "Raider",  "branch": "warfare",       "attack": 1.25, "defense": 1.0,  "caravans": 1, "desc": "Best attack. 25% off Warfare upgrades.",
+		"buffs": ["Attack x1.25", "Warfare upgrades 25% off"]},
+	"builder": {"name": "Builder", "branch": "fortification", "attack": 1.0,  "defense": 1.25, "caravans": 1, "desc": "Best defense. 25% off Fortification upgrades.",
+		"buffs": ["Defense x1.25", "Fortification upgrades 25% off"]},
+	"trader":  {"name": "Trader",  "branch": "commerce",      "attack": 1.0,  "defense": 1.0,  "caravans": 2, "desc": "Extra caravan. 25% off Commerce upgrades.",
+		"buffs": ["2 caravan slots", "Commerce upgrades 25% off"]},
 }
 
 const BRANCHES := ["warfare", "fortification", "commerce"]

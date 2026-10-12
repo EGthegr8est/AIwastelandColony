@@ -4,6 +4,7 @@ extends "res://tests/framework/test_case.gd"
 
 const Data = preload("res://scripts/data.gd")
 const ForcedDice = preload("res://tests/helpers/forced_dice.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 
 var main: Node2D
 var hud: Node
@@ -18,8 +19,9 @@ func before_each() -> void:
 	for child in main.get_children():
 		if child.has_method("show_new_colony"):
 			hud = child
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 	Units.tribes = []
 	Units.wild_spawns = false

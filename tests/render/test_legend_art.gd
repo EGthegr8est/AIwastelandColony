@@ -4,6 +4,7 @@ extends "res://tests/framework/test_case.gd"
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 
 var main: Node2D
 var hud: CanvasLayer
@@ -16,8 +17,9 @@ func before_each() -> void:
 	await wait_frames(2)
 	hud = main.get_child(main.get_child_count() - 1)
 	seed(5)
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 	tile_box = hud.boxes["Tile"]
 	assert_false(Game.in_bounds(Game.selected), "nothing selected, so the Tile tab shows the legend")

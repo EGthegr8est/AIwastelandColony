@@ -10,8 +10,8 @@ A 2D post-nuclear colony sim for Godot 4.7. Pixel-art tiles (or, if you like, AS
 - **Title screen.** The game opens on `art/title.png` with **New colony**, **Load game** and **Quit** over its dark lower edge (and
   **Resume** too when you open it again with the top bar's **Menu** button mid-game). The picture is 16:9: in a window of another shape it
   keeps its shape, with black bars. If the art can't be read it's the same choices in a plain text panel.
-- **Character selection.** **New colony** leads to the three leaders, with the slab-stack logo (`art/logo.png`, cropped to the lettering
-  by `LOGO_CROP` in `scripts/sprites.gd`) above them. **Back** returns to the title screen.
+- **Character selection.** **New colony** leads to three randomly made leaders side by side (see "Leaders" below), with the slab-stack
+  logo (`art/logo.png`, cropped to the lettering by `LOGO_CROP` in `scripts/sprites.gd`) above them. **Back** returns to the title screen.
 - **Music.** `audio/` holds six tracks. `wasteland_menu.wav` plays, looping, on the title screen, the character selection screen and the
   load screen, and carries on across them without restarting. Starting or loading a colony crossfades into the five `wasteland_OST_*`
   tracks, which play one after another in a shuffled order, then shuffle again, and never repeat a track back to back. Opening the menu in
@@ -20,6 +20,27 @@ A 2D post-nuclear colony sim for Godot 4.7. Pixel-art tiles (or, if you like, AS
   the top bar during a game) sets the music volume. All the way down is **completely off**: the music bus is muted, not just very quiet.
   They all show the same volume, and it's remembered between runs in `user://settings.cfg` (`%APPDATA%\Godot\app_userdata\Wasteland Colony\settings.cfg`,
   beside the saves). The tracks are imported uncompressed, exactly as supplied.
+
+## Leaders
+The three classes (Raider, Builder, Trader, `Data.LEADERS`) keep their buffs: Raider attack x1.25 and 25% off Warfare upgrades, Builder defense
+x1.25 and 25% off Fortification, Trader a second caravan slot and 25% off Commerce. What is new is who leads: **each launch makes three new
+people** (`scripts/leaders.gd`, `Leaders.offer`), one per class, shown as three cards side by side. A card has a large picture, a name
+("Sheriff Cole Harlan": a title, a first name from the survivor names and a surname), the class buffs, **two perks and one flaw**. Click anywhere
+on a card (or its **Choose** button) to start a colony led by that person; **Reroll leaders** draws three new ones, and going Back and returning
+keeps the same three.
+- **Perks and flaws.** 22 perks and 13 flaws, in four themes (Economy, War, Exploring, Trade), all small. A leader's two perks come from different
+  themes and the flaw from a theme neither perk is in, so a flaw never cancels a perk; nobody on a screen shares a name, a perk or a flaw. Each one
+  is done where the game already works the number out, behind `Game.has_quirk("id")` (the way upgrades are behind `Game.has`), and the effects are
+  pinned by `tests/unit/test_leader_effects.gd`. The texts in `Leaders.PERKS` and `Leaders.FLAWS` are what the screens show.
+- **Pictures.** `art/leaders/` holds `<class>_<n>.png` (480 x 480) and an optional `<class>_<n>_small.png` (48 x 48, used in the colony panel).
+  Every portrait is shown with a 2 px orange (`AMBER`) line round it, like the rest of the UI's lines.
+  The game finds them by itself, so adding `raider_4.png` needs no code. A picture is chosen at random for each class each launch. A class with no
+  pictures gets a face from the survivor portrait generator instead. A picture that is plainly one kind of person keeps that title
+  (`PICTURE_TITLES`): the monocle general is always a "General", the sheriffs "Sheriff", the elder "Elder", the suited man "Executive", and nobody
+  else is given those titles by chance.
+- **In the game.** The leader is saved with the colony (`leader_info` in the save; older saves load with just their class). The top bar names them,
+  and the **Colony** tab opens with their small picture, name, class buffs and a line for each perk and the flaw with what it does, so the numbers
+  can be checked mid game.
 
 ## Sending it to a friend (Windows)
 Run `.\tools\build_windows.ps1`. It exports the game as a single `WastelandColony.exe` (the art and music are inside it), runs the
@@ -320,6 +341,7 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/map_view.gd` | Draws the map: pixel-art sprites, or colored text glyphs. |
 | `scripts/hud.gd` | All the UI, built in code. |
 | `scripts/portrait.gd` | Draws the pixel-art survivor portraits. |
+| `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |
 | `scripts/icons.gd` | The small pixel icons for how a party travels. |
 | `scripts/geiger.gd` | The Geiger counter dial. |
 | `scripts/fuel_gauge.gd` | The three fuel gauges (war rig, plane, boat). |

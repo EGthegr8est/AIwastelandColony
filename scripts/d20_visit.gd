@@ -78,6 +78,9 @@ static func situation_parts(scout: Dictionary, ctx: Dictionary, check: String) -
 	var injury: String = scout.get("injury", "none")
 	if injury != "none" and Data.SITUATION.has("injury_" + injury):
 		parts.append({"label": "%s injury" % injury, "value": Data.SITUATION["injury_" + injury]})
+	var from_leader := int(ctx.get("leader", {}).get(check, 0))
+	if from_leader != 0:
+		parts.append({"label": "leader", "value": from_leader})
 	if check == "combat":
 		var enemy := int(ctx.get("enemy_strength", 0))
 		if enemy > int(ctx.get("party_strength", 0)):
@@ -136,17 +139,19 @@ static func pick_roller(party: Array, check: String, ctx: Dictionary, extra := 0
 ## applies it when the party heads home.
 static func begin(ruin: String, ctx: Dictionary, scale: float, dice, party := [], poi := "") -> Dictionary:
 	var is_site := ruin == "poi" and Data.SITES.has(poi)
+	var lead: Dictionary = ctx.get("leader", {})
 	var visit := {
 		"ruin": ruin, "stage": "site" if is_site else {"safe": "event", "poi": "event", "trapped": "trap", "rogue": "ambush"}[ruin],
 		"poi": poi,
-		"ctx": {"radiation": float(ctx.get("radiation", 0.0)), "party_strength": int(ctx.get("party_strength", 0))},
+		"ctx": {"radiation": float(ctx.get("radiation", 0.0)), "party_strength": int(ctx.get("party_strength", 0)), "leader": lead},
 		"scale": scale, "site_dc": int(Data.SITES[poi].dc) if is_site else Data.DC.standard, "hazard_dc": Data.DC.hard,
 		"depth": 0, "resource": "", "enemy": 0, "ambush_dc": Data.DC.hard, "ambush_sit": 0, "ambush_kind": "rogue",
 		"fight_sit": 0, "fight_bonus": "", "after": "loot",
 		"loot": {}, "site_loot": {}, "packages": [], "prisoners": 0, "camp_revealed": false, "wiped": false,
 		"reveal": 0, "reveal_fort": false, "trust": 0, "colonists": 0, "troops": 0,
 		"strike_dc": 0, "building": "", "cell": [-1, -1], "destroyed": false, "carried_loss": 0.0,
-		"injuries": {}, "outcome": "", "log": [], "last": [], "shown": 0, "rerolls": D20.party_rerolls(party),
+		"injuries": {}, "outcome": "", "log": [], "last": [], "shown": 0,
+		"rerolls": maxi(D20.party_rerolls(party), int(lead.get("min_rerolls", 0))),
 	}
 	if ruin == "rogue":
 		visit["enemy"] = enemy_strength(dice)
@@ -323,6 +328,8 @@ static func _roll(visit: Dictionary, dice, party: Array) -> Dictionary:
 
 
 static func _hurt(visit: Dictionary, scout: Dictionary, level: String) -> void:
+	if int(visit.ctx.get("leader", {}).get("medic", 0)) > 0:
+		level = {"severe": "light", "light": "none"}.get(level, level)   # a Field medic's people are hurt one step less
 	if level == "none":
 		return
 	if Data.INJURY_RANK.find(level) > Data.INJURY_RANK.find(scout.get("injury", "none")):
@@ -633,7 +640,10 @@ static func normalize(visit: Dictionary) -> Dictionary:
 	visit["building"] = str(visit.get("building", ""))
 	visit["scale"] = float(visit["scale"])
 	visit["rerolls"] = int(visit["rerolls"])
-	visit["ctx"] = {"radiation": float(visit.ctx.radiation), "party_strength": int(visit.ctx.party_strength)}
+	var lead := {}
+	for k in visit.ctx.get("leader", {}):
+		lead[k] = int(visit.ctx.leader[k])
+	visit["ctx"] = {"radiation": float(visit.ctx.radiation), "party_strength": int(visit.ctx.party_strength), "leader": lead}
 	for k in ["loot", "site_loot"]:
 		var fixed := {}
 		for r in visit[k]:

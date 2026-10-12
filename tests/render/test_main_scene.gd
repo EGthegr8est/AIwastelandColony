@@ -4,6 +4,7 @@ extends "res://tests/framework/test_case.gd"
 ## catches the map and the rest of the game falling out of step.
 
 const Data = preload("res://scripts/data.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 
 var main: Node2D
 var map: Node2D
@@ -17,8 +18,9 @@ func before_each() -> void:
 
 func test_starting_a_colony_draws_the_map() -> void:
 	seed(5)
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 	assert_true(Game.in_game)
 	assert_gt(map.stats.tile_draws, 0, "starting a game draws the map")
@@ -27,8 +29,9 @@ func test_starting_a_colony_draws_the_map() -> void:
 
 func test_zooming_ending_a_season_and_switching_views() -> void:
 	seed(5)
+	Leaders.offered = [Leaders.fill("builder"), Leaders.fill("raider"), Leaders.fill("trader")]   # no perks, so the tests are not left to luck
 	_press("New colony")
-	_press("Builder")
+	_press("Choose")
 	await wait_frames(3)
 	var cam: Camera2D = main.cam
 	var zoom := cam.zoom

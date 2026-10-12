@@ -11,6 +11,7 @@ signal game_ended(kind: String)   # the game has ended: "raiders_defeated", "col
 const Data = preload("res://scripts/data.gd")
 const D20Data = preload("res://scripts/d20_data.gd")
 const D20 = preload("res://scripts/d20.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 const SAVE_DIR := "user://saves/"
 
 var save_dir := SAVE_DIR       # tests point this at their own folder so they never touch real saves
@@ -33,7 +34,8 @@ var pop := 10
 var troops := 3
 var prisoners := 0
 var season := 1
-var leader := "builder"
+var leader := "builder"          # the class: a key of Data.LEADERS
+var leader_info: Dictionary = {}  # the person: name, picture, perks and flaw (see leaders.gd)
 var upgrades: Array = []
 var vehicles: Dictionary = {}
 var raided_this_season := false
@@ -68,8 +70,10 @@ func _ready() -> void:
 
 # ---------------------------------------------------------------- new game
 
-func new_game(leader_id: String) -> void:
+## Starts a colony led by a class of leader (and, from the selection screen, a particular person: see leaders.gd).
+func new_game(leader_id: String, info := {}) -> void:
 	leader = leader_id
+	leader_info = Leaders.fill(leader_id, info)
 	season = 1
 	pop = 10
 	troops = 3
@@ -98,6 +102,7 @@ func new_game(leader_id: String) -> void:
 		"metal": 5, "gold": 10, "relations": 0, "truce": 0, "raid_planned": false,
 		"horse": 0, "car": 0, "boat": 0, "plane": 0}
 	town = {"name": "Dustwell", "status": "neutral", "relations": 20}
+	_apply_start_quirks()
 	w = Data.MAP_W
 	h = Data.MAP_H
 	_generate_map()
@@ -114,6 +119,27 @@ func new_game(leader_id: String) -> void:
 	add_log("Click a tile to build or scout. End Season when ready.")
 	changed.emit()
 	focus.emit(home(Data.PLAYER))
+
+
+## Does this colony's leader have the perk or flaw `id`? (Their effects are worked out where the game already
+## does the sum, like the upgrades are.)
+func has_quirk(id: String) -> bool:
+	return id in leader_info.get("perks", []) or leader_info.get("flaw", "") == id
+
+
+## What a leader's perks and flaws change before the first season: stores, troops and standing with the neighbours.
+func _apply_start_quirks() -> void:
+	if has_quirk("old_stash"):
+		res["gold"] += 20
+		res["metal"] += 10
+	if has_quirk("veteran_band"):
+		troops += 2
+	if has_quirk("silver_tongue"):
+		town["relations"] += 20
+	if has_quirk("hard_to_like"):
+		town["relations"] -= 10
+	if has_quirk("bad_blood"):
+		ai["relations"] -= 15
 
 
 ## Builds the map in passes, each layered over the last:
@@ -795,6 +821,11 @@ func route(mover: String, from: Vector2i, to: Vector2i) -> Array:
 	return paths[mover].get_id_path(from, to)
 
 
+## route_days() as one of your parties lives it: a Trailblazer's parties are quicker and Slow marchers' are slower.
+func party_route_days(mover: String, path: Array) -> float:
+	return route_days(mover, path) * travel_mult()
+
+
 func route_days(mover: String, path: Array) -> float:
 	var days := 0.0
 	for i in range(1, path.size()):
@@ -969,7 +1000,7 @@ func refresh_scout_route() -> void:
 func claim_cost(c: Vector2i) -> Dictionary:
 	if tile(c)["o"] == Data.AI:
 		return {"gold": 25}
-	return {"wood": 3 + owned(Data.PLAYER).size() / 10, "gold": 1}
+	return {"wood": 3 + owned(Data.PLAYER).size() / 10 + (1 if has_quirk("spendthrift") else 0), "gold": 1}
 
 
 ## Returns "" if the tile can be claimed, otherwise the reason it can't.
@@ -1071,6 +1102,11 @@ func building_dc(c: Vector2i) -> int:
 	var dc: int = D20Data.BUILDING_DC.get(b, 0)
 	if b == "wall" and tile(c)["o"] == Data.PLAYER and has("f2"):
 		dc += D20Data.STONE_WALL_DC
+	if dc > 0 and tile(c)["o"] == Data.PLAYER:
+		if has_quirk("stonemason"):
+			dc += 1
+		if has_quirk("shaky_buildings"):
+			dc = maxi(dc - 1, 1)
 	return dc
 
 
@@ -1276,7 +1312,7 @@ func buy_upgrade(id: String) -> void:
 # ---------------------------------------------------------------- military
 
 func train_troop_cost() -> Dictionary:
-	return {"metal": 3, "meat": 2}
+	return {"metal": 2 if has_quirk("drill_sergeant") else 3, "meat": 2}
 
 
 func train_troop() -> void:
@@ -1317,9 +1353,8 @@ func player_attack(target := Vector2i(-1, -1)) -> float:
 func wall_breach() -> float:
 	if has("wv4") and vehicles["plane"] > 0:
 		return 0.0
-	if has("w4") or vehicles["plane"] > 0:
-		return 0.5
-	return 1.0
+	var left := 0.5 if has("w4") or vehicles["plane"] > 0 else 1.0
+	return left * (0.8 if has_quirk("siege_breaker") else 1.0)
 
 
 func player_wall_defense() -> float:
@@ -1329,7 +1364,7 @@ func player_wall_defense() -> float:
 		d += count_building(Data.PLAYER, b) * Data.BUILDINGS[b].defense
 	if has("b_wf"):
 		d += count_building(Data.PLAYER, "outpost") * wall_each
-	return d
+	return d * (0.9 if has_quirk("thin_walls") else 1.0)
 
 
 func player_troop_defense() -> float:
@@ -1471,17 +1506,35 @@ func can_trade() -> bool:
 	return ai["relations"] > -30 and knows(Data.PLAYER, Data.AI)
 
 
+## The gold selling a lot of `r` pays: the market's price, a Haggler's 25% more or a Poor haggler's 15% less.
+func sell_gold(r: String) -> int:
+	var gold: float = Data.MARKET[r][1]
+	if has_quirk("haggler"):
+		gold *= 1.25
+	elif has_quirk("poor_haggler"):
+		gold *= 0.85
+	return maxi(roundi(gold), 1)
+
+
+## What buying a lot of `r` costs: twice the selling price, less 20% for a Haggler.
+func buy_price(r: String) -> int:
+	var price: float = Data.MARKET[r][1] * 2
+	if has_quirk("haggler"):
+		price *= 0.8
+	return maxi(roundi(price), 1)
+
+
 func sell(r: String) -> void:
 	var amount: int = Data.MARKET[r][0]
 	if can_trade() and res[r] >= amount:
 		res[r] -= amount
-		res["gold"] += Data.MARKET[r][1]
+		res["gold"] += sell_gold(r)
 		ai["relations"] = mini(ai["relations"] + 1, 100)
 		changed.emit()
 
 
 func buy(r: String) -> void:
-	var price: int = Data.MARKET[r][1] * 2
+	var price := buy_price(r)
 	if can_trade() and res["gold"] >= price:
 		res["gold"] -= price
 		res[r] += Data.MARKET[r][0]
@@ -1499,7 +1552,7 @@ func bribe() -> void:
 
 
 func ransom_price() -> int:
-	return 8 if has("b_wc") else 3
+	return (8 if has("b_wc") else 3) + (1 if has_quirk("ransom_broker") else 0)
 
 
 func ransom_prisoners() -> void:
@@ -1513,7 +1566,12 @@ func ransom_prisoners() -> void:
 
 
 func befriend_cost() -> Dictionary:
-	return {"grain": 10, "gold": 5}
+	return {"grain": 5, "gold": 3} if has_quirk("silver_tongue") else {"grain": 10, "gold": 5}
+
+
+## Gold a trade run brings home: a Caravan master's runs bring 25% more.
+func trade_gold(gold: int) -> int:
+	return roundi(gold * 1.25) if has_quirk("caravan_master") else gold
 
 
 func befriend_town() -> void:
@@ -1584,6 +1642,8 @@ func vehicle_cost(v: String) -> Dictionary:
 		mult = 0.75
 	if v == "boat" and has("cv4"):
 		mult = 0.75
+	if has_quirk("mechanic"):
+		mult *= 0.8
 	return _scaled(Data.VEHICLES[v].cost, mult)
 
 
@@ -1782,6 +1842,10 @@ func _gather() -> void:
 		_add(gain, {"meat": 1}, count_building(Data.PLAYER, "lodge"))
 	if has("mining"):
 		_add(gain, {"metal": 1}, count_building(Data.PLAYER, "mine"))
+	if has_quirk("green_thumb"):
+		_add(gain, {"veg": 1}, count_building(Data.PLAYER, "farm"))
+	if has_quirk("prospector"):
+		_add(gain, {"stone": 1}, count_building(Data.PLAYER, "mine"))
 	if has("b_fc"):
 		_add(gain, {"gold": 1}, count_building(Data.PLAYER, "wall") / 2)   # a toll for every 2 walls
 	# Not enough workers (colonists + prisoner labor) means tiles go untended
@@ -1823,7 +1887,7 @@ func _refine() -> void:
 		var c := Vector2i(i % w, i / w)
 		if tile(c)["o"] != Data.PLAYER or tile(c)["b"] != "refinery":
 			refinery_on.erase(i)
-	var eaters := pop + prisoners
+	var eaters := mouths()
 	var veg_used := 0
 	var fuel_made := 0
 	var no_veg := 0
@@ -1881,14 +1945,14 @@ func set_refinery(c: Vector2i, on: bool) -> void:
 func _upkeep() -> void:
 	starved_now = false
 	# Everyone eats grain, then vegetables
-	var eaters := pop + prisoners
+	var eaters := mouths()
 	var food: int = res["grain"] + res["veg"]
 	if food >= eaters:
 		var from_grain := mini(res["grain"], eaters)
 		res["grain"] -= from_grain
 		res["veg"] -= eaters - from_grain
 		var surplus := food - eaters
-		if surplus >= 10 and pop < pop_cap():
+		if surplus >= (6 if has_quirk("big_families") else 10) and pop < pop_cap():
 			var growth := mini(1 + surplus / 20, pop_cap() - pop)
 			pop += growth
 			add_log("Food surplus: %d new settlers join." % growth)
@@ -1896,6 +1960,8 @@ func _upkeep() -> void:
 		res["grain"] = 0
 		res["veg"] = 0
 		var lost := maxi(1, (eaters - food) / 3)
+		if has_quirk("frugal"):
+			lost = maxi(1, lost / 2)
 		pop = maxi(pop - lost, 1)
 		add_log("STARVATION: %d colonists died or fled." % lost)
 		starved_now = true
@@ -1923,11 +1989,44 @@ func _upkeep() -> void:
 	# Too many prisoners and too few outposts round the HQ: a prison break. Otherwise they revolt if under-guarded
 	if prison_break_due():
 		_prison_break()
-	elif prisoners > troops * 3 and randf() < 0.3:
+	elif prisoners > troops * guard_ratio() and randf() < 0.3:
 		var escaped := prisoners / 2
 		prisoners -= escaped
 		troops = maxi(troops - 1, 0)
 		add_log("PRISONER REVOLT! %d escaped." % escaped)
+
+
+## Mouths to feed: the colonists and the prisoners, and for Big appetites 1 more for every 5 colonists.
+func mouths() -> int:
+	return pop + prisoners + (pop / 5 if has_quirk("big_appetites") else 0)
+
+
+## The prisoner count a prison break needs to beat: 4, 2 more for a Warden, 1 fewer for Lax guards.
+func prison_high() -> int:
+	return Data.PRISON_HIGH + (2 if has_quirk("warden") else 0) - (1 if has_quirk("lax_guards") else 0)
+
+
+## Prisoners one troop can guard before the old revolt can start: 3, or 4 for a Warden.
+func guard_ratio() -> int:
+	return 4 if has_quirk("warden") else 3
+
+
+## How fast radiation poisons your people: Data.RAD_DOSE_RATE, 25% slower for Rad-proof, 15% faster for Frail colonists.
+func dose_rate() -> float:
+	if has_quirk("rad_proof"):
+		return Data.RAD_DOSE_RATE * 0.75
+	if has_quirk("frail_colonists"):
+		return Data.RAD_DOSE_RATE * 1.15
+	return Data.RAD_DOSE_RATE
+
+
+## How long your parties take compared with the usual: 15% less for a Trailblazer, 10% more for Slow marchers.
+func travel_mult() -> float:
+	if has_quirk("trailblazer"):
+		return 0.85
+	if has_quirk("slow_marchers"):
+		return 1.10
+	return 1.0
 
 
 ## Your outposts inside the circle of control round the HQ (PRISON_CIRCLE tiles).
@@ -1941,7 +2040,7 @@ func outposts_in_circle() -> int:
 
 ## More than PRISON_HIGH prisoners and fewer than PRISON_OUTPOSTS outposts in the circle: the pens will not hold.
 func prison_break_due() -> bool:
-	return prisoners > Data.PRISON_HIGH and outposts_in_circle() < Data.PRISON_OUTPOSTS
+	return prisoners > prison_high() and outposts_in_circle() < Data.PRISON_OUTPOSTS
 
 
 ## Half the prisoners (rounded up) get out and you lose a guard. They form a raider band at the edge of your land.
@@ -2117,7 +2216,7 @@ func save_game(slot: String) -> void:
 		"prisoners": prisoners, "res": res, "upgrades": upgrades, "vehicles": vehicles,
 		"units": Units.to_save(), "raided": raided_this_season, "ai": ai, "town": town,
 		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts,
-		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost,
+		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost, "leader_info": leader_info,
 		"memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
 	}
 	var f := FileAccess.open(_path(slot), FileAccess.WRITE)
@@ -2135,6 +2234,7 @@ func load_game(slot: String) -> bool:
 		return false
 	# JSON stores every number as a float, so turn them back into ints
 	leader = data["leader"]
+	leader_info = Leaders.fill(leader, data.get("leader_info", {}))   # none in saves from before named leaders
 	season = int(data["season"])
 	pop = int(data["pop"])
 	troops = int(data["troops"])
@@ -2227,4 +2327,5 @@ func save_info(slot: String) -> String:
 	if typeof(data) != TYPE_DICTIONARY:
 		return "corrupt"
 	var s := int(data["season"])
-	return "%s - Year %d %s" % [Data.LEADERS[data["leader"]].name, (s - 1) / 4 + 1, Data.SEASONS[(s - 1) % 4]]
+	var who := Leaders.label(Leaders.fill(data["leader"], data.get("leader_info", {})))
+	return "%s - Year %d %s" % [who, (s - 1) / 4 + 1, Data.SEASONS[(s - 1) % 4]]
