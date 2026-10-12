@@ -288,7 +288,12 @@ whoever attacks (`RAID_LOSS_CAP`).
   all count). A hit pays the usual package for a won fight and the wall comes down when you press Continue; a miss injures the roller (light,
   or severe on a bad miss, which also loses half of what the party carries) and the party can try again or "Back off". Walls are DC 12, so the
   fatal fumble never applies to them.
-The Rust Kings' own war parties and scouts do not attack your buildings yet; only wild bands and escaped prisoners do.
+- **The Rust Kings' raids** also roll at your buildings from season 6 on (`AI_BUILDING_ATTACKS_FROM`), but only when the raid wins: once, once more
+  if their attack is at least double your defense, and once more if they have planes (Flak towers cancel that one), each at a different building,
+  the ones nearest their fort first, with the same modifier table as your own raid.
+- **The Rust Kings' scouts** (2 a season, up to 4 with horses) each have a 10% chance, also from season 6, to roll once with no bonus at one of
+  your buildings, when the spot they stop at is within 2 tiles of it and the building is more than 3 tiles from your HQ.
+Wild bands, escaped prisoners, their raids and their scouts all count toward the same limit of 3 buildings lost a season.
 `tests/unit/test_prison_break.gd` and `test_building_raids.gd` pin all of it.
 
 ## How the game ends

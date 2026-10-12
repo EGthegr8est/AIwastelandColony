@@ -235,6 +235,14 @@ const PRISON_ESCAPE := 0.5
 const WALLS_PER_TILE := 4
 const RAID_LOSS_CAP := 3
 const RAID_RELATIONS := 10
+# The Rust Kings attack your buildings from this season on: a winning raid of theirs rolls at up to AI_RAID_ROLLS of them,
+# and each of their scouts that ends its move within AI_SCOUT_REACH tiles of one of your buildings (more than
+# AI_SCOUT_HOME_GAP tiles from your HQ) has an AI_SCOUT_STRIKE chance of one roll at it, with no bonus.
+const AI_BUILDING_ATTACKS_FROM := 6
+const AI_RAID_ROLLS := 3
+const AI_SCOUT_STRIKE := 0.1
+const AI_SCOUT_REACH := 2
+const AI_SCOUT_HOME_GAP := 3
 
 const LEADERS := {
 	"raider":  {"name": "Raider",  "branch": "warfare",       "attack": 1.25, "defense": 1.0,  "caravans": 1, "desc": "Best attack. 25% off Warfare upgrades."},

@@ -1150,6 +1150,35 @@ func raider_strike(from: Vector2i, att: float, def: float) -> void:
 		attack_building(c, raid_modifier(att, def), "A raider band")
 
 
+## A winning Rust Kings raid also rolls at your buildings nearest their fort: once, once more at double your defense,
+## once more if they have planes (and no Flak towers), at most AI_RAID_ROLLS, each at a different building. Not before
+## season AI_BUILDING_ATTACKS_FROM.
+func _ai_strikes(att: float, def: float) -> void:
+	if season < Data.AI_BUILDING_ATTACKS_FROM:
+		return
+	var rolls := 1
+	if att >= def * 2.0:
+		rolls += 1
+	if ai["plane"] > 0 and not has("fv4"):
+		rolls += 1
+	var mod := raid_modifier(att, def)
+	for c in buildings_of(Data.PLAYER, home(Data.AI)).slice(0, mini(rolls, Data.AI_RAID_ROLLS)):
+		attack_building(c, mod, "The Rust Kings")
+
+
+## A Rust Kings scout that has just ended its move at `at`: if one of your buildings is within AI_SCOUT_REACH tiles of it
+## (and more than AI_SCOUT_HOME_GAP tiles from your HQ) there is an AI_SCOUT_STRIKE chance of one attack roll at it.
+func _ai_scout_strike(at: Vector2i) -> void:
+	if season < Data.AI_BUILDING_ATTACKS_FROM:
+		return
+	var hq := home(Data.PLAYER)
+	var near := buildings_of(Data.PLAYER, at).filter(func(c):
+		return Vector2(c - at).length() <= Data.AI_SCOUT_REACH and Vector2(c - hq).length() > Data.AI_SCOUT_HOME_GAP)
+	if near.is_empty() or randf() >= Data.AI_SCOUT_STRIKE:
+		return
+	attack_building(near[0], 0, "A Rust Kings scout")
+
+
 ## A won raid on the Rust Kings also rolls at their walls nearest your HQ: once, twice if you had double their defense.
 func _raid_strikes(att: float, def: float) -> void:
 	var rolls := 2 if att >= def * 2.0 else 1
@@ -1414,6 +1443,7 @@ func _ai_raid() -> void:
 			land = _take_land(Data.PLAYER, Data.AI, 1, false)
 		add_log("The Rust Kings RAIDED you! They took %s and %d tiles." % [cost_text(loot), land])
 		note("raids_suffered")
+		_ai_strikes(att, def)
 		if att >= def * Data.ENDINGS.decisive_loss and count_building(Data.PLAYER, "citadel") == 0:
 			add_log("Their attack was overwhelming: the colony is overrun.")
 			_end("defeat", "overrun")
@@ -1683,8 +1713,9 @@ func scout_parties() -> int:
 	return 2 + mini(vehicles["horse"] + vehicles["car"], 3)
 
 
-## Rust Kings outriders push into the unknown, heading west toward you.
-func _ai_scout() -> void:
+## Rust Kings outriders push into the unknown, heading west toward you. Returns where this one ended its move (off the
+## map, (-1, -1), if there was nowhere left to go).
+func _ai_scout() -> Vector2i:
 	var frontier := []
 	var min_x := w
 	for y in h:
@@ -1694,8 +1725,11 @@ func _ai_scout() -> void:
 				frontier.append(c)
 				min_x = mini(min_x, x)
 	var west := frontier.filter(func(c): return c.x <= min_x + 2)
-	if not west.is_empty():
-		reveal(Data.AI, west.pick_random(), 5)
+	if west.is_empty():
+		return Vector2i(-1, -1)
+	var at: Vector2i = west.pick_random()
+	reveal(Data.AI, at, 5)
+	return at
 
 
 func cycle_view() -> void:
@@ -1954,7 +1988,9 @@ func _ai_turn() -> void:
 	ai["relations"] = maxi(ai["relations"] - 2, -100)
 	_sync_ai_walls()
 	for i in 2 + mini(ai["horse"], 2):
-		_ai_scout()
+		var at := _ai_scout()
+		if in_bounds(at):
+			_ai_scout_strike(at)
 
 	if ai["truce"] > 0:
 		ai["truce"] -= 1

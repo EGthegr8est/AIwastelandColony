@@ -480,3 +480,146 @@ func test_wall_tiles_and_the_season_count_survive_saving() -> void:
 	DirAccess.remove_absolute(Game._path("wall_test"))
 	assert_eq(_wall_tiles(), before)
 	assert_eq(Game.buildings_lost, 2)
+
+
+# ---------------------------------------------------------------- the Rust Kings attack your buildings
+
+## A farm on one of your tiles `dx` tiles east of the HQ (east is toward their fort).
+func _farm_east(dx: int) -> Vector2i:
+	var c := Vector2i(hq.x + dx, hq.y)
+	Game.tile(c)["o"] = Data.PLAYER
+	Game.tile(c)["t"] = "sand"
+	Game.tile(c)["b"] = "farm"
+	return c
+
+
+## Seeds the random numbers so the next randf() is (or is not) under the scouts' strike chance.
+func _seed_scout_chance(fires: bool) -> void:
+	for s in range(1, 500):
+		seed(s)
+		if (randf() < Data.AI_SCOUT_STRIKE) == fires:
+			seed(s)
+			return
+
+
+func test_a_winning_rust_kings_raid_rolls_once_at_the_building_nearest_their_fort() -> void:
+	Game.season = 10
+	var east := _farm_east(2)
+	var west := _farm_east(-2)
+	Units.dice = ForcedDice.new([20])
+	Game._ai_strikes(10.0, 10.0)
+	assert_eq(Game.tile(east)["b"], "", "the one toward their fort fell")
+	assert_eq(Game.tile(west)["b"], "farm")
+	assert_true(Game.log_lines.any(func(l): return l.contains("The Rust Kings struck the farm")))
+
+
+func test_double_your_defense_gets_them_a_second_roll_each_at_a_different_building() -> void:
+	Game.season = 10
+	var a := _farm_east(2)
+	var b := _farm_east(1)
+	var c := _farm_east(-2)
+	Units.dice = ForcedDice.new([20, 20])
+	Game._ai_strikes(20.0, 10.0)
+	assert_eq([Game.tile(a)["b"], Game.tile(b)["b"], Game.tile(c)["b"]], ["", "", "farm"])
+
+
+func test_their_planes_add_a_roll_unless_you_have_flak_towers() -> void:
+	Game.season = 10
+	Game.ai["plane"] = 1
+	var farms := [_farm_east(3), _farm_east(2), _farm_east(1), _farm_east(-2)]
+	Units.dice = ForcedDice.new([20, 20, 20])
+	Game._ai_strikes(20.0, 10.0)   # one, one for double the defense, one for the planes
+	assert_eq(farms.filter(func(c): return Game.tile(c)["b"] == "").size(), 3)
+	for c in farms:
+		Game.tile(c)["b"] = "farm"
+	Game.buildings_lost = 0
+	Game.upgrades.append("fv4")
+	Units.dice = ForcedDice.new([20, 20])
+	Game._ai_strikes(20.0, 10.0)
+	assert_eq(farms.filter(func(c): return Game.tile(c)["b"] == "").size(), 2, "flak towers stop the bombers' roll")
+
+
+func test_the_rust_kings_make_no_building_attacks_before_season_6() -> void:
+	Game.season = 5
+	var farm := _farm_east(2)
+	Units.dice = ForcedDice.new([])   # any roll would be an error
+	Game._ai_strikes(100.0, 1.0)
+	assert_eq(Game.tile(farm)["b"], "farm")
+	Game._ai_scout_strike(farm + Vector2i(1, 0))
+	assert_eq(Game.tile(farm)["b"], "farm")
+
+
+func test_the_season_cap_stops_their_raid_too() -> void:
+	Game.season = 10
+	var farm := _farm_east(2)
+	Game.buildings_lost = Data.RAID_LOSS_CAP
+	Units.dice = ForcedDice.new([])
+	Game._ai_strikes(100.0, 1.0)
+	assert_eq(Game.tile(farm)["b"], "farm")
+
+
+func test_a_real_winning_raid_destroys_a_building_and_a_lost_one_does_not() -> void:
+	Game.season = 10
+	var farm := _farm_east(2)
+	Game.ai["troops"] = 1000   # their raid wins
+	Units.dice = ForcedDice.new([20, 20])
+	seed(1)
+	Game._ai_raid()
+	assert_eq(Game.tile(farm)["b"], "", "a won raid also brought a building down")
+	Game.ended()
+	World.new_game(7)
+	Units.tribes = []
+	Units.wild_spawns = false
+	Game.season = 10
+	var other := _farm_east(2)
+	Game.ai["troops"] = 0   # nothing to raid with: it is beaten back
+	Units.dice = ForcedDice.new([])
+	Game._ai_raid()
+	assert_eq(Game.tile(other)["b"], "farm")
+
+
+func test_a_scout_that_ends_its_move_next_to_an_outlying_building_may_attack_it() -> void:
+	Game.season = 10
+	var farm := Vector2i(hq.x + 3, hq.y + 1)   # 3.16 tiles from the HQ: outside the 3 tile core
+	Game.tile(farm)["o"] = Data.PLAYER
+	Game.tile(farm)["t"] = "sand"
+	Game.tile(farm)["b"] = "farm"
+	Units.dice = ForcedDice.new([20])
+	_seed_scout_chance(true)
+	Game._ai_scout_strike(farm + Vector2i(1, 1))
+	assert_eq(Game.tile(farm)["b"], "", "the 10% came up and the roll hit")
+	assert_true(Game.log_lines.any(func(l): return l.contains("A Rust Kings scout struck the farm") and l.contains("+0 vs DC 8")))
+
+
+func test_a_scout_usually_leaves_it_alone() -> void:
+	Game.season = 10
+	var farm := Vector2i(hq.x + 3, hq.y + 1)
+	Game.tile(farm)["o"] = Data.PLAYER
+	Game.tile(farm)["t"] = "sand"
+	Game.tile(farm)["b"] = "farm"
+	Units.dice = ForcedDice.new([])
+	_seed_scout_chance(false)
+	Game._ai_scout_strike(farm + Vector2i(1, 1))
+	assert_eq(Game.tile(farm)["b"], "farm")
+
+
+func test_scouts_leave_the_core_and_far_away_buildings_alone() -> void:
+	Game.season = 10
+	var core := _farm_east(2)   # within 3 tiles of the HQ
+	var lone := Vector2i(hq.x + 3, hq.y + 1)
+	Game.tile(lone)["o"] = Data.PLAYER
+	Game.tile(lone)["t"] = "sand"
+	Game.tile(lone)["b"] = "farm"
+	Units.dice = ForcedDice.new([])
+	_seed_scout_chance(true)
+	Game._ai_scout_strike(core + Vector2i(0, -1))   # next to the core one only (and 3+ tiles from the lone one)
+	assert_eq(Game.tile(core)["b"], "farm", "the HQ's core is out of their reach")
+	_seed_scout_chance(true)
+	Game._ai_scout_strike(lone + Vector2i(0, 3))   # 3 tiles from it: too far
+	assert_eq(Game.tile(lone)["b"], "farm")
+
+
+func test_a_scout_reports_where_it_ended_its_move() -> void:
+	var at := Game._ai_scout()
+	assert_true(Game.in_bounds(at))
+	assert_true(Game.knows_tile(Data.AI, at))
