@@ -1129,6 +1129,46 @@ func raid_modifier(att: float, def: float) -> int:
 	return D20Data.RAID_PENALTY
 
 
+## The DC of a fight between armies (D20Data.RAID_DICE): 21 - round(20 * attack / (attack + defense)), so a d20 of at least
+## the DC wins about as often as attack / (attack + defense) always did, to the nearest 5%.
+func raid_dc(att: float, def: float) -> int:
+	var rules: Dictionary = D20Data.RAID_DICE
+	if att <= 0.0:
+		return rules.dc_max
+	if def <= 0.0:
+		return rules.dc_min
+	return clampi(21 - roundi(20.0 * att / (att + def)), rules.dc_min, rules.dc_max)
+
+
+## The chance, in percent, that one d20 wins against `dc` (a natural 20 always wins and a natural 1 never does).
+func raid_chance(dc: int) -> int:
+	return clampi(21 - dc, 1, 19) * 5
+
+
+## What an army-fight button says before you commit: the DC and the chance.
+func raid_odds_text(att: float, def: float) -> String:
+	var dc := raid_dc(att, def)
+	return "DC %d, %d%% to win" % [dc, raid_chance(dc)]
+
+
+## One d20 for a fight between armies, written to the log: {"d20", "dc", "won", "crit"} where crit is "success" for a natural
+## 20, "fail" for a natural 1 and "" otherwise. `who` heads the log line ("Your attack on the Ash Walkers").
+func raid_roll(att: float, def: float, who: String) -> Dictionary:
+	var dc := raid_dc(att, def)
+	var d20: int = Units.dice.d20()
+	var crit := "success" if d20 == D20Data.NAT_CRIT else ("fail" if d20 == D20Data.NAT_FAIL else "")
+	var won := d20 != D20Data.NAT_FAIL and d20 >= dc
+	var verdict := "won"
+	if crit == "success":
+		verdict = "natural 20, a critical win"
+	elif crit == "fail":
+		verdict = "natural 1, a critical loss"
+	elif not won:
+		verdict = "lost"
+	add_log("%s: d20 %d vs DC %d (%d%% to win), %s." % [who, d20, dc, raid_chance(dc), verdict])
+	return {"d20": d20, "dc": dc, "won": won, "crit": crit}
+
+
 ## The buildings of `owner` that can be destroyed, nearest to `from` first.
 func buildings_of(owner: int, from: Vector2i) -> Array:
 	var out := []
@@ -1215,9 +1255,10 @@ func _ai_scout_strike(at: Vector2i) -> void:
 	attack_building(near[0], 0, "A Rust Kings scout")
 
 
-## A won raid on the Rust Kings also rolls at their walls nearest your HQ: once, twice if you had double their defense.
-func _raid_strikes(att: float, def: float) -> void:
-	var rolls := 2 if att >= def * 2.0 else 1
+## A won raid on the Rust Kings also rolls at their walls nearest your HQ: once, twice if you had double their defense, and
+## `extra` more after a natural 20.
+func _raid_strikes(att: float, def: float, extra := 0) -> void:
+	var rolls := (2 if att >= def * 2.0 else 1) + extra
 	var mod := raid_modifier(att, def)
 	for c in buildings_of(Data.AI, home(Data.PLAYER)).slice(0, rolls):
 		attack_building(c, mod, "Your raid")
@@ -1425,13 +1466,17 @@ func raid_ai() -> void:
 		add_log("Your war rigs couldn't find a way around the steep inclines and stayed home.")
 	ai["relations"] = maxi(ai["relations"] - 30, -100)
 	ai["truce"] = 0
-	if randf() * (att + def) < att:
+	var roll := raid_roll(att, def, "Your raid on the Rust Kings")
+	var rules: Dictionary = D20Data.RAID_DICE.fort
+	if roll.won:
 		var loot := {}
 		for k in ["wood", "stone", "metal", "gold"]:
 			loot[k] = int(ai[k] * 0.25)
 			ai[k] -= loot[k]
 			res[k] += loot[k]
 		var caught := 1 + randi() % 3 + (2 if has("w2") else 0)
+		if roll.crit == "success":
+			caught += rules.crit_prisoners
 		prisoners += caught
 		note("prisoners_taken", caught)
 		note("raids_won")
@@ -1439,12 +1484,12 @@ func raid_ai() -> void:
 		troops -= int(troops * 0.15)
 		var land := _take_land(Data.AI, Data.PLAYER, 3 if has("w5") else 1, has("w5"))
 		add_log("RAID WON! Looted %s, took %d prisoners and %d tiles." % [cost_text(loot), caught, land])
-		_raid_strikes(att, def)
+		_raid_strikes(att, def, rules.crit_strikes if roll.crit == "success" else 0)
 		if att >= def * Data.ENDINGS.decisive_win:
 			add_log("Your attack was overwhelming: the Rust Kings' fort has fallen.")
 			_end("raiders_defeated", "stormed")
 	else:
-		var lost := int(ceil(troops * 0.4))
+		var lost := int(ceil(troops * (rules.crit_troops_lost if roll.crit == "fail" else rules.troops_lost)))
 		troops -= lost
 		ai["troops"] -= int(ai["troops"] * 0.1)
 		note("raids_lost")
@@ -1461,10 +1506,12 @@ func _ai_raid() -> void:
 	if ai["plane"] > 0 and not has("fv4"):
 		walls *= 0.5   # enemy bombers
 	var def := walls + player_troop_defense()
-	if randf() * (att + def) < att:
+	var roll := raid_roll(att, def, "The Rust Kings' raid on your colony")
+	var rules: Dictionary = D20Data.RAID_DICE.their_raid
+	if roll.won:
 		var loot := {}
 		for k in ["wood", "stone", "metal", "gold", "grain", "fuel"]:
-			loot[k] = int(res[k] * 0.2)
+			loot[k] = int(res[k] * (rules.crit_loot if roll.crit == "success" else rules.loot))
 			res[k] -= loot[k]
 		troops -= int(ceil(troops * 0.3))
 		pop = maxi(pop - 1, 1)
@@ -1483,12 +1530,13 @@ func _ai_raid() -> void:
 			add_log("Their attack was overwhelming: the colony is overrun.")
 			_end("defeat", "overrun")
 	else:
-		ai["troops"] -= int(ceil(ai["troops"] * 0.4))
+		ai["troops"] -= int(ceil(ai["troops"] * (rules.crit_their_troops_lost if roll.crit == "fail" else rules.their_troops_lost)))
 		troops -= int(troops * 0.1)
-		prisoners += 1
-		note("prisoners_taken")
+		var caught: int = rules.crit_caught if roll.crit == "fail" else rules.caught
+		prisoners += caught
+		note("prisoners_taken", caught)
 		note("raids_beaten_back")
-		add_log("Rust Kings raid beaten back! You captured a raider.")
+		add_log("Rust Kings raid beaten back! You captured %s." % ("a raider" if caught == 1 else "%d raiders" % caught))
 	# Either way, you can follow their tracks home
 	if not knows(Data.PLAYER, Data.AI):
 		reveal(Data.PLAYER, home(Data.AI), 3)
@@ -1586,22 +1634,28 @@ func befriend_town() -> void:
 	changed.emit()
 
 
+const TOWN_DEFENSE := 8.0   # what Dustwell's militia count for against your attack
+
+
 func conquer_town() -> void:
 	if town["status"] != "neutral" or troops <= 0 or raided_this_season or not knows(Data.PLAYER, Data.TOWN):
 		return
 	raided_this_season = true
 	var att := player_attack(home(Data.TOWN))
-	var def := 8.0
-	if randf() * (att + def) < att:
+	var def := TOWN_DEFENSE
+	var roll := raid_roll(att, def, "Your attack on Dustwell")
+	var rules: Dictionary = D20Data.RAID_DICE.town
+	if roll.won:
 		for c in owned(Data.TOWN):
 			tile(c)["o"] = Data.PLAYER
-		prisoners += 5
-		note("prisoners_taken", 5)
+		var caught: int = rules.crit_prisoners if roll.crit == "success" else rules.prisoners
+		prisoners += caught
+		note("prisoners_taken", caught)
 		town["status"] = "conquered"
 		ai["relations"] = maxi(ai["relations"] - 15, -100)
-		add_log("You took Dustwell by force. Its land and 5 prisoners are yours. Your name darkens.")
+		add_log("You took Dustwell by force. Its land and %d prisoners are yours. Your name darkens." % caught)
 	else:
-		var lost := int(ceil(troops * 0.4))
+		var lost := int(ceil(troops * (rules.crit_troops_lost if roll.crit == "fail" else rules.troops_lost)))
 		troops -= lost
 		town["relations"] -= 30
 		add_log("Dustwell's militia held. You lost %d troops." % lost)

@@ -149,7 +149,7 @@ static func begin(ruin: String, ctx: Dictionary, scale: float, dice, party := []
 		"fight_sit": 0, "fight_bonus": "", "after": "loot",
 		"loot": {}, "site_loot": {}, "packages": [], "prisoners": 0, "camp_revealed": false, "wiped": false,
 		"reveal": 0, "reveal_fort": false, "trust": 0, "colonists": 0, "troops": 0,
-		"strike_dc": 0, "building": "", "cell": [-1, -1], "destroyed": false, "carried_loss": 0.0,
+		"strike_dc": 0, "building": "", "cell": [-1, -1], "camp": -1, "destroyed": false, "carried_loss": 0.0,
 		"injuries": {}, "outcome": "", "log": [], "last": [], "shown": 0,
 		"rerolls": maxi(D20.party_rerolls(party), int(lead.get("min_rerolls", 0))),
 	}
@@ -169,6 +169,34 @@ static func begin_strike(ctx: Dictionary, scale: float, dice, party: Array, cell
 	visit["building"] = building
 	visit["cell"] = [cell.x, cell.y]
 	return visit
+
+
+## A scouting party's attack on a raider camp: the same one-roll-a-press attack as on a building, against the DC of the camp's
+## strength (what a fight with that strength would be at the ruins), with the party's strength against the camp's counting too.
+## A hit scatters the camp; see Units.visit_finish.
+static func begin_camp_strike(ctx: Dictionary, scale: float, dice, party: Array, tribe_id: int, strength: int) -> Dictionary:
+	var visit := begin("safe", ctx, scale, dice, party)
+	visit["ruin"] = "camp"
+	visit["stage"] = "strike"
+	visit["enemy"] = strength
+	visit["strike_dc"] = enemy_dc(strength)
+	visit["camp"] = tribe_id
+	return visit
+
+
+## A raider band meeting a party on the road: the ruin-fight rules, rolled at once for the party by its best fighter against the
+## band's DC. Injuries land on the survivors as they do at the ruins. What the party carries, who dies and what happens to
+## the band is for the caller: {"won", "tier", "d20", "roller", "wiped", "loot", "carried_loss", "log"}.
+static func field_fight(ctx: Dictionary, dice, party: Array, strength: int, scale: float) -> Dictionary:
+	var visit := begin("safe", ctx, scale, dice, party)
+	visit["stage"] = "fight"
+	visit["enemy"] = strength
+	visit["after"] = "end"
+	step(visit, dice, party, "roll")
+	var rolled: Dictionary = visit.rolled
+	return {"won": rolled.tier == Data.SUCCESS or rolled.tier == Data.CRITICAL_SUCCESS, "tier": rolled.tier, "d20": int(rolled.d20),
+		"roller": rolled.roller, "wiped": visit.wiped, "loot": visit.loot, "carried_loss": float(Data.COMBAT[rolled.tier].carried_loss),
+		"log": visit.log}
 
 
 static func _dc_for(visit: Dictionary) -> int:
@@ -231,7 +259,7 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			out["mod"] = mod
 			out["parts"] = parts
 			out["text"] = "%s rolls. %s, DC %d, %+d" % [scout.name, check_name, dc, mod]
-			if visit.stage == "fight":
+			if visit.stage == "fight" or visit.ruin == "camp":
 				out["text"] += " (enemy strength %d)" % visit.enemy
 			out["buttons"] = [{"id": "roll", "label": "Roll d20 (%+d vs DC %d)" % [mod, dc]}]
 			if visit.stage == "site":
@@ -247,7 +275,7 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			out["buttons"] = [{"id": "deeper", "label": "Search deeper (DC %d)" % next_dc}, {"id": "home", "label": "Head home"}]
 		_:
 			out["text"] = _outcome_text(visit)
-			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped or visit.ruin == "building" else "Head home"}]
+			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped or visit.ruin in ["building", "camp"] else "Head home"}]
 	return out
 
 
@@ -258,6 +286,12 @@ static func _outcome_text(visit: Dictionary) -> String:
 		if visit.outcome == "left":
 			return "You backed off."
 		return "The building came down." if visit.destroyed else "The building held."
+	if visit.ruin == "camp":
+		if visit.outcome == "wiped":
+			return "The party was wiped out."
+		if visit.outcome == "left":
+			return "You backed off."
+		return "The camp is scattered." if visit.destroyed else "The camp held."
 	if visit.ruin == "poi" and visit.outcome in ["looted", "empty", ""]:
 		return "There was nothing here." if visit.outcome == "empty" else "The site is picked clean."
 	match visit.outcome:
@@ -267,11 +301,22 @@ static func _outcome_text(visit: Dictionary) -> String:
 			return "You slipped away. The raider still holds the ruins."
 		"lost_fight":
 			return "You were driven off. The raider still holds the ruins."
+		"driven_off":
+			return ("You were driven off: the noise of the ruined cache drew raiders. %s" % _carrying_text(visit)).strip_edges()
 		"left":
 			return "You left the %s untouched." % ("site" if visit.ruin == "poi" else "ruins")
 		"empty":
 			return "There was nothing here."
-	return "The ruins are stripped."
+	return "The ruins are stripped. %s" % _carrying_text(visit) if not visit.loot.is_empty() else "The ruins are stripped."
+
+
+## "The party carries 6 metal and 3 fuel." (what the visit found so far)
+static func _carrying_text(visit: Dictionary) -> String:
+	var bits := []
+	for r in visit.loot:
+		if int(visit.loot[r]) > 0:
+			bits.append("%d %s" % [int(visit.loot[r]), r])
+	return "The party carries %s." % ", ".join(bits) if not bits.is_empty() else ""
 
 
 # ---------------------------------------------------------------- doing the next roll
@@ -323,6 +368,7 @@ static func _roll(visit: Dictionary, dice, party: Array) -> Dictionary:
 	var result := D20.roll_check(dice, scout, check, _dc_for(visit), situational, true, parts)
 	visit["rerolls"] = scout.rerolls   # a Lucky reroll, once spent, is spent for the whole party
 	visit["shown"] = result.d20
+	visit["rolled"] = {"tier": result.tier, "d20": result.d20, "roller": roller.name}
 	visit.last.append(result.log)
 	return {"result": result, "scout": scout, "roller": roller}
 
@@ -370,7 +416,9 @@ static func _event(visit: Dictionary, dice, party: Array, choice: String) -> voi
 	match event:
 		"nothing":
 			visit["stage"] = "done"
-			visit["outcome"] = "empty"
+			visit["outcome"] = "empty" if visit.loot.is_empty() and not has_rewards(visit) else "looted"
+			if not visit.loot.is_empty():
+				visit.last.append("Nothing more turns up.")
 		"minor_find":
 			_add_package(visit, D20.random_package(dice, _loot_scout(visit, party), "small", "", visit.scale))
 			visit["stage"] = "done"
@@ -514,6 +562,10 @@ static func _ambush(visit: Dictionary, dice, party: Array) -> void:
 	var row: Dictionary = Data.AMBUSH[tier]
 	visit["fight_sit"] = row.situational
 	visit["fight_bonus"] = row.bonus_package
+	if str(row.fight) == "win":
+		visit.last.append("You turn the ambush on them: the raiders are beaten.")
+		_won_fight(visit, dice, rolled.scout, Data.SUCCESS, true)   # beaten outright: the enemy's small package, the bonus, their camp
+		return
 	if str(row.fight) == "choice":
 		visit.last.append("You spot it in time.")
 		visit["stage"] = "choice"
@@ -542,27 +594,35 @@ static func _fight(visit: Dictionary, dice, party: Array) -> void:
 		return
 	var won := tier == Data.SUCCESS or tier == Data.CRITICAL_SUCCESS
 	if won:
-		if row.enemy_package != "":
-			var size := D20.size_shifted(scout, "combat", tier, row.enemy_package)
-			_add_package(visit, D20.random_package(dice, scout, size, "", visit.scale))
-		if visit.fight_bonus != "":
-			_add_package(visit, D20.random_package(dice, scout, visit.fight_bonus, "", visit.scale))
-			visit["fight_bonus"] = ""
-		if visit.ruin == "rogue" and visit.ambush_kind == "rogue":
-			visit["prisoners"] += 1
-			visit.last.append("The raider is taken prisoner.")
-		if row.camp_revealed:
-			visit["camp_revealed"] = true
-			visit.last.append("Their camp is revealed.")
-		if visit.after == "loot":
-			visit.last.append("The ruins are yours to search.")
-			visit["stage"] = "event"
-		else:
-			visit["stage"] = "done"
+		_won_fight(visit, dice, scout, tier)
 	else:
 		visit["stage"] = "done"
-		visit["outcome"] = "lost_fight" if visit.ruin == "rogue" and visit.ambush_kind == "rogue" else ""
+		var rogue_held: bool = visit.ruin == "rogue" and visit.ambush_kind == "rogue"
+		visit["outcome"] = "lost_fight" if rogue_held else ("" if visit.ruin == "poi" else "driven_off")   # a site is simply spent
 		visit.last.append("You are driven off.")
+
+
+## What a won fight pays, whether it was fought or the ambush was turned on them: the enemy's package for the tier, the
+## ambush's bonus package, the raider taken prisoner at a rogue-held ruin, their camp on a critical, and then the ruins to search.
+static func _won_fight(visit: Dictionary, dice, scout: Dictionary, tier: String, reveal := false) -> void:
+	var row: Dictionary = Data.COMBAT[tier]
+	if row.enemy_package != "":
+		var size := D20.size_shifted(scout, "combat", tier, row.enemy_package)
+		_add_package(visit, D20.random_package(dice, scout, size, "", visit.scale))
+	if visit.fight_bonus != "":
+		_add_package(visit, D20.random_package(dice, scout, visit.fight_bonus, "", visit.scale))
+		visit["fight_bonus"] = ""
+	if visit.ruin == "rogue" and visit.ambush_kind == "rogue":
+		visit["prisoners"] += 1
+		visit.last.append("The raider is taken prisoner.")
+	if row.camp_revealed or reveal:
+		visit["camp_revealed"] = true
+		visit.last.append("Their camp is revealed.")
+	if visit.after == "loot":
+		visit.last.append("The ruins are yours to search.")
+		visit["stage"] = "event"
+	else:
+		visit["stage"] = "done"
 
 
 ## The injury a combat-type roll leaves and, against a hard enough DC, the fatal fumble. True if it wiped the party out.
@@ -599,14 +659,18 @@ static func _strike(visit: Dictionary, dice, party: Array, choice: String) -> vo
 		return
 	visit["stage"] = "done"
 	visit["carried_loss"] = row.carried_loss
+	var camp: bool = visit.ruin == "camp"
 	if tier == Data.SUCCESS or tier == Data.CRITICAL_SUCCESS:
 		visit["destroyed"] = true
-		visit.last.append("The building comes down.")
+		visit.last.append("The camp is scattered." if camp else "The building comes down.")
+		if camp:
+			visit["prisoners"] += 1
+			visit.last.append("One of the raiders is taken prisoner.")
 		if row.enemy_package != "":
 			var size := D20.size_shifted(rolled.scout, "combat", tier, row.enemy_package)
 			_add_package(visit, D20.random_package(dice, rolled.scout, size, "", visit.scale))
 	else:
-		visit.last.append("The building holds.")
+		visit.last.append("The camp holds." if camp else "The building holds.")
 
 
 static func _deeper(visit: Dictionary, dice, choice: String) -> void:
@@ -638,6 +702,7 @@ static func normalize(visit: Dictionary) -> Dictionary:
 	visit["destroyed"] = bool(visit.get("destroyed", false))
 	visit["carried_loss"] = float(visit.get("carried_loss", 0.0))
 	visit["building"] = str(visit.get("building", ""))
+	visit["camp"] = int(visit.get("camp", -1))
 	visit["scale"] = float(visit["scale"])
 	visit["rerolls"] = int(visit["rerolls"])
 	var lead := {}

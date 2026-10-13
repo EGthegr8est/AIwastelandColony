@@ -9,6 +9,7 @@ const Geiger = preload("res://scripts/geiger.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const D20 = preload("res://scripts/d20.gd")
+const D20Visit = preload("res://scripts/d20_visit.gd")
 const Leaders = preload("res://scripts/leaders.gd")
 const D20DiceScene = preload("res://d20_dice/D20Dice.tscn")
 const DICE_SCALE := 3          # the pixel-art die is 64 x 80: shown at 3x it is 192 x 240
@@ -1217,7 +1218,7 @@ func _visit_panel(box: VBoxContainer, u: Dictionary) -> void:
 		dice_phase = "idle"   # the die was busy for another party: its result is already in the game
 		dice_lines = []
 	dice_uid = uid
-	_header(box, "Attack" if view.ruin == "building" else "Scavenge")
+	_header(box, "Attack" if view.ruin in ["building", "camp"] else "Scavenge")
 	var wants_roll: bool = view.buttons.any(func(b): return b.id == "roll")
 	if dice_phase == "landed" or dice_phase == "rolling":
 		box.add_child(dice_holder)
@@ -1316,6 +1317,10 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 		var cell: Vector2i = target
 		_button(box, "Attack the %s at %d,%d (DC %d)" % [Data.BUILDINGS[Game.tile(cell)["b"]].name.to_lower(), cell.x, cell.y, Game.building_dc(cell)],
 			func(): Units.begin_strike(uid, cell))
+	for camp in Units.camp_targets(u):
+		var camp_id: int = camp.id
+		_button(box, "Attack the %s at %d,%d (DC %d, strength %d)" % [camp.name, camp.pos.x, camp.pos.y, D20Visit.enemy_dc(int(camp.strength)), camp.strength],
+			func(): Units.begin_camp_strike(uid, camp_id))
 	if u.stage != "back" and u.stage != "site":
 		_button(box, "Recall %s to camp" % Units.names_text(u), func(): Units.recall_scouts(uid))
 
@@ -1367,8 +1372,8 @@ func _recon_button(box: VBoxContainer, c: Vector2i) -> void:
 	if Game.vehicles["plane"] == 0:
 		return
 	var e: Dictionary = Data.EXPEDITIONS["plane"]
-	_button(box, "%s over this tile (%s)" % [e.verb, Game.cost_text(e.cost)], func(): Units.send("plane", "plane", c),
-		Units.send_status("plane", "plane", c))
+	_button(box, "%s over this tile (%s in the tank)" % [e.verb, Game.cost_text(Units.send_cost("plane", "plane"))],
+		func(): Units.send("plane", "plane", c), Units.send_status("plane", "plane", c))
 
 
 ## One button per way of travel you own, with how long the trip out takes.
@@ -1391,7 +1396,8 @@ func _tribe_info(box: VBoxContainer, t: Dictionary) -> void:
 	_label(box, "%s %s at %d,%d. %s" % [cls.glyph, cls.name, t.pos.x, t.pos.y, cls.desc], cls.color)
 	match t.class:
 		"raider":
-			_button(box, "Attack their camp (your attack %.1f vs ~%d)" % [Game.player_attack(t.pos), t.strength],
+			var att := Game.player_attack(t.pos)
+			_button(box, "Attack their camp (your attack %.1f vs ~%d, %s)" % [att, t.strength, Game.raid_odds_text(att, float(t.strength))],
 				func(): Units.attack_tribe(t.id), Units.attack_tribe_status(t))
 		"trader":
 			_expedition_buttons(box, "caravan", t.pos, t.id)
@@ -1519,7 +1525,7 @@ func _refresh_colony() -> void:
 		Units.scouts_out(), Game.scout_parties()])
 	_label(box, "A party leaves with %d food from your stores, and each survivor eats %d of it a season. When the pack is empty they starve, so recall them in time: whatever is left comes home with them. Horses and war rigs add parties and range." % [
 		Data.SCOUT_PACK, Data.SCOUT_RATION], DIM)
-	_label(box, "War rigs, planes and river boats carry a tank, shown as a fuel gauge by the portraits. When it runs dry the vehicle is lost and the crew go on foot. A plane crashes: some aboard may die, and the rest are injured.", DIM)
+	_label(box, "War rigs, planes (recon flights too) and river boats carry a tank, shown as a fuel gauge by the portraits. When it runs dry the vehicle is lost and the crew go on foot. A plane crashes: some aboard may die, and the rest are injured.", DIM)
 
 
 func _refresh_diplomacy() -> void:
@@ -1552,8 +1558,10 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void
 		Game.player_wall_defense() + Game.player_troop_defense()], DIM)
 	if ai["truce"] > 0:
 		_label(box, "Bribed: no raids for %d seasons." % ai["truce"], GREEN)
-	_button(box, "RAID them (your attack %.1f vs their defense ~%.1f)" % [Game.player_attack(Game.home(Data.AI)),
-		Game.ai_defense(Game.wall_breach())], Game.raid_ai, raid_why)
+	var raid_att := Game.player_attack(Game.home(Data.AI))
+	var raid_def := Game.ai_defense(Game.wall_breach())
+	_button(box, "RAID them (your attack %.1f vs their defense ~%.1f, %s)" % [raid_att, raid_def, Game.raid_odds_text(raid_att, raid_def)],
+		Game.raid_ai, raid_why)
 	_label(box, "Caravans out: %d/%d. Gold comes home with them; raider bands may ambush them on the road." % [
 		Units.trade_runs(), Game.caravan_slots()], DIM)
 	_expedition_buttons(box, "caravan", Game.home(Data.AI))
@@ -1591,6 +1599,8 @@ func _diplomacy_town(box: VBoxContainer, raid_why: String) -> void:
 		_button(box, "Send gifts (%s)" % Game.cost_text(Game.befriend_cost()), Game.befriend_town,
 			"" if Game.can_afford(Game.befriend_cost()) else "Need " + Game.cost_text(Game.befriend_cost()))
 		_travel_lines(box, _routes_between(Game.home(Data.PLAYER), Game.home(Data.TOWN)))
-		_button(box, "Conquer (attack %.1f vs 8)" % Game.player_attack(Game.home(Data.TOWN)), Game.conquer_town, raid_why)
+		var town_att := Game.player_attack(Game.home(Data.TOWN))
+		_button(box, "Conquer (attack %.1f vs %d, %s)" % [town_att, int(Game.TOWN_DEFENSE), Game.raid_odds_text(town_att, Game.TOWN_DEFENSE)],
+			Game.conquer_town, raid_why)
 	elif town["status"] == "ally":
 		_label(box, "Allied: sends 2 gold + 3 grain each season.", GREEN)

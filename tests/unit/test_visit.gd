@@ -151,7 +151,7 @@ func test_an_enemys_dc_comes_from_its_strength() -> void:
 func test_a_safe_ruin_never_rolls_a_hazard() -> void:
 	var party := _party()
 	var visit := _start("safe", party, ForcedDice.new())
-	var dice := ForcedDice.new([3, 4, 20])   # ambush row, trap row, then "nothing"
+	var dice := ForcedDice.new([3, 4, 8])   # ambush row, trap row, then "nothing"
 	D20Visit.step(visit, dice, party)
 	assert_eq(dice.d20_calls, 3)
 	assert_eq(visit.stage, "done")
@@ -170,7 +170,7 @@ func test_a_minor_find_pays_a_small_package_and_ends_the_visit() -> void:
 
 func test_a_cache_pays_by_its_check() -> void:
 	var party := _party()
-	var dice := ForcedDice.new([9, 10, 13], [6])
+	var dice := ForcedDice.new([17, 10, 13], [6])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	assert_eq(visit.stage, "cache")
@@ -193,9 +193,9 @@ func test_the_loot_scale_multiplies_every_package() -> void:
 
 func test_a_critical_cache_offers_a_deeper_search_that_pays_more() -> void:
 	var party := _party()
-	# event cache (9), the cache holds metal (5), check 20 (large 4d6 = 14), the extra resource rerolls metal (3)
+	# event cache (17), the cache holds metal (5), check 20 (large 4d6 = 14), the extra resource rerolls metal (3)
 	# to fuel (12) for a small 2, then deeper: it holds gold (15), the DC 14 check is 18 (SUCCESS, a large 15)
-	var dice := ForcedDice.new([9, 5, 20, 3, 12, 15, 18], [14, 2, 15])
+	var dice := ForcedDice.new([17, 5, 20, 3, 12, 15, 18], [14, 2, 15])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	D20Visit.step(visit, dice, party)
@@ -215,7 +215,7 @@ func test_a_critical_cache_offers_a_deeper_search_that_pays_more() -> void:
 
 func test_heading_home_keeps_everything() -> void:
 	var party := _party()
-	var dice := ForcedDice.new([9, 5, 20, 3, 12], [14, 2])
+	var dice := ForcedDice.new([17, 5, 20, 3, 12], [14, 2])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	D20Visit.step(visit, dice, party)
@@ -227,7 +227,7 @@ func test_heading_home_keeps_everything() -> void:
 func test_a_collapse_on_a_deeper_search_loses_half_and_draws_enemies() -> void:
 	var party := _party()
 	# as above, then deeper: it holds gold (15) and the DC 14 check is a natural 1
-	var dice := ForcedDice.new([9, 5, 20, 3, 12, 15, 1], [14, 2, 2])
+	var dice := ForcedDice.new([17, 5, 20, 3, 12, 15, 1], [14, 2, 2])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	D20Visit.step(visit, dice, party)
@@ -241,7 +241,7 @@ func test_a_collapse_on_a_deeper_search_loses_half_and_draws_enemies() -> void:
 
 func test_you_can_only_go_deeper_twice() -> void:
 	var party := _party()
-	var dice := ForcedDice.new([9, 5, 20, 3, 12, 15, 20, 3, 12, 15, 20, 3, 12], [14, 2, 14, 2, 14, 2])
+	var dice := ForcedDice.new([17, 5, 20, 3, 12, 15, 20, 3, 12, 15, 20, 3, 12], [14, 2, 14, 2, 14, 2])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	D20Visit.step(visit, dice, party)
@@ -353,7 +353,7 @@ func test_a_visit_with_a_noise_ambush_ends_after_the_fight() -> void:
 	var party := _party()
 	# a cache check of 1 ruins it; the noise brings strength 2 (DC 10); the ambush check is 15 (SUCCESS: choose);
 	# the party fights and wins with a 15 (no loot after: the cache is gone, but the enemy pays a small fuel)
-	var dice := ForcedDice.new([9, 10, 1, 15, 15, 10], [1, 4])
+	var dice := ForcedDice.new([17, 10, 1, 15, 15, 10], [1, 4])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	D20Visit.step(visit, dice, party)
@@ -371,7 +371,7 @@ func test_a_visit_with_a_noise_ambush_ends_after_the_fight() -> void:
 
 func test_a_visit_survives_json_with_its_numbers_whole() -> void:
 	var party := _party()
-	var dice := ForcedDice.new([9, 5, 20, 3, 12], [14, 2])
+	var dice := ForcedDice.new([17, 5, 20, 3, 12], [14, 2])
 	var visit := _start("safe", party, dice)
 	D20Visit.step(visit, dice, party)
 	D20Visit.step(visit, dice, party)
@@ -423,10 +423,10 @@ func test_a_party_that_arrives_stops_at_the_ruins_and_waits() -> void:
 
 
 func test_rolling_a_safe_ruin_end_to_end() -> void:
-	var u := _party_at_ruin("safe", [], ForcedDice.new([9, 10, 13], [6]))
+	var u := _party_at_ruin("safe", [], ForcedDice.new([17, 10, 13], [6]))
 	var view := Units.visit_view(u)
 	assert_eq(view.stage, "event")
-	assert_eq(Units.visit_do(u.id), 9, "the search rolled a 9")
+	assert_eq(Units.visit_do(u.id), 17, "the search rolled a 17: a cache")
 	assert_eq(Units.visit_do(u.id), 13, "the cache check rolled a 13")
 	assert_eq(Units.visit_view(u).stage, "done")
 	Units.visit_finish(u.id)
@@ -514,7 +514,7 @@ func test_a_picked_ruin_sends_the_party_straight_home() -> void:
 
 
 func test_a_visit_in_progress_survives_saving() -> void:
-	var u := _party_at_ruin("safe", ["magpie"], ForcedDice.new([9, 10], [6]))
+	var u := _party_at_ruin("safe", ["magpie"], ForcedDice.new([17, 10], [6]))
 	Units.visit_do(u.id)   # found a cache
 	Game.save_game("visit_test")
 	World.new_game(99)

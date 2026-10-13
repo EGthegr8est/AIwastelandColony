@@ -80,11 +80,16 @@ func test_doc_case_12_a_cowardly_failure_flees_clean() -> void:
 
 
 func test_doc_event_table_boundaries() -> void:
+	# the table runs high = good: the design doc had "nothing" on 17 to 20, so a natural 20 found nothing (changed on purpose)
 	assert_eq(D20.event_for_roll(3), "ambush")
 	assert_eq(D20.event_for_roll(4), "trap")
-	assert_eq(D20.event_for_roll(11), "cache")
-	assert_eq(D20.event_for_roll(12), "minor_find")
-	assert_eq(D20.event_for_roll(20), "nothing")
+	assert_eq(D20.event_for_roll(6), "trap")
+	assert_eq(D20.event_for_roll(7), "nothing")
+	assert_eq(D20.event_for_roll(10), "nothing")
+	assert_eq(D20.event_for_roll(11), "minor_find")
+	assert_eq(D20.event_for_roll(15), "minor_find")
+	assert_eq(D20.event_for_roll(16), "cache")
+	assert_eq(D20.event_for_roll(20), "cache", "a natural 20 on the search finds a cache")
 
 
 func test_doc_loot_case_magpie_turns_8_gold_into_12() -> void:
@@ -325,13 +330,15 @@ func test_spotting_an_ambush_lets_the_scout_choose() -> void:
 	assert_eq(fought.loot, {"fuel": 2})
 
 
-func test_springing_a_counter_ambush_pays_a_bonus_package_on_a_win() -> void:
-	# ambush check 20, then a combat check of 15 at +3, then the enemy loot (metal) and the bonus (gold)
-	var out := D20.resolve_ambush(ForcedDice.new([20, 15, 4, 17], [2, 5]), _scout(), 11, 11)
+func test_a_natural_20_on_the_ambush_check_beats_the_raiders_outright_and_pays_the_bonus() -> void:
+	# ambush check 20: no fight is rolled (it used to force one at +3 that could still be lost), the bonus package is gold (17)
+	var out := D20.resolve_ambush(ForcedDice.new([20, 17], [5]), _scout(), 11, 11)
 	assert_eq(out.tier, "CRITICAL_SUCCESS")
-	assert_eq(out.steps[0].check.mod, 3)
-	assert_eq(out.packages.size(), 2)
-	assert_eq(out.loot, {"metal": 2, "gold": 5})
+	assert_eq(out.steps, [], "no fight to lose")
+	assert_true(out.won)
+	assert_eq(out.packages.size(), 1)
+	assert_eq(out.loot, {"gold": 5})
+	assert_true(out.camp_revealed)
 
 
 # ---------------------------------------------------------------- caches
@@ -355,13 +362,13 @@ func test_a_critical_success_cache_adds_a_small_package_of_a_different_resource(
 # ---------------------------------------------------------------- a whole visit
 
 func test_a_visit_rolls_the_event_first() -> void:
-	var nothing := D20.scavenge_site(ForcedDice.new([20]), _scout(), 11, 11)
+	var nothing := D20.scavenge_site(ForcedDice.new([8]), _scout(), 11, 11)
 	assert_eq([nothing.event, nothing.loot, nothing.injury], ["nothing", {}, "none"])
 	var find := D20.scavenge_site(ForcedDice.new([12, 10], [2]), _scout(), 11, 11)
 	assert_eq([find.event, find.loot], ["minor_find", {"fuel": 2}])
 	var trap := D20.scavenge_site(ForcedDice.new([5, 1]), _scout(), 11, 11)
 	assert_eq([trap.event, trap.tier, trap.injury], ["trap", "CRITICAL_FAILURE", "severe"])
-	var cache := D20.scavenge_site(ForcedDice.new([8, 15, 14], [4]), _scout(), 11, 11)
+	var cache := D20.scavenge_site(ForcedDice.new([17, 15, 14], [4]), _scout(), 11, 11)
 	assert_eq([cache.event, cache.tier, cache.loot], ["cache", "SUCCESS", {"gold": 4}])
 	var fight := D20.scavenge_site(ForcedDice.new([2, 6, 13, 10], [3]), _scout(), 11, 11)
 	assert_eq([fight.event, fight.tier, fight.steps[0].tier, fight.loot], ["ambush", "FAILURE", "SUCCESS", {"fuel": 3}])

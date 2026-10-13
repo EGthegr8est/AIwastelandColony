@@ -61,7 +61,7 @@ func _press(text: String) -> void:
 
 
 func test_the_panel_shows_scavenge_with_a_clickable_die_below_it() -> void:
-	await _go_to_ruin(ForcedDice.new([9, 10, 13], [6]))
+	await _go_to_ruin(ForcedDice.new([17, 10, 13], [6]))
 	var text := _tile_labels()
 	assert_has(text, "SCAVENGE")
 	assert_has(text, "Click the die to roll")
@@ -83,19 +83,19 @@ func test_the_panel_shows_scavenge_with_a_clickable_die_below_it() -> void:
 
 
 func test_clicking_the_die_rolls_it_and_the_number_sits_until_the_player_clicks_off() -> void:
-	await _go_to_ruin(ForcedDice.new([9, 10, 13], [6]))
+	await _go_to_ruin(ForcedDice.new([17, 10, 13], [6]))
 	hud.dice.clicked.emit()
 	await wait_frames(2)
 	assert_eq(hud.dice_phase, "rolling")
 	assert_true(hud.dice.is_rolling())
-	assert_eq(hud.dice.sprite.animation, &"roll_9", "it lands on the d20 the search rolled")
+	assert_eq(hud.dice.sprite.animation, &"roll_17", "it lands on the d20 the search rolled")
 	assert_has(_tile_labels(), "Rolling")
 	hud.dice.clicked.emit()   # a click mid-roll does nothing
 	assert_eq(hud.dice_phase, "rolling")
 	await wait_seconds(1.0)   # the roll takes about 0.6 seconds at 1.25x
 	assert_eq(hud.dice_phase, "landed")
-	assert_eq(hud.dice.get_result(), 9)
-	assert_has(_tile_labels(), "Search: d20 9")
+	assert_eq(hud.dice.get_result(), 17)
+	assert_has(_tile_labels(), "Search: d20 17")
 	assert_has(_tile_labels(), "Click the die to continue")
 	hud.dice.clicked.emit()
 	assert_eq(hud.dice_phase, "landed", "the number sits on screen for a second first")
@@ -107,7 +107,7 @@ func test_clicking_the_die_rolls_it_and_the_number_sits_until_the_player_clicks_
 
 
 func test_a_whole_visit_through_the_panel() -> void:
-	await _go_to_ruin(ForcedDice.new([9, 10, 13], [6]))
+	await _go_to_ruin(ForcedDice.new([17, 10, 13], [6]))
 	for roll in 2:
 		hud.dice.clicked.emit()
 		await wait_seconds(1.1)
@@ -123,7 +123,7 @@ func test_a_whole_visit_through_the_panel() -> void:
 
 
 func test_the_die_survives_the_panel_being_rebuilt_mid_roll() -> void:
-	await _go_to_ruin(ForcedDice.new([9, 10, 13], [6]))
+	await _go_to_ruin(ForcedDice.new([17, 10, 13], [6]))
 	hud.dice.clicked.emit()
 	await wait_frames(2)
 	Game.changed.emit()

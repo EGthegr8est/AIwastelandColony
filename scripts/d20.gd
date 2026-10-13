@@ -339,6 +339,13 @@ static func resolve_ambush(dice, scout: Dictionary, dc: int, enemy_dc: int, carr
 	out["log"].append(check.log)
 	out["lost"] = lose_share(carried, row.carried_loss).lost
 	var fights: bool = row.fight is bool and row.fight
+	if str(row.fight) == "win":
+		out["won"] = true
+		out["camp_revealed"] = true
+		out["log"].append("The ambush is turned on them: the raiders are beaten.")
+		if row.bonus_package != "":
+			_add_package(out, random_package(dice, scout, row.bonus_package))
+		return out
 	if str(row.fight) == "choice":
 		if on_success == "fight":
 			fights = true

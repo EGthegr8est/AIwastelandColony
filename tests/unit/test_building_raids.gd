@@ -306,27 +306,20 @@ func test_a_won_raid_rolls_once_at_the_wall_nearest_you_and_twice_at_double_thei
 
 
 func test_a_won_raid_rolls_at_their_walls_through_the_real_raid() -> void:
-	var struck := false
-	for s in range(1, 60):
-		World.new_game(7)
-		Units.tribes = []
-		Units.wild_spawns = false
-		Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-		Game.ai["walls"] = 8
-		Game._sync_ai_walls()
-		Game.troops = 1
-		var per_troop := Game.player_attack(Game.home(Data.AI))   # the march to their fort takes some of it
-		Game.troops = ceili(2.2 * Game.ai_defense(Game.wall_breach()) / per_troop)   # double their defense, but not a decisive win
-		Units.dice = ForcedDice.new([20, 20])
-		seed(s)
-		Game.raid_ai()
-		if Game.stats.raids_won == 1:
-			struck = true
-			assert_false(Game.ended(), "not overwhelming")
-			assert_eq(Game.ai["walls"], 0, "both rolls hit")
-			assert_true(Game.log_lines.any(func(l): return l.contains("Your raid struck the raider wall")))
-			break
-	assert_true(struck, "a 69% raid is won within 60 seeds")
+	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
+	Game.ai["walls"] = 8
+	Game._sync_ai_walls()
+	Game.troops = 1
+	var per_troop := Game.player_attack(Game.home(Data.AI))   # the march to their fort takes some of it
+	Game.troops = ceili(2.2 * Game.ai_defense(Game.wall_breach()) / per_troop)   # double their defense, but not a decisive win
+	# the raid's own d20 (15, a plain win), then the two rolls at their walls
+	Units.dice = ForcedDice.new([15, 20, 20])
+	Game.raid_ai()
+	assert_eq(Game.stats.raids_won, 1)
+	assert_false(Game.ended(), "not overwhelming")
+	assert_eq(Game.ai["walls"], 0, "both rolls hit")
+	assert_true(Game.log_lines.any(func(l): return l.contains("Your raid struck the raider wall")))
+	assert_eq(Units.dice.d20_calls, 3, "one roll for the raid, two for the walls")
 
 
 # ---------------------------------------------------------------- scouting parties
@@ -562,7 +555,7 @@ func test_a_real_winning_raid_destroys_a_building_and_a_lost_one_does_not() -> v
 	Game.season = 10
 	var farm := _farm_east(2)
 	Game.ai["troops"] = 1000   # their raid wins
-	Units.dice = ForcedDice.new([20, 20])
+	Units.dice = ForcedDice.new([15, 20, 20])   # their raid's d20, then two rolls at your buildings
 	seed(1)
 	Game._ai_raid()
 	assert_eq(Game.tile(farm)["b"], "", "a won raid also brought a building down")
@@ -573,7 +566,7 @@ func test_a_real_winning_raid_destroys_a_building_and_a_lost_one_does_not() -> v
 	Game.season = 10
 	var other := _farm_east(2)
 	Game.ai["troops"] = 0   # nothing to raid with: it is beaten back
-	Units.dice = ForcedDice.new([])
+	Units.dice = ForcedDice.new([10])   # their raid's d20 against DC 20: a miss
 	Game._ai_raid()
 	assert_eq(Game.tile(other)["b"], "farm")
 

@@ -36,13 +36,15 @@ const CHECK_MODS := {
 	"site": ["scavenge"],
 }
 
-# What a scout runs into: a plain d20, no modifiers, so traits never change what exists at a site.
+# What a scout runs into: a plain d20, no modifiers, so traits never change what exists at a site. A high roll is a good
+# one: a natural 20 finds a cache (the table ran the other way round at first, so a 20 found nothing). The hazard faces,
+# 1 to 6, are rerolled at a ruin whose hazards the map has already settled.
 const EVENT_TABLE := [
 	{"min": 1, "max": 3, "event": "ambush"},
 	{"min": 4, "max": 6, "event": "trap"},
-	{"min": 7, "max": 11, "event": "cache"},
-	{"min": 12, "max": 16, "event": "minor_find"},
-	{"min": 17, "max": 20, "event": "nothing"},
+	{"min": 7, "max": 10, "event": "nothing"},
+	{"min": 11, "max": 15, "event": "minor_find"},
+	{"min": 16, "max": 20, "event": "cache"},
 ]
 
 # Which resource a cache, a minor find or a disarmed trap holds: a plain d20. Metal is the main ruin resource
@@ -77,13 +79,14 @@ const COMBAT := {
 	"CRITICAL_SUCCESS": {"injury": "none", "carried_loss": 0.0, "enemy_package": "medium", "camp_revealed": true},
 }
 
-# Ambush: "fight" is true for a forced fight, "choice" when the scout may fight or slip away. "situational" is
-# the modifier on that fight's combat check. A CRITICAL_SUCCESS also pays "bonus_package" on a win.
+# Ambush: "fight" is true for a forced fight, "choice" when the scout may fight or slip away, and "win" when the party turns
+# the ambush on the raiders and beats them outright (a CRITICAL_SUCCESS: it used to force a fight at +3 that could still be
+# lost). "situational" is the modifier on that fight's combat check. A CRITICAL_SUCCESS also pays "bonus_package" on a win.
 const AMBUSH := {
 	"CRITICAL_FAILURE": {"fight": true, "situational": -4, "carried_loss": 0.25, "bonus_package": ""},
 	"FAILURE": {"fight": true, "situational": -2, "carried_loss": 0.0, "bonus_package": ""},
 	"SUCCESS": {"fight": "choice", "situational": 0, "carried_loss": 0.0, "bonus_package": ""},
-	"CRITICAL_SUCCESS": {"fight": true, "situational": 3, "carried_loss": 0.0, "bonus_package": "small"},
+	"CRITICAL_SUCCESS": {"fight": "win", "situational": 3, "carried_loss": 0.0, "bonus_package": "small"},
 }
 
 const TRAP := {
@@ -194,6 +197,20 @@ const BUILDING_DC := {
 const STONE_WALL_DC := 2
 const RAID_BONUS := [[2.0, 4], [1.5, 2], [1.0, 0]]
 const RAID_PENALTY := -2
+
+# The fights between armies (the Raiding Dice plan): your attacks on a raider camp, the Rust Kings' fort and Dustwell, their
+# raids on you, and the wild bands that reach your land. Each is one d20 against a DC worked out from the odds
+# (Game.raid_dc: 21 - round(20 * attack / (attack + defense)), kept within "dc_min" and "dc_max"), so the chance of winning is
+# what attack / (attack + defense) always gave, to the nearest 5%. Only a natural 20 and a natural 1 are critical. The shares
+# are of troops, or of what is stolen. A win and a miss do what they always did; the "crit_" rows are what changes.
+const RAID_DICE := {
+	"dc_min": 2, "dc_max": 20,
+	"camp": {"prisoners": 2, "crit_prisoners": 3, "crit_loot_mult": 1.5, "troops_lost": 0.4, "crit_troops_lost": 0.6, "crit_camp_grows": 1},
+	"fort": {"troops_lost": 0.4, "crit_troops_lost": 0.6, "crit_prisoners": 1, "crit_strikes": 1},
+	"town": {"prisoners": 5, "crit_prisoners": 7, "troops_lost": 0.4, "crit_troops_lost": 0.6},
+	"their_raid": {"loot": 0.2, "crit_loot": 0.3, "their_troops_lost": 0.4, "crit_their_troops_lost": 0.6, "caught": 1, "crit_caught": 2},
+	"band": {"loot": 0.1, "crit_loot": 0.2, "caught": 1, "crit_caught": 2},
+}
 
 # An injury lasts until the party is home and costs the survivor SITUATION's injury_light / injury_severe on every roll.
 # Worst last: a worse injury replaces a lighter one, never the other way round.

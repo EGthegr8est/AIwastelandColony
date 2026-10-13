@@ -348,7 +348,7 @@ const EXPEDITIONS := {
 	"scav":    {"name": "Scavenger party", "verb": "Scavenge", "crew": 3, "cost": {"grain": 3}},
 	"caravan": {"name": "Trade caravan",   "verb": "Send caravan", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 	"boat":    {"name": "River trader",    "verb": "Send boat downriver", "crew": 2, "cost": {"grain": 3}},
-	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {"fuel": 3}},
+	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {}},   # the tank it fills is its cost
 	"scout":   {"name": "Scouting party",  "verb": "Send scouts", "crew": 2, "cost": {}},
 }
 
@@ -366,8 +366,8 @@ const FOOD_WARN := 0.75
 const STARVING_AT := 2
 const STARVE_DEATH := 3
 const SCOUT_MOVERS := ["foot", "horse", "car", "plane"]
-# Scouts in a war rig or plane, and river trader boats (unless refitted with sails), carry a tank
-# filled from your fuel stores when they leave. The party panel shows it as a fuel gauge.
+# Scouts in a war rig or plane, recon flights, and river trader boats (unless refitted with sails), carry a tank
+# filled from your fuel stores when they leave (what is left in it comes home). The party panel shows it as a fuel gauge.
 # burn: fuel per tile travelled. idle: fuel per season spent waiting (a plane has to keep circling).
 # A dry tank strands them: the vehicle is lost and the people aboard carry on as a party on foot
 # (a boat's crew walk home). A plane doesn't land gently, see CRASH_* below.

@@ -148,12 +148,12 @@ func outbound_route(job: String, mover: String, from: Vector2i, target: Vector2i
 	return Game.route(mover, from, target)
 
 
-## How much fuel an expedition takes along: scouts in a war rig or plane, and river trader boats
+## How much fuel an expedition takes along: scouts in a war rig or plane, recon flights, and river trader boats
 ## (unless you've refitted them with sails). 0 means no tank, so no gauge.
 func tank_size(job: String, mover: String) -> int:
 	if not mover in Data.VEHICLE_FUEL:
 		return 0
-	if job == "scout" or (job == "boat" and not Game.has("fv3")):
+	if job == "scout" or job == "plane" or (job == "boat" and not Game.has("fv3")):
 		return Data.VEHICLE_FUEL[mover].tank
 	return 0
 
@@ -333,7 +333,7 @@ func stage_text(u: Dictionary) -> String:
 		"station":
 			return "keeping watch"
 		"site":
-			return "attacking a building" if u.get("visit", {}).get("ruin", "") == "building" else "at the ruins"
+			return {"building": "attacking a building", "camp": "attacking a camp"}.get(u.get("visit", {}).get("ruin", ""), "at the ruins")
 	return "heading home"
 
 
@@ -902,6 +902,9 @@ func visit_finish(uid: int) -> void:
 	if v.ruin == "building":
 		_finish_strike(u, v)
 		return
+	if v.ruin == "camp":
+		_finish_camp_strike(u, v)
+		return
 	var poi: String = v.get("poi", "")
 	var t: Dictionary = Game.tile(Game.poi_anchor(u.target) if poi != "" else u.target)
 	var where := "%d,%d" % [u.target.x, u.target.y]
@@ -955,6 +958,34 @@ func strike_targets(u: Dictionary) -> Array:
 	return out
 
 
+## The raider camps a stationed scouting party can attack: the one on its own tile and the ones next to it.
+func camp_targets(u: Dictionary) -> Array:
+	var out := []
+	if u.get("job", "") != "scout" or u.get("stage", "") != "station":
+		return out
+	for c in [u.pos] + Game.neighbors(u.pos):
+		var t := tribe_at(c)
+		if not t.is_empty() and t.class == "raider":
+			out.append(t)
+	return out
+
+
+## A stationed scouting party starts an attack on a raider camp beside it: a "visit" like the one for a building, with one roll a
+## press against the camp's DC (its strength, 5 to 10, as a fight at the ruins would have it).
+func begin_camp_strike(uid: int, tribe_id: int) -> bool:
+	var u := unit_by_id(uid)
+	var t := tribe_by_id(tribe_id)
+	if u.is_empty() or t.is_empty() or not t in camp_targets(u):
+		return false
+	Game.measure(u.pos)
+	u["visit"] = D20Visit.begin_camp_strike(visit_ctx(u), D20.loot_scale, dice, u.survivors, t.id, int(t.strength))
+	u.stage = "site"
+	Game.add_log("%s get ready to attack the %s at %d,%d." % [names_text(u), t.name, t.pos.x, t.pos.y])
+	_sync_visit(u)
+	Game.changed.emit()
+	return true
+
+
 ## A stationed scouting party starts an attack on the building at `cell`: a "visit" like a ruin's, with one roll a press.
 func begin_strike(uid: int, cell: Vector2i) -> bool:
 	var u := unit_by_id(uid)
@@ -970,20 +1001,17 @@ func begin_strike(uid: int, cell: Vector2i) -> bool:
 	return true
 
 
-## "Continue" after an attack: the building comes down if the roll hit it, the party takes its package (and loses a share of
-## what it carries if the roll went badly) and goes back to keeping watch. A party the attack wiped out is gone.
-func _finish_strike(u: Dictionary, v: Dictionary) -> void:
-	u.erase("visit")
-	var cell := Vector2i(int(v.cell[0]), int(v.cell[1]))
-	var what: String = Data.BUILDINGS[v.building].name.to_lower() if Data.BUILDINGS.has(v.building) else "building"
+## What an attack leaves the party with, building or camp: wiped out (gone), or a share of its load lost if the roll went badly, the
+## package for a win loaded, and back to keeping watch. False if the party was wiped out.
+func _strike_aftermath(u: Dictionary, v: Dictionary, what: String, where: String) -> bool:
 	if v.wiped:
 		Game.note("survivors_lost", u.crew)
 		u.crew = 0
 		u.survivors = []
 		_lost(u)
-		Game.add_log("The party was wiped out attacking the %s at %d,%d." % [what, cell.x, cell.y])
+		Game.add_log("The party was wiped out attacking the %s at %s." % [what, where])
 		Game.changed.emit()
-		return
+		return false
 	if float(v.carried_loss) > 0.0 and not u.carry.is_empty():
 		var split := D20.lose_share(u.carry, float(v.carried_loss))
 		u.carry = split.kept
@@ -995,6 +1023,39 @@ func _finish_strike(u: Dictionary, v: Dictionary) -> void:
 			goods[r] = goods.get(r, 0) + v.loot[r]
 		_haul(u, goods)
 	u.stage = "station"
+	return true
+
+
+## "Continue" after an attack on a raider camp: a hit scatters it (and one raider is caught), the party takes its package.
+func _finish_camp_strike(u: Dictionary, v: Dictionary) -> void:
+	u.erase("visit")
+	var t := tribe_by_id(int(v.camp))
+	var what: String = t.name if not t.is_empty() else "raider camp"
+	var where := "%d,%d" % [t.pos.x, t.pos.y] if not t.is_empty() else "its camp"
+	if not _strike_aftermath(u, v, what, where):
+		return
+	if v.destroyed:
+		if not t.is_empty():
+			tribes.erase(t)
+			Game.note("tribes_scattered")
+		Game.prisoners += int(v.prisoners)
+		Game.note("prisoners_taken", int(v.prisoners))
+		Game.add_log("%s scattered the %s%s." % [names_text(u), what, " and caught %d of the raiders" % int(v.prisoners) if int(v.prisoners) > 0 else ""])
+	elif v.outcome == "left":
+		Game.add_log("%s backed off from the %s." % [names_text(u), what])
+	else:
+		Game.add_log("%s could not break the %s." % [names_text(u), what])
+	Game.changed.emit()
+
+
+## "Continue" after an attack: the building comes down if the roll hit it, the party takes its package (and loses a share of
+## what it carries if the roll went badly) and goes back to keeping watch. A party the attack wiped out is gone.
+func _finish_strike(u: Dictionary, v: Dictionary) -> void:
+	u.erase("visit")
+	var cell := Vector2i(int(v.cell[0]), int(v.cell[1]))
+	var what: String = Data.BUILDINGS[v.building].name.to_lower() if Data.BUILDINGS.has(v.building) else "building"
+	if not _strike_aftermath(u, v, what, "%d,%d" % [cell.x, cell.y]):
+		return
 	if v.destroyed:
 		Game.destroy_building(cell)
 		Game.add_log("%s destroyed the %s at %d,%d. Relations with the Rust Kings fall by %d." % [names_text(u), what, cell.x, cell.y, Data.RAID_RELATIONS])
@@ -1140,18 +1201,21 @@ func _band_turn(u: Dictionary) -> void:
 	var near := [u.pos] + Game.neighbors(u.pos)
 	if near.any(func(c): return Game.tile(c)["o"] == Data.PLAYER):
 		var def := Game.player_troop_defense() + Game.player_wall_defense()
-		if randf() * (u.strength + def) < u.strength:
+		var rules: Dictionary = D20Data.RAID_DICE.band
+		var roll := Game.raid_roll(float(u.strength), def, "A raider band at the edge of your land")
+		if roll.won:
 			var loot := {}
 			for k in ["grain", "meat", "metal", "gold"]:
-				loot[k] = int(Game.res[k] * 0.1)
+				loot[k] = int(Game.res[k] * (rules.crit_loot if roll.crit == "success" else rules.loot))
 				Game.res[k] -= loot[k]
 			Game.add_log("A raider band hit your outskirts and made off with %s." % Game.cost_text(loot))
 			Game.raider_strike(u.pos, u.strength, def)
 		else:
-			Game.prisoners += 1
-			Game.note("prisoners_taken")
+			var caught: int = rules.crit_caught if roll.crit == "fail" else rules.caught
+			Game.prisoners += caught
+			Game.note("prisoners_taken", caught)
 			Game.note("bands_driven_off")
-			Game.add_log("Your guards drove off a raider band and caught one of them.")
+			Game.add_log("Your guards drove off a raider band and caught %s of them." % ("one" if caught == 1 else "two"))
 		u["gone"] = true
 	elif near.any(func(c): return Game.tile(c)["o"] == Data.AI):
 		Game.ai["food"] = maxi(Game.ai["food"] - 3, 0)   # they raid the Rust Kings' stores instead
@@ -1170,21 +1234,53 @@ func _ambushes() -> void:
 				break
 
 
+## A raider band meets one of your parties on the road. It is a ruin fight (d20_visit.gd): the party's best fighter rolls d20 plus
+## traits and conditions against the band's DC, and what a miss costs is the combat table's: an injury and a share of what the
+## party carries, and only a natural 1 kills someone. A won fight catches one of the band and pays a package.
 func _fight(band: Dictionary, u: Dictionary) -> void:
 	var name: String = Data.EXPEDITIONS[u.job].name.to_lower()
-	var party := party_strength(u)
-	if randf() * (party + band.strength) < party:
+	if u.survivors.is_empty():   # a party with nobody named in it (an old save): the army roll
+		var plain := Game.raid_roll(float(party_strength(u)), float(band.strength), "Your %s against a raider band" % name)
+		_after_field_fight(band, u, name, {"won": plain.won, "d20": plain.d20, "wiped": false, "loot": {}, "carried_loss": 0.25 if not plain.won else 0.0})
+		return
+	var r: Dictionary = D20Visit.field_fight(visit_ctx(u), dice, u.survivors, int(band.strength), D20.loot_scale)
+	for line in r.log:
+		Game.add_log(line)
+	_after_field_fight(band, u, name, r)
+
+
+func _after_field_fight(band: Dictionary, u: Dictionary, name: String, r: Dictionary) -> void:
+	if r.wiped:
+		Game.note("survivors_lost", u.crew)
+		u.crew = 0
+		u.survivors = []
+		Game.add_log("A raider band wiped out your %s." % name)
+		_lost(u)
+		return
+	if r.won:
 		band["gone"] = true
 		Game.prisoners += 1
 		Game.note("prisoners_taken")
 		Game.note("bands_driven_off")
+		if not r.loot.is_empty():
+			var goods: Dictionary = u.carry.duplicate()
+			for k in r.loot:
+				goods[k] = goods.get(k, 0) + r.loot[k]
+			_haul(u, goods)
 		Game.add_log("Your %s fought off a raider band and caught one of them." % name)
 		return
-	var who := _casualty(u)
-	var stolen := "" if u.carry.is_empty() else ", and took " + Game.cost_text(u.carry)
-	u.carry = {}
+	var stolen := ""
+	if float(r.carried_loss) > 0.0 and not u.carry.is_empty():
+		var split := D20.lose_share(u.carry, float(r.carried_loss))
+		u.carry = split.kept
+		if not split.lost.is_empty():
+			stolen = ", and took " + Game.cost_text(split.lost)
 	band.strength += 1
-	Game.add_log("A raider band ambushed your %s! %s%s." % [name, who + " was killed" if who != "" else "One killed", stolen])
+	var who := _casualty(u) if int(r.d20) == D20Data.NAT_FAIL else ""
+	var toll := "Nobody was killed"
+	if int(r.d20) == D20Data.NAT_FAIL:
+		toll = who + " was killed" if who != "" else "One killed"
+	Game.add_log("A raider band ambushed your %s! %s%s." % [name, toll, stolen])
 	if u.crew <= 0:
 		_lost(u)
 
@@ -1236,19 +1332,27 @@ func attack_tribe(id: int) -> void:
 		return
 	Game.raided_this_season = true
 	var att := Game.player_attack(t.pos)
-	if randf() * (att + t.strength) < att:
+	var rules: Dictionary = D20Data.RAID_DICE.camp
+	var roll := Game.raid_roll(att, float(t.strength), "Your attack on the %s" % t.name)
+	if roll.won:
 		var loot := {"gold": randi_range(5, 15), "metal": randi_range(5, 10), "meat": randi_range(5, 10)}
+		if roll.crit == "success":
+			for k in loot:
+				loot[k] = int(loot[k] * rules.crit_loot_mult)
 		for k in loot:
 			Game.res[k] += loot[k]
-		Game.prisoners += 2
-		Game.note("prisoners_taken", 2)
+		var caught: int = rules.crit_prisoners if roll.crit == "success" else rules.prisoners
+		Game.prisoners += caught
+		Game.note("prisoners_taken", caught)
 		Game.note("tribes_scattered")
 		tribes.erase(t)
-		Game.add_log("You scattered the %s! Took %s and 2 prisoners." % [t.name, Game.cost_text(loot)])
+		Game.add_log("You scattered the %s! Took %s and %d prisoners." % [t.name, Game.cost_text(loot), caught])
 	else:
-		var lost := int(ceil(Game.troops * 0.4))
+		var lost := int(ceil(Game.troops * (rules.crit_troops_lost if roll.crit == "fail" else rules.troops_lost)))
 		Game.troops -= lost
-		Game.add_log("The %s beat back your attack. %d troops lost." % [t.name, lost])
+		if roll.crit == "fail":
+			t["strength"] += rules.crit_camp_grows
+		Game.add_log("The %s beat back your attack. %d troops lost.%s" % [t.name, lost, " The camp grows bolder." if roll.crit == "fail" else ""])
 	Game.changed.emit()
 
 

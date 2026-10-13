@@ -256,7 +256,7 @@ func test_playing_counts_what_you_do() -> void:
 
 func test_rolls_and_natural_20s_are_counted() -> void:
 	var ruin := Game.home(Data.PLAYER) + Vector2i(1, -2)
-	Units.dice = ForcedDice.new([9, 10, 20, 3], [6, 4])   # a cache of fuel, a natural 20 (large), a small metal extra
+	Units.dice = ForcedDice.new([17, 10, 20, 3], [6, 4])   # a cache of fuel, a natural 20 (large), a small metal extra
 	Game.tile(ruin)["r"] = "safe"
 	var u: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", ruin, ruin)
 	u.home = Game.home(Data.PLAYER)

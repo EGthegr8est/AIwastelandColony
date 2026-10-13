@@ -91,7 +91,8 @@ send them on, or press **Recall to camp**. How many parties you can have out gro
   `FOOD_WARN`) to **red**, and a red ring marks the tile where the pack runs out. Red dots mean not enough food for that stretch of
   the journey. A party already on the move shows the rest of its path the same way. The tile panel adds the trip length and how many
   days short the food is. **Esc**, **Deselect**, or clicking your own land lets go and brings the HQ routes back.
-- **Fuel**: a party in a war rig or plane takes a tank from your fuel stores (8 / 10), and so does a river trader boat (3, enough for a
+- **Fuel**: a party in a war rig or plane takes a tank from your fuel stores (8 / 10), and so does a recon flight (10, the whole of its cost: it
+  burns what the trip takes and the rest comes home, so a flight further than about 100 tiles out cannot make it back), and a river trader boat (3, enough for a
   round trip of about 75 tiles, so a port more than ~37 tiles from a river mouth will run its boat dry on the way home; the Sail refits
   upgrade removes the tank). Driving burns fuel, and waiting burns more (a plane has to keep circling). The **fuel gauge** beside the
   portraits shows what's left, and its warning light blinks when the tank is low. Each vehicle has its own instrument, drawn in code
@@ -249,9 +250,14 @@ Combat" and the integration plan.
   radiation sickness, hunger and injuries, and in a fight the enemy's strength against the party's (outnumbered -2; Veteran ignores
   it, Cowardly doubles it). A fight's DC is 6 + 2 x the enemy's strength. Arriving at a ruin measures its radiation, so the panel
   shows the modifier before the roll.
-- **What a ruin starts with** comes from the map: a safe ruin rolls a plain d20 for what it holds (cache, small find or nothing, with
-  the ambush and trap rows rerolled), a trapped ruin starts with a trap check at DC 14, a rogue-held one with an ambush check at DC 14
-  and a fight. A trap or a won fight is a toll: the ruin is then searched like a safe one. A won fight takes 1 prisoner.
+- **What a ruin starts with** comes from the map: a safe ruin rolls a plain d20 for what it holds (`EVENT_TABLE`: 1-3 ambush and 4-6 trap, both
+  rerolled because the map has already settled the hazards, 7-10 nothing, 11-15 a small find, 16-20 a cache, so a natural 20 on the search finds
+  a cache), a trapped ruin starts with a trap check at DC 14, a rogue-held one with an ambush check at DC 14 and a fight. A trap or a won fight is
+  a toll: the ruin is then searched like a safe one, with its own search roll (a natural 20 on the trap check pays a small package and is followed
+  by that search). A natural 20 on an ambush check cannot lose: the raiders are beaten outright, the enemy's small package and the ambush's bonus are
+  paid, one raider is caught and their camp is revealed. A won fight takes 1 prisoner. The panel's last line says what happened: "The ruins are
+  stripped. The party carries 6 metal." (or "There was nothing here." only when the visit found nothing at all, or "You were driven off" when a
+  ruined cache's noise drew a fight that was lost).
 - **Loot** is a package (small, medium or large) of one resource picked by a d20 (metal 40%, fuel 20%, gold 25%, veg 15%), its dice
   times `LOOT_SCALE` (3) and a war rig's 1.5.
 - **Search deeper:** a CRITICAL_SUCCESS on a cache check offers another cache check at DC +3 (twice at most), paying a size larger. A
@@ -329,6 +335,34 @@ whoever attacks (`RAID_LOSS_CAP`).
   your buildings, when the spot they stop at is within 2 tiles of it and the building is more than 3 tiles from your HQ.
 Wild bands, escaped prisoners, their raids and their scouts all count toward the same limit of 3 buildings lost a season.
 `tests/unit/test_prison_break.gd` and `test_building_raids.gd` pin all of it.
+
+## Fights between armies: the raiding dice
+Your attacks on a raider camp, on the Rust Kings' fort and on Dustwell, the Rust Kings' raids on you, and the wild bands that reach your land
+are each one d20 against a DC worked out from the odds (`Game.raid_dc`): `DC = 21 - round(20 x attack / (attack + defense))`, kept between 2 and
+20. That keeps the chance of winning what attack / (attack + defense) always gave, to the nearest 5% (even odds are DC 11, 50%; double the defense
+DC 8, 65%; three times DC 6, 75%; a quarter DC 17, 20%). A natural 20 always wins and a natural 1 never does, and they are the only critical results.
+The roll is made when you press the button and written to the log ("Your attack on the Ash Walkers: d20 14 vs DC 9 (60% to win), won."); the
+camp, fort and Dustwell buttons show the DC and the chance before you commit. Every die goes through `Units.dice`, so tests force them.
+`D20Data.RAID_DICE` holds the numbers:
+- **A raider camp** (Diplomacy tab or its tile): a win is the same loot and 2 prisoners and the camp is gone; a natural 20 brings the loot half
+  again and 3 prisoners. A miss costs 40% of your troops; a natural 1 costs 60% and the camp grows 1 stronger.
+- **The Rust Kings' fort** (the Raid button): a win is what it always was (a quarter of their wood, stone, metal and gold, prisoners, their troops
+  down 30%, yours down 15%, land, then the rolls at their buildings); a natural 20 adds a prisoner and one more roll at their buildings. A miss costs
+  40% of your troops (60% on a natural 1). Relations and the truce suffer whatever the die says, and the 2.5 times rule still decides when the fort falls.
+- **Dustwell:** a win takes its land and 5 prisoners (7 on a natural 20); a miss costs 40% of your troops and Dustwell's trust (60% on a natural 1).
+- **A Rust Kings raid on you** is rolled for them: a win takes 20% of your stores (30% on a natural 20) and may roll at your buildings from season 6;
+  a miss costs them 40% of their troops and you catch a raider (60% and two raiders on a natural 1). The 3 times rule that overruns the colony stays.
+- **A band at your land** is rolled by the band: a win takes 10% of your grain, meat, metal and gold (20% on a natural 20) and rolls at a building; a
+  miss gets it driven off with one caught (two on a natural 1).
+- **A band ambushing a party on the road** is a ruin fight (`D20Visit.field_fight`): the party's best fighter rolls d20 plus traits and conditions
+  against the band's DC (6 + 2 x its strength), and a hit catches one of the band and pays a package. A plain miss costs a light injury and a
+  quarter of the load, a critical miss a severe injury and half the load, and only a natural 1 kills someone (the fatal fumble still applies against
+  a strength 4 or 5 band).
+- **Scouting parties attack camps in person**, like walls: a party keeping watch on or next to a raider camp gets an "Attack the <camp>" button, and the
+  right panel shows "Attack" and the clickable die against the camp's DC (its strength as at a ruin: 16 for a strength 5 camp, with -2 if the camp
+  outnumbers the party). A hit scatters the camp, catches a raider and pays the package for a won fight; a miss injures the roller and costs part of
+  the load, and the party can try again or "Back off".
+`tests/unit/test_raid_dice.gd`, `test_field_fight.gd`, `test_camp_strike.gd`, `test_nat20.gd` and `tests/render/test_raid_panel.gd` pin all of it.
 
 ## How the game ends
 There are three endings (`Data.ENDINGS` holds the numbers), each shown once: the ending picture (click, or press Enter, to continue), then a
