@@ -253,7 +253,7 @@ func send_status(job: String, mover: String, target: Vector2i, dest := -1, from 
 	if job == "scout" and food_stock() < Data.SCOUT_PACK:
 		return "Need %d food for the pack" % Data.SCOUT_PACK
 	if outbound_route(job, mover, from, target).is_empty():
-		return "No way there" + (" (steep inclines)" if mover == "car" else "")
+		return Game.no_way_text(mover, from, target)
 	return ""
 
 
@@ -319,6 +319,7 @@ func _make_crew(n: int, trained := false) -> Array:
 			"salted": 0,   # seasons of Salt left: the radiation they take in is halved while this is above 0
 			"injury": "none",   # from this expedition's rolls: none, light or severe, until the party is home
 			"hunger": 0, "hp": Data.SURVIVOR_HP, "dose": 0.0, "hurt": false,   # hurt: injured in a crash, until they heal
+			"leg": false,   # a broken leg (or a lame horse): slows the party until it gets home or this person dies
 			"face": randi() & 0x7fffffff})   # the seed for their portrait
 	return crew
 
@@ -349,6 +350,8 @@ func survivor_line(s: Dictionary) -> String:
 		status += ", " + sick_text(s)
 	if s.get("hurt", false):
 		status += ", injured"
+	if s.get("leg", false):
+		status += ", broken leg"
 	if s.get("injury", "none") != "none":
 		status += ", %s injury" % s.injury
 	if int(s.get("salted", 0)) > 0:
@@ -393,7 +396,7 @@ func order_status(u: Dictionary, target: Vector2i) -> String:
 	if u.pos == target and u.stage == "station":
 		return "Already here"
 	if Game.route(u.mover, u.pos, target).is_empty():
-		return "No way there" + (" (steep inclines)" if u.mover == "car" else "")
+		return Game.no_way_text(u.mover, u.pos, target)
 	return ""
 
 
@@ -586,6 +589,82 @@ func load_slowdown(u: Dictionary) -> float:
 	return minf(1.0 + Data.OVERLOAD_SLOWDOWN * (ratio - 1.0), Data.OVERLOAD_MAX)
 
 
+## How many of the party's people have a broken leg (or, on horseback, a lame horse).
+func broken_legs(u: Dictionary) -> int:
+	var n := 0
+	for s in u.survivors:
+		if s.get("leg", false):
+			n += 1
+	return n
+
+
+## 1.0 with no broken leg. With one, every step takes Data.LEG.slow times as long; each further one adds Data.LEG.more, never past Data.LEG.max.
+func leg_slowdown(u: Dictionary) -> float:
+	var n := broken_legs(u)
+	if n <= 0:
+		return 1.0
+	return minf(float(Data.LEG.slow) + float(Data.LEG.more) * (n - 1), float(Data.LEG.max))
+
+
+## load_slowdown() and leg_slowdown() together: how many times longer than usual every step of this party takes.
+func party_slowdown(u: Dictionary) -> float:
+	return load_slowdown(u) * leg_slowdown(u)
+
+
+## A foot or horseback party that has just entered tile `c` and it is rock or a steep incline: maybe someone breaks a leg (Data.LEG). One
+## survivor at random who has not already, a Clumsy one more likely; a Light-Footed party halves the chance. True if a leg broke.
+func _climb_check(u: Dictionary, c: Vector2i) -> bool:
+	if not u.mover in ["foot", "horse"] or u.survivors.is_empty():
+		return false
+	var steep: bool = Game.slopes[Game.idx(c)] == "steep"
+	var chance := 0.0
+	if steep:
+		chance = float(Data.LEG.steep)
+	elif Game.tile(c)["t"] == "rock":
+		chance = float(Data.LEG.rock)
+	if chance <= 0.0:
+		return false
+	if u.survivors.any(func(s): return "light_footed" in s.traits):
+		chance *= float(Data.LEG.light_footed)
+	if randf() >= chance:
+		return false
+	var pool := []   # a survivor goes in once, and again for each extra turn of being Clumsy
+	for s in u.survivors:
+		if not s.get("leg", false):
+			pool.append(s)
+			if "clumsy" in s.traits:
+				pool.append(s)
+	if pool.is_empty():
+		return false
+	var victim: Dictionary = pool.pick_random()
+	victim["leg"] = true
+	_note_event("snap", c, _walk_day(u))
+	var where := "on the steep slope" if steep else "on the rocks"
+	var what := "%s broke a leg" % victim.name if u.mover == "foot" else "%s's horse went lame" % victim.name
+	Game.add_log("%s %s at %d,%d. The party slows down until it gets home." % [what, where, c.x, c.y])
+	return true
+
+
+## A party of yours that has just entered tile `c`, if it is on the old highway: every Data.HIGHWAY.ambush_every tiles of it a party walks, it rolls a
+## d20, and a natural 1 is an ambush by a raider band (strength Data.HIGHWAY.band), fought like any ambush on the road. True if it happened.
+func _highway_check(u: Dictionary, c: Vector2i) -> bool:
+	if u.owner != Data.PLAYER or not u.mover in ["foot", "horse", "car"]:
+		return false
+	var b: String = Game.tile(c)["b"]
+	if b == "" or not Data.BUILDINGS[b].get("highway", false):
+		return false
+	u["hwy"] = int(u.get("hwy", 0)) + 1
+	if int(u.hwy) % int(Data.HIGHWAY.ambush_every) != 0:
+		return false
+	if randi_range(1, 20) != 1:
+		return false
+	var band := _make_unit("band", Data.NONE, "foot", c, c)
+	band["strength"] = randi_range(int(Data.HIGHWAY.band[0]), int(Data.HIGHWAY.band[1]))
+	Game.add_log("Raiders lay in wait on the old highway at %d,%d!" % [c.x, c.y])
+	_fight(band, u)
+	return true
+
+
 ## `goods` trimmed to what the party can still pick up: nobody carries more than LOAD_CEILING
 ## times their capacity, so the rest stays behind (in the same mix as what was on offer).
 func fit_load(u: Dictionary, goods: Dictionary) -> Dictionary:
@@ -705,10 +784,19 @@ func _strand(u: Dictionary) -> void:
 	if not u.carry.is_empty():
 		_haul(u, u.carry.duplicate())   # on foot they can carry less: what doesn't fit is left with the wreck
 	u.path = []
+	var landing := Game.nearest_walkable(u.home, 3)   # a boat's home is the river tile by its port: on foot they walk to the bank beside it
+	if landing.x < 0:
+		landing = u.home
+	if Game.move_mult("foot", u.pos) <= 0.0:   # they came down in the river: they wade ashore first, on a bank with a way home
+		var shore := Game.nearest_walkable(u.pos, 8, landing if u.job != "scout" else Vector2i(-1, -1))
+		if shore.x < 0:
+			shore = Game.nearest_walkable(u.pos)
+		if shore.x >= 0:
+			u.pos = shore
 	if u.job != "scout":
 		u.stage = "back"   # a trade run is off: they walk home
 	if u.stage == "back":
-		u.path = Game.route("foot", u.pos, u.home).slice(1)
+		u.path = Game.route("foot", u.pos, landing).slice(1)
 	if u.path.is_empty():
 		if u.job == "scout":
 			u.stage = "station"
@@ -834,7 +922,7 @@ func _note_event(kind: String, cell: Vector2i, day: float) -> void:
 ## Walk the path with one season's worth of travel days. True once the path is done.
 func _advance(u: Dictionary) -> bool:
 	var budget: float = Data.SEASON_DAYS
-	var days_per_tile: float = Data.MOVERS[u.mover].days * load_slowdown(u)   # a heavy load takes longer
+	var days_per_tile: float = Data.MOVERS[u.mover].days * party_slowdown(u)   # a heavy load or a broken leg takes longer
 	if u.owner == Data.PLAYER:
 		days_per_tile *= Game.travel_mult()
 	while not u.path.is_empty():
@@ -852,6 +940,10 @@ func _advance(u: Dictionary) -> bool:
 		u.pos = next
 		u.path.pop_front()
 		_note_step(u, Data.SEASON_DAYS - budget)
+		if _climb_check(u, next):   # a broken leg: every step from here takes longer
+			days_per_tile = Data.MOVERS[u.mover].days * party_slowdown(u) * (Game.travel_mult() if u.owner == Data.PLAYER else 1.0)
+		if _highway_check(u, next) and (u.get("gone", false) or u.crew <= 0):
+			return false   # the ambush wiped the party out
 		if u.owner == Data.PLAYER:
 			var fresh: Array = Game.reveal(Data.PLAYER, u.pos, sight_of(u))
 			if _recording:
@@ -909,10 +1001,13 @@ func _come_home(u: Dictionary) -> void:
 	else:
 		Game.pop += u.crew
 	var name: String = Data.EXPEDITIONS[u.job].name
+	var legs := broken_legs(u)
 	if u.carry.is_empty():
 		Game.add_log("%s came home." % name)
 	else:
 		Game.add_log("%s came home with %s." % [name, Game.cost_text(u.carry)])
+	if legs > 0:
+		Game.add_log("%s healed at home." % ("The broken leg" if legs == 1 else "%d broken legs" % legs))
 	if food_total(u) > 0:   # whatever they didn't eat goes back in the stores
 		for k in u.food:
 			Game.res[k] += u.food[k]
@@ -2104,8 +2199,9 @@ func _spawn_tribe() -> Dictionary:
 	return {}
 
 
-## Called after the fog updates: log tribes your colony sees for the first time.
+## Called after the fog updates: log tribes your colony sees for the first time, and the Hollow Mile.
 func check_discoveries() -> void:
+	Game.check_hollow_mile()
 	for t in tribes:
 		if not t.found and Game.knows_tile(Data.PLAYER, t.pos):
 			t["found"] = true
@@ -2222,7 +2318,7 @@ func _unpack(d: Dictionary) -> Dictionary:
 				"traits": s.get("traits", []).filter(func(id): return D20Data.TRAITS.has(id)),   # none in saves from before the d20 rolls
 				"injury": s.get("injury", "none"),
 				"hunger": int(s["hunger"]), "hp": float(s.get("hp", Data.SURVIVOR_HP)), "dose": float(s.get("dose", 0.0)),
-				"hurt": bool(s.get("hurt", false)), "salted": int(s.get("salted", 0)),
+				"hurt": bool(s.get("hurt", false)), "salted": int(s.get("salted", 0)), "leg": bool(s.get("leg", false)),
 				"face": int(s["face"]) if s.has("face") else hash(s["name"]) & 0x7fffffff})
 		out[k] = v
 		if k == "visit":

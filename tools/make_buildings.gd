@@ -203,6 +203,25 @@ const SPRITES := {
 		"kdwddwdk",
 		"kddddddk",
 		"kkkkkkkk"],
+	# the two bridges stand on river tiles, so the water shows at the sides; the planks run north to south, across the river
+	"bridge": [
+		".kttttk.",
+		".kTTTTk.",
+		".kttttk.",
+		".kTTTTk.",
+		".kttttk.",
+		".kTTTTk.",
+		".kttttk.",
+		".kTTTTk."],
+	"old_bridge": [
+		".kddwdk.",
+		".kddddk.",
+		".kddwdk.",
+		".kddddk.",
+		".kddwdk.",
+		".kddddk.",
+		".kddwdk.",
+		".kddddk."],
 }
 
 

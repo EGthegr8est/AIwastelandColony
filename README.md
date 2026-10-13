@@ -12,11 +12,12 @@ A 2D post-nuclear colony sim for Godot 4.7. Pixel-art tiles (or, if you like, AS
   keeps its shape, with black bars. If the art can't be read it's the same choices in a plain text panel.
 - **Character selection.** **New colony** leads to three randomly made leaders side by side (see "Leaders" below), with the slab-stack
   logo (`art/logo.png`, cropped to the lettering by `LOGO_CROP` in `scripts/sprites.gd`) above them. **Back** returns to the title screen.
-- **Music.** `audio/` holds eight tracks. `wasteland_menu.wav` plays, looping, on the title screen, the character selection screen and the
-  load screen, and carries on across them without restarting. Starting or loading a colony crossfades into the seven `wasteland_OST_*`
-  tracks (`dread`, `breath`, `ashfall`, `winter`, `dustpunk`, and the victory and defeat pieces, `lastcall_Victory` and `signallost_DEFEAT`),
-  which play one after another in a shuffled order (about 13 minutes before the shuffle comes round), then shuffle again, and never repeat a
-  track back to back. The shuffle is remembered between launches (`last_game_track` and `game_queue` in `settings.cfg`), so a new launch
+- **Music.** `audio/` holds nine tracks. `wasteland_menu.wav` plays, looping, on the title screen, the character selection screen and the
+  load screen, and carries on across them without restarting. Starting or loading a colony crossfades into the eight `wasteland_OST_*`
+  tracks (`canyon`, `dread`, `breath`, `ashfall`, `winter`, `dustpunk`, and the victory and defeat pieces, `lastcall_Victory` and `signallost_DEFEAT`),
+  which play one after another in a shuffled order (about 15 minutes before the shuffle comes round), then shuffle again, and never repeat a
+  track back to back. **A new colony always opens with `canyon`** (`Music.OPENING`, `Music.play_opening`, called when you pick your leader) to set
+  the mood, then shuffles through the other seven; loading a game carries on with the shuffle instead. The shuffle is remembered between launches (`last_game_track` and `game_queue` in `settings.cfg`), so a new launch
   carries on through the tracks it has not played yet. The victory and defeat tracks play once in the shuffle but loop under their ending
   screens (if one is already playing when its ending arrives, it carries on and loops). A new `wasteland_OST_*.wav` dropped in `audio/` has
   to be added to `Music.GAME` (a test fails until it is). Opening the menu in the middle of a game leaves the game music alone.
@@ -156,8 +157,8 @@ send them on, or press **Recall to camp**. How many parties you can have out gro
   `FUEL_LOW`, `CRASH_*` and `SCOUT_RATION` in `scripts/data.gd`.
 
 ## Pixel art
-The map and the Legend (the Tile tab with nothing selected) are drawn with pixel art: `art/atlas.png` holds 23 sprites of 8 x 8
-pixels, four styles each, described by `art/atlas.json`. They cover the 11 kinds of ground, the two slopes, the 7 kinds of unit
+The map and the Legend (the Tile tab with nothing selected) are drawn with pixel art: `art/atlas.png` holds 24 sprites of 8 x 8
+pixels, four styles each, described by `art/atlas.json`. They cover the 11 kinds of ground, the shallow ford, the two slopes, the 7 kinds of unit
 (scavengers, scouts, caravans, war rigs, boats, recon planes, raider bands) and the three tribe camps.
 - **Switching.** The **Art:** button in the top bar cycles style 1, 2, 3, 4 and the old **text glyphs** (the Dwarf Fortress look), and
   the **Art style: 1 2 3 4 ASCII** buttons at the top of the legend do the same. It changes the map and the legend together. **Style 4,
@@ -170,8 +171,8 @@ pixels, four styles each, described by `art/atlas.json`. They cover the 11 kinds
   gentle slope, with teeth for a steep incline) in place of the gold lines. Half the tiles are mirrored so a wide field is not wallpaper,
   and a feature (rock, water, ruins, trees, grove, waste, glass, crater) gets a thin dark **rim** on the sides that meet plainer ground,
   so a range or a lake reads as one shape (the rim never peeks at unexplored tiles). Your land keeps its border line and a faint tint.
-  **Buildings have pictures** (`art/building_atlas.png`, 20 of them), each with a dark outline so it stands out from any ground; the
-  other styles still show a building as its letter. The pictures are text rows in `tools/make_style4.gd` (the grounds and ledges) and
+  **Buildings have pictures** (`art/building_atlas.png`, 22 of them, the two bridges among them), each with a dark outline so it stands out from any ground; the
+  other styles still show a building as its letter. Roads are drawn from rectangles instead (see Roads and the old highway). The pictures are text rows in `tools/make_style4.gd` (the grounds and ledges) and
   `tools/make_buildings.gd`: edit the rows and run the tool (the commands are in each file's header) to change them. Units, camps, animals
   and the 2 x 2 sites are unchanged.
 - **The map.** A tile is 16 pixels wide, so every sprite shows at exactly 2x, crisp, with no gaps between tiles. In styles 1 to 3 the
@@ -210,7 +211,35 @@ Every tile has a height in meters. Contour lines mark each 10 m step:
 Click any tile to see dotted routes from your HQ to it: white for foot, tan for horses, red for war rigs. (With a scouting party
 picked, you get its own food-coloured route instead: see Scouting parties.)
 Raids use the same routes. Long marches tire troops (down to 60% strength), and war rigs with no way
-around the inclines stay home. Tune speeds and penalties in `MOVERS` in `scripts/data.gd`.
+around the inclines stay home. Tune speeds and penalties in `MOVERS` and `TERRAIN_SPEED` in `scripts/data.gd`.
+
+### Ground speeds
+Every kind of ground has a speed for foot, horseback and war rigs (`Data.TERRAIN_SPEED`: how many times as long a tile takes as sand). It
+multiplies with the slope, so a steep incline on rock is 4.0 x 1.4 = 5.6 times as slow on foot. Boats and planes ignore the ground.
+
+| Ground | On foot | Horseback | War rig |
+|---|---|---|---|
+| Ash sand | 1.0 | 1.0 | 1.0 |
+| Dead scrub, fallout waste | 1.1 | 1.1 | 1.2 |
+| Dunes | 1.2 | 1.3 | 1.5 |
+| Fused glass | 1.2 | 1.4 | 1.2 |
+| Petrified wood | 1.3 | 1.5 | 1.8 |
+| Green grove | 1.3 | 1.4 | 1.6 |
+| Pre-war ruins | 1.3 | 1.5 | 1.8 |
+| Glowing crater | 1.3 | 1.4 | 1.6 |
+| Rock | 1.4 | 1.6 | 2.0 |
+
+The route finder weighs tiles by the same number, so parties go round slow ground when it pays. On four maps a typical trip comes out 6 to
+13% longer than with flat ground (a war rig's nearby trip 17%), and parties cross far less rock than before. The tile panel and the legend say
+what a ground costs. `Game.move_mult` is the one cost that routes, day counts, the season replay, food use and the Rust Kings' marches all use.
+
+### The broken leg
+A foot or horseback party that enters a **rock** tile has a 2% chance, and a **steep incline** 4%, that one of its people breaks a leg (a horse
+goes lame, for a party on horseback; `Data.LEG`). War rigs, boats and planes never do. It is one survivor at random: a Clumsy one is twice as
+likely, and a party with a Light-Footed member halves the chance. A broken leg slows the whole party: every step takes 1.5 times as long (1.75
+with a second, never past 2; `Units.leg_slowdown`, which multiplies with the load slowdown in `Units.party_slowdown`). The log says who and where,
+the survivor's line says "broken leg", and the map flashes a white crack on the tile during the season replay. It **heals when the party gets
+home**, or ends if that person dies on the road; a scouting party on station can be sent home to heal.
 
 ## Expeditions, tribes and raider bands
 The map is 120 x 72. Things on the move are drawn over the tile they stand on:
@@ -235,6 +264,76 @@ open desert, with no craters or lone ruins nearby.
 
 Each glowing crater (`o`) marks the epicenter of a big field of pre-war ruins (`EPICENTERS` of them). Ruins thin out toward the
 edge, and a few lone ruins are scattered around too. Scavenge them for loot, but watch for traps and rogue raiders.
+
+### Crossing the river
+**The river is a wall** for everything on the ground: foot, horseback and war rigs cannot enter a river tile (`Data.MOVERS` `water` is 0). Boats
+and planes cross it as before. A trip that would need to cross says "No way there (the river)", and so does the route preview. It can be crossed in
+three ways, all made by `Game._pass_crossings`, the last pass of map making (it has a random number generator of its own, so it changes nothing
+made before or after it, and the same map always gets the same crossings):
+- **The old bridge**: one tile wide (so it is a chokepoint), in the middle column of the map, or the nearest column (within `BRIDGE_SEARCH`)
+  where a war rig can drive from your HQ to the Rust Kings' fort over it (steep inclines can wall off an end). Every ground party can use it,
+  yours and your enemies', and boats pass under it. It belongs to nobody: it cannot be claimed, built over or pulled down, and an outpost's
+  claim skips it.
+- **Fords**: strips of shallow river, `FORD_WIDTH` columns wide across the whole channel. Two are placed on the way to Dustwell (near the
+  west reach) and on the way to the fort (middle-east), a few columns off from map to map, and a third at random. Foot and horseback parties
+  wade a ford at twice the cost of land; war rigs cannot; boats scrape through at half speed. A ford is still "water" for every other rule
+  (you cannot build on it) with a flag on the tile (`Game.is_ford`), and has a picture of its own (lighter blue over pale sand and pebbles).
+- **Bridges you build** (wood 10, stone 5 a tile): from your own bank, a tile at a time, each tile touching your land or the last bridge tile. A bridge
+  tile becomes yours, every ground party can use it (the Rust Kings and raiders too), boats pass under it, and you can pull it down, except
+  with a party standing on it. The Build button shows on free water beside your land.
+
+The pass checks that your home can reach the fort and Dustwell on foot, and adds fords until it can. On all maps tried, both are across the river
+from you, so the crossings matter: the west ford and the old bridge keep the walks to Dustwell and the fort within about 5 to 13% of the straight line.
+Old saves load without fords (their river stays a wall), as saved maps never had any; a new game gets them.
+
+### Roads and the old highway
+- **The old highway** is made with the map (`Game._pass_highway`, after the crossings; it takes no random numbers): one long ruined road that
+  runs to **every city** and over the old bridge (the crater at each city's centre has since taken the road there, and some round it: see "The craters took the road"). On each bank it goes from the bridge to the nearest city, then the next nearest, along the
+  cheapest ground (round rock, steep inclines and craters where it can). That is 4 or 5 cities and 120 to 160 tiles, about a quarter of it ruins, and it
+  touches neither HQ (the nearest tile is 24 to 39 tiles from yours). A ground party takes 0.8 times as long on a highway tile, whatever the ground
+  under it. It belongs to nobody and cannot be built over, claimed or pulled down.
+- **Ambushes.** A party of yours walking the old highway (foot, horseback or war rig) rolls a d20 for every 10 highway tiles it walks, and a natural
+  1 is an ambush: a raider band of strength 3 to 6 jumps it and it is fought like any ambush on the road (the best fighter rolls against the band;
+  a miss costs an injury and a share of the load, and a natural 1 on that roll kills someone). Over the whole highway that is about 14 rolls, so about
+  an even chance of one ambush; a 40-tile trip is about 1 in 5. Built roads never ambush (`Units._highway_check`, `Data.HIGHWAY`).
+- **Roads you build.** Click free ground beside your land, or one of your own tiles, and Build a **Road**: 2 stone and 1 grain a tile (the grain feeds the
+  workers). It goes on your own land, or on **free land** that touches your land or a road that reaches it, so it grows out from your border a tile at
+  a time (never on water, steep inclines, sites, buildings or the other side's land). A road makes its tile 0.6 times as long for ground parties
+  on any ground. **A road on free land stays free**: anyone can use it, your parties, the Rust Kings' marches and raider bands alike, so a road you
+  build to the highway is also a road for them to come down. You can pull down roads on your own land; roads on free land are permanent.
+  A road network is the roads, bridges and fords joined to your land, the old highway included (`Game.road_network`, `road_reaches`).
+- **The Rust Kings build too** (`Game._ai_roads`, in their season turn): when they have 8 stone and 8 food to spare after their walls, they lay up to 2
+  road tiles a season (2 stone and 1 food each), heading for the old highway first, then Dustwell, then your land, along a route that keeps to straight
+  lines and avoids steep inclines, water without a crossing, and other people's land (`Game._road_path`).
+- **Spurs and fragments.** After the highway is laid, `Game._pass_spurs` runs a few **spurs** out of the cities' centres in directions that point at no
+  other city (`Data.SPURS`; own random numbers, so no other pass moves): 5 to 7 a map, at most 2 a city. Each is a solid stretch of real highway (5 to 11
+  tiles, with a sideways jog now and then), then 2 to 4 **fragments** (up to 3 tiles each, shorter as it goes) with 1 to 3 tiles missing between them,
+  until the road is gone; the river, the map edge or the ground near a base (18 tiles) ends one early and a building swallows the tile under it. So a
+  scout who finds a lone bit of road in the wastes can follow it back towards a city. Fragments are ordinary `old_road` tiles (0.8 times as long, they
+  roll for ambushes, and seeing one finds the Hollow Mile); the Rust Kings only head for a stretch of 6 or more road tiles (`Game._highway_pieces`).
+- **The craters took the road.** `Game._pass_crater_wear` (last of the map passes, own random numbers) destroys the old road around every crater: none is
+  left on a crater tile, and within 5 tiles of one a tile survives with the chance (distance to the nearest crater tile) / 5, so the road gets patchier
+  and patchier towards the glowing craters. That breaks the highway where it meets each city's crater, about 45 to 65 tiles a map, and the spurs start
+  out of the crater (`Data.CRATER_WEAR`, `Game.worn`).
+- **Repairing the highway.** Any side can pay **1 stone** (`Data.HIGHWAY.repair`) to turn a tile of the old highway into a road: select the tile and press
+  "Repair into a road". It has to be free land or yours, joined to your land or to a road that reaches it (the highway counts once your road meets it), so a
+  repair runs along the highway a tile at a time. The tile stops rolling for ambushes and takes 0.6 instead of 0.8, for everyone; on free land it stays free
+  and cannot be pulled down (`Game.repair_status`, `Game.repair`). The Rust Kings repair the highway tiles that lie on their road to Dustwell or your land
+  (1 stone each, counted in their 2 tiles a season; about 7 tiles of 129 over 200 seasons on seed 3), so the fight over the highway is also a fight over
+  where it stays dangerous.
+- **The Hollow Mile.** That is the old highway's name. The first time your colony sees any tile of it (or of the old bridge it crosses), through a scout, a
+  party or a building's sight, `Game.check_hollow_mile` (called from `Units.check_discoveries` after every fog update) logs it, sets `Game.hollow_found`
+  (saved) and emits `hollow_mile_found(cell, hot)`. The HUD (`Hud.show_hollow_mile`) then puts up a full-screen picture, once the season's walk has finished
+  playing: `art/hollow_mile_day.png` (the grey overcast one with the stalled traffic) in a day season (always, with the night switched off), whatever the
+  radiation; in a night season `art/hollow_mile_night.png` (the orange dusk one with the viaduct), or `art/hollow_mile_fallout.png` (the green moonlit one) if
+  the party that found it was taking **high radiation**: the R/h on the tile it stands on times the shielding of how it travels (`Data.MOVERS.shield`: a war rig lets half through) is 45 or more, the
+  bottom of the High band (`Data.HOLLOW_MILE.rad_high`, `Game._finders_heat`: the hottest of your parties that has a tile of the highway in sight; a find
+  made by a building's sight or a flight is never "hot"). A click, Enter, Space or Escape closes it. If a picture is missing, a title card stands in for
+  it. The pictures are 1152 x 768 and carry their own title. A save from before this counts it as found if you have already seen the highway, so it does
+  not pop up on load.
+- **Drawing.** In the clean look a road is a strip of rectangles that joins up with the next road, bridge or ford (pale packed earth for a road, cracked
+  grey for the highway) with a dark one-pixel edge; the other looks show an `=`. The legend has a row for each.
+- Tune the numbers in `HIGHWAY`, `ROAD` and `AI_ROAD` in `scripts/data.gd`.
 
 ### Radiation
 Every tile has a hidden radiation level in R/h. Craters glow hardest and it fades with distance; fused glass, fallout waste and the
@@ -508,7 +607,7 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `art/animals.png` | The deer, black bear, brown bear and Giant Frog, four 16 x 16 pictures in a row (made from the SVGs in `Usable Art/ANIMALS`). |
 | `scripts/season_replay.gd` | The season replay: where a unit is on a given day, the replay's length, the troop march, and the Walk speed setting. |
 | `scripts/daylight.gd` | Day and night: which seasons are day, the light, what the ground and the things on it are multiplied by, the halos, and the Night switch. |
-| `tools/make_style4.gd`, `tools/make_buildings.gd` | Bake the clean look's ground pictures and the 20 building pictures (drawn as text rows in these files) into `art/atlas.png` and `art/building_atlas.png`. |
+| `tools/make_style4.gd`, `tools/make_buildings.gd` | Bake the clean look's ground pictures (and the ford) and the 22 building pictures (drawn as text rows in these files) into `art/atlas.png` and `art/building_atlas.png`. |
 | `scripts/hud.gd` | All the UI, built in code. |
 | `scripts/portrait.gd` | Draws the pixel-art survivor portraits. |
 | `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |

@@ -11,6 +11,7 @@ signal season_played(replay: Dictionary)   # END SEASON is done: here is how the
 signal troops_marched(path: Array, count: int)   # a raid is under way: a column of troops walks `path` (cells, HQ to target) and back
 signal replay_skip     # finish the replay or march that is playing at once
 signal replay_done     # the map has finished playing (or skipped) a replay or march
+signal hollow_mile_found(cell: Vector2i, hot: bool)   # your scouts saw the first tile of the old highway (once a game): the HUD shows its picture; `hot` is whether the party that found it is taking high radiation
 
 const Data = preload("res://scripts/data.gd")
 const D20Data = preload("res://scripts/d20_data.gd")
@@ -65,6 +66,7 @@ var replaying := false         # the map is playing back a season or a march (th
 var memory := {}
 var sight := {}
 var contacts := {}             # "viewer:other" -> true once a colony has found another
+var hollow_found := false      # your scouts have seen a tile of the old highway (the Hollow Mile)
 var view := Data.PLAYER        # whose knowledge the map shows (Data.NONE = everything)
 var measured := PackedByteArray()   # 1 where one of your parties has measured the radiation
 var show_radiation := false    # tint the tiles you have measured by how hot they are
@@ -181,7 +183,11 @@ func _generate_map() -> void:
 	_pass_radiation()
 	_generate_heights()
 	_seed_ruins()
-	_pass_pois()   # last, so placing them leaves every earlier pass (and its random numbers) exactly as it was
+	_pass_pois()   # nearly last, so placing them leaves every earlier pass (and its random numbers) exactly as it was
+	_pass_crossings()   # and this really is last: it has random numbers of its own
+	_pass_highway()     # the old highway, which needs the old bridge
+	_pass_spurs()       # and the stretches of it that fray out into the wastes from the cities (own random numbers again)
+	_pass_crater_wear() # and the craters, which destroyed the road around them (and a third set of random numbers)
 
 
 ## Pass 1: dunes, sand, scrub and rock from slow noise.
@@ -199,7 +205,7 @@ func _pass_base_terrain() -> void:
 				t = "sand"
 			elif n < 0.3:
 				t = "scrub"
-			tiles.append({"t": t, "o": Data.NONE, "b": "", "r": "", "rad": 0})
+			tiles.append({"t": t, "o": Data.NONE, "b": "", "r": "", "rad": 0, "f": false})
 
 
 ## Pass 2: a tile swaps to the kind most of its 8 neighbors are (5 or more), which dissolves
@@ -418,6 +424,378 @@ func _paint_river(spans: Array) -> void:
 	for x in w:
 		for y in range(spans[x].x, spans[x].y):
 			tile(Vector2i(x, y))["t"] = "water"
+
+
+# ---------------------------------------------------------------- crossings
+
+## The old highway, one long ruined road through every city and over the old bridge (the craters at the cities' centres take the road again afterwards: _pass_crater_wear). On each bank it goes from the bridge to the
+## nearest city, then the next nearest, along the cheapest ground (round rock, steep inclines and craters where it can, never through water or round
+## a building). It takes no random numbers. It keeps off tiles that already hold something.
+func _pass_highway() -> void:
+	var bridge := []
+	for i in tiles.size():
+		if tiles[i]["b"] == "old_bridge":
+			bridge.append(Vector2i(i % w, i / w))
+	if bridge.is_empty():
+		return
+	_label_banks()
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(0, 0, w, h)
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER   # a road runs in straight lines
+	grid.update()
+	for i in tiles.size():
+		var c := Vector2i(i % w, i / w)
+		var t: Dictionary = tiles[i]
+		if t["t"] == "water" and t["b"] != "old_bridge":
+			grid.set_point_solid(c)
+			continue
+		var weight := 1.0
+		if slopes[i] == "steep":
+			weight = 6.0
+		elif t["t"] == "rock" or t["t"] == "crater" or t["t"] == "glass":
+			weight = 3.0
+		elif t["t"] == "trees" or t["t"] == "grove":
+			weight = 2.0
+		if t["b"] != "" and t["b"] != "old_bridge":
+			weight = 20.0   # round sites and bases when it can
+		grid.set_point_weight_scale(c, weight)
+	var top: Vector2i = bridge[0]
+	var bottom: Vector2i = bridge[bridge.size() - 1]
+	var ends := [Vector2i(top.x, top.y - 1), Vector2i(bottom.x, bottom.y + 1)]
+	var cities := []
+	for cat in catastrophes:
+		cities.append(Vector2i(cat.pos))
+	var cells := {}
+	for end in ends:
+		if not in_bounds(end) or banks[idx(end)] == 0:
+			continue
+		var here: Vector2i = end
+		cells[end] = true
+		var left: Array = cities.filter(func(city): return banks[idx(city)] == banks[idx(end)])
+		while not left.is_empty():
+			left.sort_custom(func(a, b): return a.distance_to(here) < b.distance_to(here))
+			var next: Vector2i = left.pop_front()
+			for c in grid.get_id_path(here, next):
+				cells[c] = true
+			here = next
+	var laid := []
+	for c in cells:
+		if tile(c)["t"] != "water" and tile(c)["b"] == "":
+			tile(c)["b"] = "old_road"
+			laid.append(c)
+	_update_paths_at(laid)
+
+
+var worn := []    # the old road tiles the craters took (_pass_crater_wear), for tests: not saved either
+var spurs := []   # what _pass_spurs laid, for tests and the curious: {"city": cell, "heading": direction, "laid": [cells]} (not saved: the tiles are)
+
+
+## After the highway: the roads that lead out of the city centres into the wastes where there is no city to join, and fray away. See Data.SPURS. Each is a
+## solid stretch of real highway joined to its city, then fragments with gaps between them that get shorter, until nothing is left or the ground ends it.
+## Scouts who see a fragment can follow it back to the highway. It has a random number generator of its own (seeded from the map), so no other pass changes.
+func _pass_spurs() -> void:
+	spurs = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _crossing_seed() + 7919
+	var cities := []
+	for cat in catastrophes:
+		cities.append(Vector2i(cat.pos))
+	var laid := []
+	for city in cities:
+		if tile(city)["b"] != "old_road":
+			continue   # the highway did not come to this city (there is no old bridge)
+		var taken := []
+		for k in rng.randi_range(Data.SPURS.per_city[0], Data.SPURS.per_city[1]):
+			var heading := _spur_heading(city, cities, taken, rng)
+			if heading == Vector2i.ZERO:
+				break
+			taken.append(heading)
+			var cells := _lay_spur(city, heading, rng)
+			spurs.append({"city": city, "heading": heading, "laid": cells})
+			laid.append_array(cells)
+	_update_paths_at(laid)
+
+
+## A way out of `city` that no other spur of it takes, that points at no other city and that has open ground for its first few tiles. (0, 0) if there is none.
+func _spur_heading(city: Vector2i, cities: Array, taken: Array, rng: RandomNumberGenerator) -> Vector2i:
+	var options := []
+	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if d in taken:
+			continue
+		var toward := false
+		for other in cities:
+			if other != city and Vector2(other - city).normalized().dot(Vector2(d)) > Data.SPURS.away:
+				toward = true
+		if toward:
+			continue
+		var open := true
+		for k in range(1, 4):
+			if not _spur_ok(city + d * k):
+				open = false
+		if open:
+			options.append(d)
+	if options.is_empty():
+		return Vector2i.ZERO
+	return options[rng.randi_range(0, options.size() - 1)]
+
+
+## Lay one spur from `city` towards `heading` and return the tiles it laid: the solid stretch, then the fragments.
+func _lay_spur(city: Vector2i, heading: Vector2i, rng: RandomNumberGenerator) -> Array:
+	var plan := []   # one entry for each step: true lays the tile, false leaves a gap
+	for i in rng.randi_range(Data.SPURS.solid[0], Data.SPURS.solid[1]):
+		plan.append(true)
+	for k in rng.randi_range(Data.SPURS.fragments[0], Data.SPURS.fragments[1]):
+		for i in rng.randi_range(Data.SPURS.gap[0], Data.SPURS.gap[1]):
+			plan.append(false)
+		for i in rng.randi_range(1, maxi(Data.SPURS.fragment_length - k, 1)):
+			plan.append(true)
+	var out := []
+	var at := city
+	var side := Vector2i(heading.y, heading.x)
+	for lay in plan:
+		var step: Array = [heading]
+		if rng.randf() < Data.SPURS.jog:
+			step = [side if rng.randf() < 0.5 else -side, heading]
+		for d in step:
+			at += d
+			if not in_bounds(at) or tile(at)["t"] == "water" or not _clear_of_bases(at):
+				return out   # the river, the edge of the map or a base ends it
+			if lay and tile(at)["b"] == "":   # a building on the way has swallowed the road under it
+				tile(at)["b"] = "old_road"
+				out.append(at)
+	return out
+
+
+## Can a spur run over tile `c`? Open land: not water, nothing built on it, and well away from the bases. (The rim of a crater is steep and the highway runs
+## over it, so a spur can too.)
+func _spur_ok(c: Vector2i) -> bool:
+	if not in_bounds(c):
+		return false
+	var t := tile(c)
+	return t["t"] != "water" and t["b"] == "" and _clear_of_bases(c)
+
+
+func _clear_of_bases(c: Vector2i) -> bool:
+	for base in [Data.PLAYER_START, Data.AI_START, Data.TOWN_START]:
+		if Vector2(c).distance_to(Vector2(base)) < Data.SPURS.keep:
+			return false
+	return true
+
+
+## The craters destroyed the old road around them long ago. After the highway and its spurs are laid, no old road is left on a crater, and the nearer a tile of it
+## is to one the less likely it survives: (distance to the nearest crater tile) / Data.CRATER_WEAR.radius is its chance, up to that distance, so the road gets
+## patchier and patchier towards each crater. It has random numbers of its own (seeded from the map) and takes what is lost out of the spurs' lists too.
+func _pass_crater_wear() -> void:
+	worn = []
+	var craters := []
+	for i in tiles.size():
+		if tiles[i]["t"] == "crater":
+			craters.append(Vector2i(i % w, i / w))
+	if craters.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _crossing_seed() + 104729
+	var radius: float = Data.CRATER_WEAR.radius
+	var gone := {}
+	for i in tiles.size():
+		if tiles[i]["b"] != "old_road":
+			continue
+		var c := Vector2i(i % w, i / w)
+		var d := radius
+		for k in craters:
+			var between := Vector2(c).distance_to(Vector2(k))
+			if between < d:
+				d = between
+		if d >= radius:
+			continue
+		if rng.randf() >= d / radius:
+			tiles[i]["b"] = ""
+			gone[c] = true
+	for s in spurs:
+		s["laid"] = s.laid.filter(func(c): return not gone.has(c))
+	worn = gone.keys()
+	_update_paths_at(worn)
+
+
+## The old highway tiles that lie in a stretch of road at least Data.SPURS.piece tiles long (counting roads you or the Rust Kings built and repaired, and the
+## old bridge): worth heading for, unlike the fragments lying out in the wastes.
+func _highway_pieces() -> Dictionary:
+	var seen := {}
+	var out := {}
+	for i in tiles.size():
+		var start := Vector2i(i % w, i / w)
+		if seen.has(start) or not _carries_road_tile(start):
+			continue
+		var piece := [start]
+		seen[start] = true
+		var head := 0
+		while head < piece.size():
+			for n in neighbors(piece[head]):
+				if not seen.has(n) and _carries_road_tile(n):
+					seen[n] = true
+					piece.append(n)
+			head += 1
+		if piece.size() >= Data.SPURS.piece:
+			for c in piece:
+				out[c] = true
+	return out
+
+
+func _carries_road_tile(c: Vector2i) -> bool:
+	var b: String = tile(c)["b"]
+	return b != "" and (Data.BUILDINGS[b].get("road", false) or Data.BUILDINGS[b].get("bridge", false))
+
+
+## The river is a wall for everything on the ground (Data.MOVERS water = 0), so the map needs ways across it. This is the last pass of map
+## making, and it has a random number generator of its own (seeded from the map), so nothing made before or after it changes:
+##   the old bridge   one tile wide, in the middle of the map: every kind of party can use it, so it is a chokepoint;
+##   two fords        wadeable strips of river (foot and horseback only), one on the way to Dustwell, one on the way to the fort;
+##   a third ford     at random.
+## Then it checks that your home can reach the fort and Dustwell on foot, and adds fords until it can.
+func _pass_crossings() -> void:
+	_crossing_cells = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _crossing_seed()
+	var rows := _river_rows()
+	var cols := []   # the first column of every crossing, to keep them apart
+	var bridge := _pick_bridge_column(rows)
+	if bridge >= 0:
+		_set_old_bridge(bridge, rows)
+		cols.append(bridge)
+	for share in Data.FORDS:
+		var x := _free_column(roundi(w * share) + rng.randi_range(-Data.FORD_JITTER, Data.FORD_JITTER), cols, Data.CROSSING_GAP, rows)
+		if x >= 0:
+			_set_ford(x, rows)
+			cols.append(x)
+	var options := []
+	for x in range(Data.FORD_EXTRA_EDGE, w - Data.FORD_EXTRA_EDGE):
+		if _column_ok(x, rows) and cols.all(func(o): return absi(x - o) >= Data.FORD_EXTRA_GAP):
+			options.append(x)
+	if not options.is_empty():
+		var x: int = options[rng.randi_range(0, options.size() - 1)]
+		_set_ford(x, rows)
+		cols.append(x)
+	for attempt in 8:   # the guarantee: your home reaches the fort and Dustwell on foot
+		var seen := _reach(Data.PLAYER_START, false, true)
+		if seen[idx(Data.AI_START)] == 1 and seen[idx(Data.TOWN_START)] == 1:
+			break
+		var x := _free_column(w / 2 + (attempt - 4) * 7, cols, 4, rows)
+		if x < 0:
+			break
+		_set_ford(x, rows)
+		cols.append(x)
+	_update_paths_at(_crossing_cells)
+
+
+## A number made from the map's own tiles: the same map always gets the same crossings.
+func _crossing_seed() -> int:
+	var n := 17
+	for i in range(0, tiles.size(), 5):
+		n = (n * 31 + hash(tiles[i]["t"]) + int(tiles[i].get("z", 0))) & 0x3fffffff
+	return n
+
+
+## For each column, Vector2i(first row, last row) of the river's water, or (-1, -1) where there is none.
+func _river_rows() -> Array:
+	var rows := []
+	for x in w:
+		var first := -1
+		var last := -1
+		for y in h:
+			if tiles[y * w + x]["t"] == "water":
+				if first < 0:
+					first = y
+				last = y
+		rows.append(Vector2i(first, last))
+	return rows
+
+
+## Can a crossing start at column x (the river is there, in this and the next FORD_WIDTH - 1 columns)?
+func _column_ok(x: int, rows: Array) -> bool:
+	for k in Data.FORD_WIDTH:
+		if x + k < 0 or x + k >= w or rows[x + k].x < 0:
+			return false
+	return true
+
+
+## The column nearest `ideal` (looking outward, up to 12 either way) where a ford fits and keeps `gap` columns from every crossing in `cols`.
+func _free_column(ideal: int, cols: Array, gap: int, rows: Array) -> int:
+	for step in range(0, 13):
+		for side in ([1] if step == 0 else [1, -1]):
+			var x: int = ideal + side * step
+			if x >= 0 and x < w and _column_ok(x, rows) and cols.all(func(o): return absi(x - o) >= gap):
+				return x
+	return -1
+
+
+## The old bridge's column: the middle one, or the nearest (within BRIDGE_SEARCH) where a war rig can drive from your HQ to the Rust Kings'
+## fort over a one-tile bridge. Steep inclines can wall off an end of the bridge, which is why it may have to move.
+func _pick_bridge_column(rows: Array) -> int:
+	var mid := w / 2
+	var from_you := _reach(Data.PLAYER_START, true, false)
+	var from_them := _reach(Data.AI_START, true, false)
+	for step in range(0, Data.BRIDGE_SEARCH + 1):
+		for side in ([1] if step == 0 else [1, -1]):
+			var x: int = mid + side * step
+			if x < 0 or x >= w or rows[x].x < 1 or rows[x].y >= h - 1:
+				continue
+			var north := idx(Vector2i(x, rows[x].x - 1))
+			var south := idx(Vector2i(x, rows[x].y + 1))
+			if (from_you[north] == 1 and from_them[south] == 1) or (from_you[south] == 1 and from_them[north] == 1):
+				return x
+	return mid if rows[mid].x >= 0 else -1   # no column suits a war rig: it goes in the middle anyway, and foot parties use it
+
+
+func _set_old_bridge(x: int, rows: Array) -> void:
+	for y in range(rows[x].x, rows[x].y + 1):
+		tile(Vector2i(x, y))["b"] = "old_bridge"
+		_crossing_cells.append(Vector2i(x, y))
+
+
+func _set_ford(x: int, rows: Array) -> void:
+	for k in Data.FORD_WIDTH:
+		for y in range(rows[x + k].x, rows[x + k].y + 1):
+			tile(Vector2i(x + k, y))["f"] = true
+			_crossing_cells.append(Vector2i(x + k, y))
+
+
+var _crossing_cells: Array = []   # the tiles the crossing pass changed, so only their route costs are redone
+
+
+## Redoes the route costs of just these tiles for every way of travel (a bridge went up or came down, or the crossing pass ran).
+func _update_paths_at(cells: Array) -> void:
+	for mover in Data.MOVERS:
+		var grid: AStarGrid2D = paths[mover]
+		for c in cells:
+			var mult := move_mult(mover, c)
+			grid.set_point_solid(c, mult <= 0.0)
+			if mult > 0.0:
+				grid.set_point_weight_scale(c, mult)
+
+
+## Every tile that can be walked to from `start` with the river a wall (4 directions). A war rig also avoids steep inclines.
+## With `through_crossings` the fords and bridges are open (as they are for a foot party).
+func _reach(start: Vector2i, rig: bool, through_crossings: bool) -> PackedByteArray:
+	var seen := PackedByteArray()
+	seen.resize(tiles.size())
+	var queue := [start]
+	seen[idx(start)] = 1
+	var head := 0
+	while head < queue.size():
+		var c: Vector2i = queue[head]
+		head += 1
+		for n in neighbors(c):
+			var i := idx(n)
+			if seen[i] == 1:
+				continue
+			var t: Dictionary = tiles[i]
+			if t["t"] == "water" and not (through_crossings and (t.get("f", false) or t["b"] in ["old_bridge", "bridge"])):
+				continue
+			if rig and not slopes.is_empty() and slopes[i] == "steep" and not t["b"] in ["hq", "ai_hq", "town"]:
+				continue
+			seen[i] = 1
+			queue.append(n)
+	return seen
 
 
 ## Pass 5: big clusters of pre-war ruins, each with a glowing crater at its center where the
@@ -803,12 +1181,36 @@ func _build_contours() -> void:
 ## How many times slower a mover is on this tile than on flat ground (0 = can't enter).
 func move_mult(mover: String, c: Vector2i) -> float:
 	var m: Dictionary = Data.MOVERS[mover]
-	if tile(c)["t"] == "water":
-		return m.water
+	var t := tile(c)
+	if t["t"] == "water":
+		if t["b"] != "" and Data.BUILDINGS[t["b"]].get("bridge", false):
+			return m.bridge
+		return m.ford if t.get("f", false) else m.water
 	if tile(c)["b"] in ["hq", "ai_hq", "town"]:
 		return m.land   # settlements always have a way in
 	var s: String = slopes[idx(c)]
-	return m[s] if s != "" else m.land
+	var base: float = m[s] if s != "" else m.land
+	var b: String = t["b"]
+	if b != "" and Data.BUILDINGS[b].get("road", false):
+		if base <= 0.0:
+			return 0.0   # a boat still cannot sail over land, nor a war rig climb a steep incline
+		return float(Data.HIGHWAY.speed if Data.BUILDINGS[b].get("highway", false) else Data.ROAD.speed)
+	return base * ground_speed(t["t"], mover)
+
+
+## How many times longer than sand a tile of this ground takes (Data.TERRAIN_SPEED); 1.0 for a boat or a plane.
+func ground_speed(terrain_id: String, mover: String) -> float:
+	return Data.TERRAIN_SPEED.get(terrain_id, {}).get(mover, 1.0)
+
+
+## "foot 1.3x, horse 1.5x, war rig 1.8x slower", or "" for ground that is as quick as sand.
+func speed_text(terrain_id: String) -> String:
+	var parts := []
+	for mover in ["foot", "horse", "car"]:
+		var k := ground_speed(terrain_id, mover)
+		if k > 1.0:
+			parts.append("%s %sx" % [Data.MOVERS[mover].name.to_lower(), str(k)])
+	return "" if parts.is_empty() else ", ".join(parts) + " slower"
 
 
 ## One route finder per way of travel. Steep inclines are walls for war rigs, land for boats.
@@ -826,6 +1228,214 @@ func _build_paths() -> void:
 			else:
 				grid.set_point_weight_scale(c, mult)
 		paths[mover] = grid
+
+
+## The nearest tile a party on foot can stand on, looking outward from `c` up to `reach` tiles: `c` itself if it is one. (-1, -1) if there is none.
+## With `toward` set, only a tile with a way on foot to `toward` counts, so a crew wading ashore does not land on the wrong bank.
+func nearest_walkable(c: Vector2i, reach := 8, toward := Vector2i(-1, -1)) -> Vector2i:
+	if move_mult("foot", c) > 0.0 and (toward.x < 0 or not route("foot", c, toward).is_empty()):
+		return c
+	for r in range(1, reach + 1):
+		var found: Array = []
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var p := c + Vector2i(dx, dy)
+				if in_bounds(p) and move_mult("foot", p) > 0.0:
+					found.append(p)
+		found.sort_custom(func(a, b): return Vector2(a - c).length() < Vector2(b - c).length())
+		for p in found:
+			if toward.x < 0 or not route("foot", p, toward).is_empty():
+				return p
+	return Vector2i(-1, -1)
+
+
+## True for a river tile that can be waded.
+## Every tile of the road network that joins `owner`'s land: road tiles on it or beside it, and everything of the same kind that touches those
+## (roads, bridges and fords all carry it on). The old highway counts, so a road out to it and the highway are one network.
+func road_network(owner: int) -> Dictionary:
+	var net := {}
+	var queue := []
+	for i in tiles.size():
+		var t: Dictionary = tiles[i]
+		if t["b"] != "" and Data.BUILDINGS[t["b"]].get("road", false):
+			var c := Vector2i(i % w, i / w)
+			if t["o"] == owner or borders(c, owner):
+				net[c] = true
+				queue.append(c)
+	var head := 0
+	while head < queue.size():
+		var c: Vector2i = queue[head]
+		head += 1
+		for n in neighbors(c):
+			if net.has(n):
+				continue
+			var t: Dictionary = tile(n)
+			var carries: bool = t.get("f", false) or (t["b"] != "" and (Data.BUILDINGS[t["b"]].get("road", false) or Data.BUILDINGS[t["b"]].get("bridge", false)))
+			if carries:
+				net[n] = true
+				queue.append(n)
+	return net
+
+
+## Would a road tile on free land `c` join `owner`'s land or a road that reaches it?
+func road_reaches(c: Vector2i, owner: int) -> bool:
+	if borders(c, owner):
+		return true
+	var net := road_network(owner)
+	for n in neighbors(c):
+		if net.has(n):
+			return true
+	return false
+
+
+## The Rust Kings lay a few road tiles each season (Data.AI_ROAD): out from their fort along the route to the old highway first, then Dustwell,
+## then your land. It stops at the first tile it cannot build on (a building, your land) and waits.
+func _ai_roads() -> void:
+	var cost: Dictionary = Data.BUILDINGS["road"].cost
+	if ai["stone"] < Data.AI_ROAD.stone or ai["food"] < Data.AI_ROAD.food:
+		return
+	var net := road_network(Data.AI)   # kept up to date as they lay and repair, so the highway tiles on the way can be told from the ones out of reach
+	for target in _ai_road_targets():
+		var laid := 0
+		var path := _road_path(bases[Data.AI], target, Data.AI)
+		for c in path:
+			if laid >= Data.AI_ROAD.tiles or ai["stone"] < cost.stone or ai["food"] < cost.grain:
+				break
+			var t: Dictionary = tile(c)
+			if t["b"] == "old_road" and c != target and ai["stone"] >= Data.HIGHWAY.repair.stone and (t["o"] == Data.AI or (t["o"] == Data.NONE \
+					and (borders(c, Data.AI) or neighbors(c).any(func(n): return net.has(n))))):
+				t["b"] = "road"   # a stretch of the old highway on the way: they pay to repair it, which ends the ambushes there
+				ai["stone"] -= Data.HIGHWAY.repair.stone
+				net[c] = true
+				_update_paths_at([c])
+				laid += 1
+				continue
+			if t["b"] != "" and Data.BUILDINGS[t["b"]].get("road", false):
+				continue   # already road
+			if t["t"] == "water" or c == target or t["b"] != "":
+				continue   # the river (a ford or bridge carries the road on), the target itself, or a building: walk on past it
+			if slopes[idx(c)] == "steep" or not (t["o"] == Data.AI or (t["o"] == Data.NONE and road_reaches(c, Data.AI))):
+				break
+			t["b"] = "road"
+			ai["stone"] -= cost.stone
+			ai["food"] -= cost.grain
+			net[c] = true
+			_update_paths_at([c])
+			laid += 1
+		if laid > 0:
+			return
+
+
+## A route for laying road from `from` to `to`, in straight lines (four directions, so each tile joins the last) that a road can really follow: it
+## never uses a steep incline, water without a ford or a bridge, or land that belongs to somebody else, and it keeps round buildings. `to` is open.
+func _road_path(from: Vector2i, to: Vector2i, owner: int) -> Array:
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(0, 0, w, h)
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	grid.update()
+	for i in tiles.size():
+		var c := Vector2i(i % w, i / w)
+		var t: Dictionary = tiles[i]
+		var spans: bool = t.get("f", false) or (t["b"] != "" and Data.BUILDINGS[t["b"]].get("bridge", false))
+		if (t["t"] == "water" and not spans) or slopes[i] == "steep" or (t["o"] != Data.NONE and t["o"] != owner and not spans):
+			grid.set_point_solid(c)
+			continue
+		var weight := 1.0
+		if t["t"] == "rock" or t["t"] == "crater" or t["t"] == "glass":
+			weight = 3.0
+		elif t["t"] == "trees" or t["t"] == "grove":
+			weight = 2.0
+		if t["b"] != "" and not spans and not Data.BUILDINGS[t["b"]].get("road", false):
+			weight = 25.0
+		grid.set_point_weight_scale(c, weight)
+	grid.set_point_solid(from, false)
+	grid.set_point_solid(to, false)
+	return grid.get_id_path(from, to)
+
+
+## Where the Rust Kings' road is heading: the old highway tile nearest their fort, then Dustwell, then the nearest tile of yours.
+func _ai_road_targets() -> Array:
+	var fort: Vector2i = bases[Data.AI]
+	var out := []
+	var best := INF
+	var nearest := Vector2i(-1, -1)
+	var pieces := _highway_pieces()   # not a fragment out in the wastes
+	for i in tiles.size():
+		var c := Vector2i(i % w, i / w)
+		if tiles[i]["b"] == "old_road" and pieces.has(c) and c.distance_to(fort) < best:
+			best = c.distance_to(fort)
+			nearest = c
+	if nearest.x >= 0:
+		out.append(nearest)
+	for i in tiles.size():
+		if tiles[i]["b"] == "town":
+			out.append(Vector2i(i % w, i / w))
+			break
+	best = INF
+	nearest = Vector2i(-1, -1)
+	for c in owned(Data.PLAYER):
+		if c.distance_to(fort) < best:
+			best = c.distance_to(fort)
+			nearest = c
+	if nearest.x >= 0:
+		out.append(nearest)
+	return out
+
+
+func is_ford(c: Vector2i) -> bool:
+	return tile(c)["t"] == "water" and tile(c).get("f", false)
+
+
+## What the ground on tile c is called: "Shallow ford" for a wadeable river tile, otherwise the terrain's name.
+func terrain_name(c: Vector2i) -> String:
+	return Data.FORD.name if is_ford(c) else Data.TERRAIN[tile(c)["t"]].name
+
+
+var banks := PackedInt32Array()   # per tile: 0 for water, otherwise which stretch of land it is on with the river as a wall
+var _banks_map := -1
+
+
+func _label_banks() -> void:
+	if _banks_map == map_version and banks.size() == tiles.size():
+		return
+	banks.resize(tiles.size())
+	banks.fill(0)
+	var next := 0
+	for i in tiles.size():
+		if banks[i] != 0 or tiles[i]["t"] == "water":
+			continue
+		next += 1
+		banks[i] = next
+		var queue := [i]
+		var head := 0
+		while head < queue.size():
+			var c := Vector2i(queue[head] % w, queue[head] / w)
+			head += 1
+			for n in neighbors(c):
+				var k := idx(n)
+				if banks[k] == 0 and tiles[k]["t"] != "water":
+					banks[k] = next
+					queue.append(k)
+	_banks_map = map_version
+
+
+## Why this mover has no way from `from` to `to`: "the river" when they are on different banks (or the target is in the water), "steep
+## inclines" for a war rig that is held up on the same bank, or "" for a boat or plane.
+func no_way_reason(mover: String, from: Vector2i, to: Vector2i) -> String:
+	if mover in ["boat", "plane"]:
+		return ""
+	_label_banks()
+	if banks[idx(from)] != banks[idx(to)] or tile(to)["t"] == "water":
+		return "the river"
+	return "steep inclines" if mover == "car" else ""
+
+
+## "No way there (the river)", "No way there (steep inclines)" or just "No way there".
+func no_way_text(mover: String, from: Vector2i, to: Vector2i) -> String:
+	var why := no_way_reason(mover, from, to)
+	return "No way there" + (" (%s)" % why if why != "" else "")
 
 
 ## The fastest route for this mover, or [] if there's no way through.
@@ -1003,7 +1613,7 @@ func refresh_scout_route() -> void:
 	if in_bounds(selected) and selected != u.pos:
 		path = route(u.mover, u.pos, selected)
 	if path.size() > 1:
-		var days := Units.arrival_days(u.mover, path, Units.load_slowdown(u))
+		var days := Units.arrival_days(u.mover, path, Units.party_slowdown(u))
 		scout_route ={"mover": u.mover, "path": path, "days": days, "ratio": Units.food_ratios(u, days)}
 
 
@@ -1020,6 +1630,8 @@ func claim_status(c: Vector2i) -> String:
 	var t := tile(c)
 	if t["o"] == Data.PLAYER:
 		return "Already yours"
+	if t["b"] == "old_bridge":
+		return "The old bridge belongs to nobody"
 	if not borders(c, Data.PLAYER):
 		return "Must border your land"
 	if t["o"] == Data.AI:
@@ -1061,9 +1673,15 @@ func build_status(id: String, c: Vector2i) -> String:
 	if not b.get("buildable", true):
 		return "Can't be built"
 	if t["o"] != Data.PLAYER:
-		return "Not your land"
+		# a bridge goes out from your land: the free water tile beside it can be built on (and becomes yours); a road goes out over free
+		# land from your land or from a road that reaches it, and leaves the land free
+		var reaches: bool = t["o"] == Data.NONE and ((b.get("bridge", false) and borders(c, Data.PLAYER)) or (b.get("road", false) and road_reaches(c, Data.PLAYER)))
+		if not reaches:
+			return "Not your land"
 	if t["b"] != "":
 		return "Tile already has a building"
+	if b.get("road", false) and slopes[idx(c)] == "steep":
+		return "Too steep for a road"
 	var on: Array = b.get("on", [])
 	if on.is_empty() and t["t"] == "water":
 		return "Can't build on water"
@@ -1087,21 +1705,61 @@ func build(id: String, c: Vector2i) -> void:
 	note("buildings_built")
 	tile(c)["b"] = id
 	refinery_on.erase(idx(c))   # a new refinery starts off
+	if Data.BUILDINGS[id].get("bridge", false):
+		tile(c)["o"] = Data.PLAYER
+		_update_paths_at([c])   # the new way across
+	elif Data.BUILDINGS[id].get("road", false):
+		_update_paths_at([c])   # the new quick way (free land stays free)
 	if id == "outpost":
 		for y in range(c.y - 2, c.y + 3):
 			for x in range(c.x - 2, c.x + 3):
 				var p := Vector2i(x, y)
-				if in_bounds(p) and tile(p)["o"] == Data.NONE:
+				if in_bounds(p) and tile(p)["o"] == Data.NONE and tile(p)["b"] != "old_bridge":
 					tile(p)["o"] = Data.PLAYER
 	add_log("Built a %s.%s" % [Data.BUILDINGS[id].name, " It starts switched off: select it to start it." if id == "refinery" else ""])
 	changed.emit()
 
 
+## Why a tile of the old highway cannot be repaired into a road yet, or "" if it can: it must be free land or yours, joined to your land or to a
+## road that reaches it (the highway counts once your road meets it), and the stone must be in the stores.
+func repair_status(c: Vector2i) -> String:
+	var t := tile(c)
+	if t["b"] != "old_road":
+		return "Not part of the old highway"
+	if t["o"] != Data.NONE and t["o"] != Data.PLAYER:
+		return "Not your land"
+	if t["o"] != Data.PLAYER and not road_reaches(c, Data.PLAYER):
+		return "Not joined to your land or a road of yours"
+	if not can_afford(Data.HIGHWAY.repair):
+		return "Need " + cost_text(Data.HIGHWAY.repair)
+	return ""
+
+
+## Pay the stone and turn a tile of the old highway into a road: no more ambush rolls there, and it is 0.6 times as long instead of 0.8. A repaired
+## tile on free land stays free, like any road there, so everyone can use it.
+func repair(c: Vector2i) -> void:
+	if repair_status(c) != "":
+		return
+	pay(Data.HIGHWAY.repair)
+	tile(c)["b"] = "road"
+	_update_paths_at([c])
+	add_log("Repaired a stretch of the Hollow Mile into a road. Raiders can no longer lie in wait on it.")
+	changed.emit()
+
+
 func demolish(c: Vector2i) -> void:
 	var t := tile(c)
-	if t["o"] == Data.PLAYER and t["b"] != "" and t["b"] != "hq" and poi_kind(c) == "":
+	if t["o"] == Data.PLAYER and t["b"] != "" and t["b"] != "hq" and poi_kind(c) == "" and Data.BUILDINGS[t["b"]].get("buildable", true):
+		var bridge: bool = Data.BUILDINGS[t["b"]].get("bridge", false)
+		var way: bool = bridge or Data.BUILDINGS[t["b"]].get("road", false)
+		if bridge and not Units.units_at(c).is_empty():
+			add_log("The bridge can't come down with a party on it.")
+			changed.emit()
+			return
 		t["b"] = ""
 		refinery_on.erase(idx(c))
+		if way:
+			_update_paths_at([c])   # the way across (or the quick way) is gone
 		changed.emit()
 
 
@@ -1803,6 +2461,7 @@ func vehicle_trade(v: String) -> int:
 
 func _reset_fog() -> void:
 	contacts = {}
+	hollow_found = false
 	for viewer in Data.FOG_VIEWERS:
 		var m := []
 		m.resize(w * h)   # every entry starts as null: never seen
@@ -1872,6 +2531,53 @@ func _remember(viewer: int, i: int) -> void:
 
 func knows_tile(viewer: int, c: Vector2i) -> bool:
 	return memory[viewer][idx(c)] != null
+
+
+var _hollow_cells := []
+var _hollow_map := -1
+
+
+## Every tile of the old highway and of the old bridge it runs over, worked out once for each map.
+func _hollow_tiles() -> Array:
+	if _hollow_map != map_version:
+		_hollow_cells = []
+		for i in tiles.size():
+			if tiles[i]["b"] in ["old_road", "old_bridge"]:
+				_hollow_cells.append(Vector2i(i % w, i / w))
+		_hollow_map = map_version
+	return _hollow_cells
+
+
+func _hollow_known() -> bool:
+	return _hollow_tiles().any(func(c): return knows_tile(Data.PLAYER, c))
+
+
+## The first tile of the old highway (or its bridge) your colony sees finds the Hollow Mile: once a game, with a log line and a signal for the picture.
+func check_hollow_mile() -> void:
+	if hollow_found:
+		return
+	for c in _hollow_tiles():
+		if knows_tile(Data.PLAYER, c):
+			hollow_found = true
+			add_log("Your scouts found the Hollow Mile at %d,%d: the old pre-war highway. It runs through the cities, and raiders lie in wait on it." % [c.x, c.y])
+			hollow_mile_found.emit(c, _finders_heat() >= Data.HOLLOW_MILE.rad_high)
+			return
+
+
+## The most radiation (R/h on the tile it stands on, after the shielding of how it travels) that any party of yours with a tile of the old highway in sight
+## is taking right now: the party that found the Hollow Mile. 0 if none of them sees it (a building's sight found it, or a flight).
+func _finders_heat() -> float:
+	var hottest := 0.0
+	for u in Units.units:
+		if u.owner != Data.PLAYER:
+			continue
+		var r: int = Units.sight_of(u)
+		for c in _hollow_tiles():
+			var d: Vector2i = c - u.pos
+			if d.x * d.x + d.y * d.y <= r * r + r:
+				hottest = maxf(hottest, radiation(u.pos) * Data.MOVERS[u.mover].shield)
+				break
+	return hottest
 
 
 func in_sight(viewer: int, c: Vector2i) -> bool:
@@ -2238,6 +2944,7 @@ func _ai_turn() -> void:
 		tile(free.pick_random())["o"] = Data.AI
 	ai["relations"] = maxi(ai["relations"] - 2, -100)
 	_sync_ai_walls()
+	_ai_roads()
 	for i in 2 + mini(ai["horse"], 2):
 		var at := _ai_scout()
 		if in_bounds(at):
@@ -2363,12 +3070,12 @@ func save_game(slot: String) -> void:
 	DirAccess.make_dir_recursive_absolute(save_dir)
 	var packed := []
 	for t in tiles:
-		packed.append([t["t"], t["o"], t["b"], t["z"], t["r"], t["rad"]])
+		packed.append([t["t"], t["o"], t["b"], t["z"], t["r"], t["rad"], 1 if t.get("f", false) else 0])
 	var data := {
 		"version": 3, "w": w, "h": h, "leader": leader, "season": season, "pop": pop, "troops": troops,
 		"prisoners": prisoners, "res": res, "items": items, "salt_on": salt_on, "upgrades": upgrades, "vehicles": vehicles,
 		"units": Units.to_save(), "raided": raided_this_season, "ai": ai, "town": town,
-		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts,
+		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts, "hollow_found": hollow_found,
 		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost, "leader_info": leader_info,
 		"memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
 	}
@@ -2414,7 +3121,7 @@ func load_game(slot: String) -> bool:
 	map_version += 1
 	for t in data["tiles"]:
 		tiles.append({"t": t[0], "o": int(t[1]), "b": {"dock": "port", "scrapyard": "motor_pool"}.get(t[2], t[2]), "z": int(t[3]) if t.size() > 3 else 0,
-			"r": t[4] if t.size() > 4 else "", "rad": int(t[5]) if t.size() > 5 else 0})
+			"r": t[4] if t.size() > 4 else "", "rad": int(t[5]) if t.size() > 5 else 0, "f": t.size() > 6 and int(t[6]) == 1})
 	preview = {}
 	catastrophes = data.get("catastrophes", []).map(_unpack_catastrophe)   # none in older saves
 	_find_bases()
@@ -2438,6 +3145,7 @@ func load_game(slot: String) -> bool:
 			memory[Data.FOG_VIEWERS[i]] = data["memory"][i].map(func(e): return null if e == null else [int(e[0]), e[1]])
 	else:
 		_reset_fog()   # old save without fog of war
+	hollow_found = bool(data.get("hollow_found", _hollow_known()))   # a save from before the picture counts it as found if you have seen the highway
 	ending = {}
 	stats = _load_stats(data.get("stats", {}))
 	prosper_streak = int(data.get("prosper_streak", 0))

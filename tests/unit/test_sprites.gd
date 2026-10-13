@@ -11,7 +11,7 @@ func after_each() -> void:
 
 func test_the_atlas_loads_with_every_sprite() -> void:
 	assert_true(Sprites.available())
-	assert_eq(Sprites.names().size(), 23)
+	assert_eq(Sprites.names().size(), 24, "23 and the ford")
 
 
 func test_everything_in_the_game_that_the_legend_lists_has_a_sprite() -> void:
@@ -27,7 +27,7 @@ func test_everything_in_the_game_that_the_legend_lists_has_a_sprite() -> void:
 
 func test_every_sprite_in_the_atlas_is_used_by_something() -> void:
 	var used := {}
-	for table in [Sprites.TERRAIN, Sprites.SLOPES, Sprites.UNITS, Sprites.CAMPS]:
+	for table in [Sprites.TERRAIN, Sprites.SLOPES, Sprites.UNITS, Sprites.CAMPS, {"ford": Sprites.FORD}]:
 		for id in table:
 			used[table[id]] = true
 	for sprite in Sprites.names():
@@ -60,7 +60,7 @@ func _seen(img: Image) -> Array:
 
 
 func test_the_four_styles_of_each_ground_and_slope_look_different() -> void:
-	for sprite in Sprites.TERRAIN.values() + Sprites.SLOPES.values():
+	for sprite in Sprites.TERRAIN.values() + Sprites.SLOPES.values() + [Sprites.FORD]:
 		var seen := {}
 		for n in range(1, Sprites.STYLES + 1):
 			seen[Sprites.image(sprite, n).get_data()] = true
@@ -128,9 +128,9 @@ func test_with_the_text_glyphs_chosen_there_are_no_pictures_to_draw() -> void:
 func test_every_sprite_has_a_rectangle_inside_the_atlas() -> void:
 	Sprites.choose(1)
 	var atlas := Sprites.atlas_texture()
-	assert_eq(atlas.get_size(), Vector2(32, 184))
+	assert_eq(atlas.get_size(), Vector2(32, 192))
 	var rects := Sprites.rects()
-	assert_eq(rects.size(), 23)
+	assert_eq(rects.size(), 24)
 	for sprite in rects:
 		var r: Rect2 = rects[sprite]
 		assert_eq(r.size, Vector2(Sprites.SIZE, Sprites.SIZE), sprite)
@@ -210,8 +210,10 @@ func test_the_clean_look_is_style_4_and_the_last_picture_choice() -> void:
 
 
 func test_every_clean_ground_covers_its_whole_tile() -> void:
-	for id in Sprites.TERRAIN:
-		var img := Sprites.image(Sprites.TERRAIN[id], Sprites.CLEAN)
+	var grounds: Dictionary = Sprites.TERRAIN.duplicate()
+	grounds["ford"] = Sprites.FORD
+	for id in grounds:
+		var img := Sprites.image(grounds[id], Sprites.CLEAN)
 		for y in 8:
 			for x in 8:
 				assert_eq(img.get_pixel(x, y).a, 1.0, "%s pixel %d,%d is see-through" % [id, x, y])
@@ -231,9 +233,11 @@ func test_the_old_looks_leave_the_ground_see_through_so_their_wash_shows() -> vo
 func test_the_clean_grounds_are_told_apart_by_colour() -> void:
 	# the whole point: two different grounds never share a tile colour (the most common pixel)
 	var common := {}
-	for id in Sprites.TERRAIN:
+	var every: Dictionary = Sprites.TERRAIN.duplicate()
+	every["ford"] = Sprites.FORD
+	for id in every:
 		var counts := {}
-		var img := Sprites.image(Sprites.TERRAIN[id], Sprites.CLEAN)
+		var img := Sprites.image(every[id], Sprites.CLEAN)
 		for y in 8:
 			for x in 8:
 				var c := img.get_pixel(x, y).to_html(false)
@@ -293,6 +297,8 @@ func test_every_building_you_can_put_up_has_a_picture() -> void:
 		var b: Dictionary = Data.BUILDINGS[id]
 		if b.has("poi"):
 			assert_eq(Sprites.building_rect(id), Rect2(), "%s is a site: it has its own 16 x 16 picture" % id)
+		elif b.get("road", false):
+			assert_eq(Sprites.building_rect(id), Rect2(), "%s is drawn from rectangles that join up, not from a picture" % id)
 		else:
 			assert_ne(Sprites.building_rect(id), Rect2(), "%s has no building picture" % id)
 

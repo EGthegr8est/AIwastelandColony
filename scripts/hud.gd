@@ -69,6 +69,11 @@ var dice_lines: Array = []               # what the last roll said, shown under 
 var ending_screen := ColorRect.new()     # the ending picture, over everything; a click moves on to the stats
 var ending_art := TextureRect.new()
 var ending_title := Label.new()          # stands in for the picture's own title if the picture can't be read
+var hollow_screen := ColorRect.new()     # the Hollow Mile picture, over everything: the first time your scouts see the old highway; a click closes it
+var hollow_fit := AspectRatioContainer.new()
+var hollow_art := TextureRect.new()
+var hollow_title := Label.new()          # a title card that stands in for the picture if it can't be read
+var hollow_note := Label.new()
 var stats_screen := ColorRect.new()      # what you did, and the way back to the main menu
 var stats_box := VBoxContainer.new()
 
@@ -84,9 +89,11 @@ func _ready() -> void:
 	_build_menu()
 	_build_dice()
 	_build_ending()
+	_build_hollow_screen()
 	SeasonReplay.load_mode()   # the speed of the season replay you last chose, if you chose one
 	Daylight.load_setting()    # and whether you switched the night off
 	Game.game_ended.connect(_on_game_ended)
+	Game.hollow_mile_found.connect(_on_hollow_found)
 	Game.changed.connect(refresh, CONNECT_DEFERRED)
 	Music.volume_changed.connect(_sync_music_sliders)
 	Game.tile_selected.connect(func(): tabs.current_tab = 0)
@@ -504,6 +511,7 @@ func _leader_face(box: Container, leader: Dictionary, size: int, small: bool) ->
 
 func _pick_leader(leader: Dictionary) -> void:
 	Game.new_game(leader["class"], leader)
+	Music.play_opening()   # a new colony opens with the canyon track; _close_menu then finds the game music already on
 	_close_menu()
 
 
@@ -950,7 +958,14 @@ func _refresh_tile() -> void:
 		_legend_night_row(box)
 		for id in Data.TERRAIN:
 			var t: Dictionary = Data.TERRAIN[id]
-			_legend_row(box, Sprites.terrain(id), t.glyph[0], "%s  %s" % [t.name, Game.cost_text(t.yield) if not t.yield.is_empty() else ""], t.color)
+			var slow := Game.speed_text(id)
+			_legend_row(box, Sprites.terrain(id), t.glyph[0], "%s  %s%s" % [t.name, Game.cost_text(t.yield) if not t.yield.is_empty() else "", "  (%s)" % slow if slow != "" else ""], t.color)
+		_legend_row(box, Sprites.texture(Sprites.FORD), Data.FORD.glyph, "%s: foot and horseback can wade it" % Data.FORD.name, Data.FORD.color)
+		_legend_row(box, Sprites.road_icon(false), Data.BUILDINGS["road"].glyph, "Road: ground parties take 0.6 times as long (you and the Rust Kings build them, and anyone can use them)", Data.BUILDINGS["road"].color)
+		_legend_row(box, Sprites.road_icon(true), Data.BUILDINGS["old_road"].glyph, "Old highway: 0.8 times as long, but raiders lie in wait on it", Data.BUILDINGS["old_road"].color)
+		for id in ["bridge", "old_bridge"]:
+			var span: Dictionary = Data.BUILDINGS[id]
+			_legend_row(box, Sprites.building(id), span.glyph, "%s: %s" % [span.name, "every ground party can cross (you build it out from your bank)" if id == "bridge" else "the one place every kind of party can cross"], span.color)
 		_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a %s every 10 m): slows everyone a little" % ("ledge" if Sprites.clean() else "line"), AMBER)
 		_legend_row(box, Sprites.slope("steep"), "═║╔╗", "Steep incline: war rigs can't climb it, foot and horses cross slowly", AMBER)
 		for mover in Data.TRAVEL_PREVIEW:
@@ -983,9 +998,16 @@ func _refresh_tile() -> void:
 	var seen := Game.in_sight(Data.PLAYER, c)
 	var terrain: Dictionary = Data.TERRAIN[Game.tile(c)["t"]]
 	var owners := ["Nobody", "You", "The Rust Kings", "Dustwell"]
-	_label(box, terrain.name + ("" if seen else "  (out of sight, last seen)"))
+	_label(box, Game.terrain_name(c) + ("" if seen else "  (out of sight, last seen)"))
+	if Game.is_ford(c):
+		_label(box, Data.FORD.desc, DIM)
+	elif Game.tile(c)["t"] == "water":
+		_label(box, "Deep water: only boats and planes cross it. Foot, horseback and war rigs need a ford or a bridge.", DIM)
 	_label(box, "Owner: %s" % owners[known[0]])
 	_label(box, "Height: %+d m" % Game.tile(c)["z"])
+	var ground_speed := Game.speed_text(Game.tile(c)["t"]) if not Game.is_ford(c) else ""
+	if ground_speed != "":
+		_label(box, "Ground: " + ground_speed, DIM)
 	_label(box, "Radiation: " + Game.reading_text(c), Game.rad_band(Game.radiation(c))[1] if Game.is_measured(c) else DIM)
 	var slope: String = Game.slopes[Game.idx(c)]
 	if slope == "steep":
@@ -1005,11 +1027,13 @@ func _refresh_tile() -> void:
 	if known[1] != "":
 		var b: Dictionary = Data.BUILDINGS[known[1]]
 		_label(box, "%s %s: %s" % [b.glyph, b.name, b.desc], b.color)
+		if known[1] == "old_road" and seen and known[0] in [Data.NONE, Data.PLAYER]:
+			_repair_controls(box, c)
 		if known[0] == Data.PLAYER and known[1] == "refinery":
 			_refinery_controls(box, c)
 		if known[0] == Data.PLAYER and known[1] == "drug_factory":
 			_drug_factory_block(box)
-		if known[0] == Data.PLAYER and known[1] != "hq" and not b.has("poi"):
+		if known[0] == Data.PLAYER and known[1] != "hq" and not b.has("poi") and b.get("buildable", true):
 			_button(box, "Demolish", func(): Game.demolish(c))
 	for u in Units.units_at(c):
 		if u.owner == Data.PLAYER or seen:
@@ -1061,9 +1085,23 @@ func _refresh_tile() -> void:
 	var t: Dictionary = Game.tile(c)
 	if t["o"] != Data.PLAYER:
 		var why := Game.claim_status(c)
-		_button(box, "Claim tile (%s)" % Game.cost_text(Game.claim_cost(c)), func(): Game.claim(c), why)
-		if why != "":
-			_label(box, why, DIM)
+		if t["b"] != "old_bridge":
+			_button(box, "Claim tile (%s)" % Game.cost_text(Game.claim_cost(c)), func(): Game.claim(c), why)
+			if why != "":
+				_label(box, why, DIM)
+		if t["b"] == "" and t["o"] == Data.NONE:
+			# free ground beside your land (or a road that reaches it): a bridge over water, a road over land
+			var options := []
+			for id in ["bridge", "road"]:
+				var here := Game.build_status(id, c)
+				if not here in ["Not your land", "Wrong terrain", "Can't build on water", "Can't be built", "Tile already has a building"]:
+					options.append([id, here])
+			if not options.is_empty():
+				_header(box, "Build")
+				for option in options:
+					var span: Dictionary = Data.BUILDINGS[option[0]]
+					_button(box, "%s %s (%s)" % [span.glyph, span.name, Game.cost_text(span.cost)], func(): Game.build(option[0], c), option[1])
+					_label(box, "   " + (span.desc if option[1] == "" else option[1]), DIM)
 	elif t["b"] == "":
 		_header(box, "Build")
 		for id in Data.BUILDINGS:
@@ -1087,6 +1125,13 @@ func _poi_block(box: VBoxContainer, c: Vector2i) -> void:
 		return   # the party standing here has its own panel above
 	_label(box, "Unsearched. Takes one party.", DIM)
 	_expedition_buttons(box, "scav", anchor)
+
+
+## The old highway can be repaired into a road for a little stone: the ambushes there end, and the tile is quicker.
+func _repair_controls(box: VBoxContainer, c: Vector2i) -> void:
+	var why := Game.repair_status(c)
+	_button(box, "Repair into a road (%s)" % Game.cost_text(Data.HIGHWAY.repair), func(): Game.repair(c), why)
+	_label(box, "   " + ("Ends the ambushes on this tile and makes it 0.6 times as long, for everyone." if why == "" else why), DIM)
 
 
 ## A refinery's switch: whether it's running, and the button that turns it on or off.
@@ -1160,6 +1205,89 @@ func _hint_box() -> StyleBoxFlat:
 	return box
 
 
+## The Hollow Mile screen: the picture, over everything, hidden until your scouts first see the old highway. A click (or Enter, Space, Escape) closes it.
+func _build_hollow_screen() -> void:
+	hollow_screen.color = Color.BLACK
+	hollow_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hollow_screen.visible = false
+	hollow_screen.mouse_filter = Control.MOUSE_FILTER_STOP   # nothing under it can be clicked
+	hollow_screen.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_hollow_next())
+	root.add_child(hollow_screen)
+	hollow_fit.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hollow_fit.ratio = Data.HOLLOW_MILE.ratio   # set again from the picture when it is shown: black bars if the window is another shape
+	hollow_fit.stretch_mode = AspectRatioContainer.STRETCH_FIT
+	hollow_fit.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hollow_screen.add_child(hollow_fit)
+	hollow_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	hollow_art.stretch_mode = TextureRect.STRETCH_SCALE
+	hollow_art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	hollow_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hollow_fit.add_child(hollow_art)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hollow_screen.add_child(center)
+	var card := VBoxContainer.new()
+	card.add_theme_constant_override("separation", 18)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(card)
+	hollow_title.add_theme_font_size_override("font_size", 40)
+	hollow_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hollow_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(hollow_title)
+	hollow_note.custom_minimum_size.x = 560
+	hollow_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hollow_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hollow_note.add_theme_color_override("font_color", DIM)
+	hollow_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(hollow_note)
+	var hint := Label.new()
+	hint.text = "Click to continue"
+	hint.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	hint.position.y = 8
+	hint.add_theme_color_override("font_color", BRIGHT)
+	hint.add_theme_stylebox_override("normal", _hint_box())
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hollow_screen.add_child(hint)
+	hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+
+
+## Your scouts have just seen the Hollow Mile (`hot`: the party that found it is taking high radiation). A season that is just ending plays its walk
+## first, then the picture comes.
+func _on_hollow_found(_cell: Vector2i, hot: bool) -> void:
+	await get_tree().process_frame   # END SEASON starts its replay in this same frame
+	if Game.replaying:
+		await Game.replay_done
+	show_hollow_mile(hot)
+
+
+## The picture for the light of the season on screen: the grey one in a day season (and always with the night switched off), high radiation or not; in a night
+## season the orange dusk one, or the green one when the party that found the Mile is taking high radiation (`hot`).
+func show_hollow_mile(hot := false) -> void:
+	if not Game.in_game or ending_screen.visible or stats_screen.visible:
+		return
+	var night := Daylight.target_light(Game.season) < 0.5
+	var spec: Dictionary = Data.HOLLOW_MILE
+	var version := "day"
+	if night:
+		version = "fallout" if hot else "night"
+	var art := Sprites.picture(spec[version])
+	hollow_art.texture = art
+	if art != null:
+		hollow_fit.ratio = float(art.get_width()) / float(art.get_height())
+	hollow_title.text = "" if art != null else str(spec.name).to_upper()
+	hollow_title.add_theme_color_override("font_color", spec[version + "_color"])
+	hollow_note.text = "" if art != null else spec.note
+	hollow_screen.visible = true
+
+
+## A click on the picture (or Enter, Space or Escape): back to the map.
+func _hollow_next() -> void:
+	hollow_screen.visible = false
+
+
 func _on_game_ended(kind: String) -> void:
 	if Game.replaying:   # the season that ended the game finishes walking (or is skipped) first
 		await Game.replay_done
@@ -1184,8 +1312,11 @@ func _ending_next() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
-		if ending_screen.visible:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_ESCAPE]:
+		if hollow_screen.visible:
+			_hollow_next()
+			get_viewport().set_input_as_handled()
+		elif ending_screen.visible and event.keycode != KEY_ESCAPE:
 			_ending_next()
 			get_viewport().set_input_as_handled()
 
@@ -1427,7 +1558,7 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 
 ## Days for a party already in the field to reach `c`, counting the time lost at the end of each season.
 func _party_trip_days(u: Dictionary, c: Vector2i) -> float:
-	return Units.arrival_days(u.mover, Game.route(u.mover, u.pos, c), Units.load_slowdown(u))[-1]
+	return Units.arrival_days(u.mover, Game.route(u.mover, u.pos, c), Units.party_slowdown(u))[-1]
 
 
 ## Under a "Send X here" button: a warning when the party's pack won't last the trip.
@@ -1525,6 +1656,12 @@ func _tribe_info(box: VBoxContainer, t: Dictionary) -> void:
 				"" if Game.can_afford(Units.GIFT) else "Need " + Game.cost_text(Units.GIFT))
 
 
+## " (the river)" or " (steep inclines)" after "no way through", or nothing.
+func _no_way_suffix(mover: String, from: Vector2i, to: Vector2i) -> String:
+	var why := Game.no_way_reason(mover, from, to)
+	return " (%s)" % why if why != "" else ""
+
+
 ## With a scouting party picked: how long its trip to this tile takes, and whether its food lasts.
 func _scout_travel_line(box: VBoxContainer, c: Vector2i) -> void:
 	var u := Units.unit_by_id(Game.selected_scout)
@@ -1533,7 +1670,7 @@ func _scout_travel_line(box: VBoxContainer, c: Vector2i) -> void:
 	var route: Dictionary = Game.scout_route
 	_label(box, "Travel for %s, %s:" % [Units.names_text(u), Data.MOVERS[u.mover].name.to_lower()])
 	if route.is_empty():
-		_label(box, "  ● no way through (steep inclines)", RED)
+		_label(box, "  ● no way through%s" % _no_way_suffix(u.mover, u.pos, c), RED)
 		return
 	var days: float = route.days[-1]
 	var food := Units.food_days(u)
@@ -1549,7 +1686,7 @@ func _travel_lines(box: VBoxContainer, routes: Dictionary) -> void:
 		var m: Dictionary = Data.MOVERS[mover]
 		var path: Array = routes[mover]
 		if path.is_empty():
-			_label(box, "  ● %s: no way through (steep inclines)" % m.name, m.color)
+			_label(box, "  ● %s: no way through%s" % [m.name, _no_way_suffix(mover, Game.home(Data.PLAYER), Game.selected)], m.color)
 		else:
 			_label(box, "  ● %s: %d days" % [m.name, ceili(Game.party_route_days(mover, path))], m.color)
 

@@ -46,7 +46,8 @@ func _needs_gpu() -> bool:
 func test_every_tile_knows_its_ground_sprite_and_slope_sprite() -> void:
 	fx.map._build_ground()
 	for i in Game.tiles.size():
-		assert_eq(fx.map.ground_sprite[i], Sprites.TERRAIN[Game.tiles[i]["t"]])
+		var ford: bool = Game.tiles[i]["t"] == "water" and Game.tiles[i].get("f", false)
+		assert_eq(fx.map.ground_sprite[i], Sprites.FORD if ford else Sprites.TERRAIN[Game.tiles[i]["t"]])
 		var slope: String = Game.slopes[i]
 		assert_eq(fx.map.ground_slope[i], Sprites.SLOPES[slope] if slope != "" else "")
 

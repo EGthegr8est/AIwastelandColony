@@ -32,6 +32,7 @@ const GROUNDS := {
 	"fused_glass":    {"fill": "5f45a8", "a": "43307a", "b": "ac92ea", "lit_b": true},
 	"fallout_waste":  {"fill": "484b1d", "a": "33360f", "b": "ebe55e", "lit_b": true},
 	"river":          {"fill": "2c6f8c", "a": "1d5570", "b": "74bdd4"},
+	"ford":           {"fill": "3f8fa8", "a": "2b6f86", "b": "8ccbd8", "s": "d9c79a"},
 }
 
 const ROWS := {
@@ -46,7 +47,15 @@ const ROWS := {
 	"fused_glass":    ["b..b....", ".bb..b.b", "........", "..b..bb.", ".b......", "...b..b.", "b..bb...", "....b..b"],
 	"fallout_waste":  [".b...b..", "...b....", "b....b.b", "..b.....", "....b...", ".b...b..", "......b.", "b...b..."],
 	"river":          ["........", ".bb..bb.", "b..bb...", "........", "..bb..bb", ".b..bb..", "........", "........"],
+	"ford":           ["b..s..b.", ".s....s.", "..b..b..", "s...s..s", ".b.s..b.", "...b.s..", "s..b....", ".b...bs."],
 }
+
+# Sprites this look adds to the atlas that the three older styles never had. Their styles 1 to 3 are lightened copies of `like`'s
+# (mixed `mix` of the way toward sand), so the older looks show a paler river there; style 4 is drawn from GROUNDS and ROWS above.
+const EXTRA := {
+	"ford": {"legend": "Shallow ford", "kind": "terrain", "like": "river", "mix": 0.4},
+}
+const SAND := Color("e3d5b3")
 
 # The slope ledges are not solid: they are dark shades the map lays over any ground, along the tile's lower edge.
 # Digits are how dark: 1 = light shade, 2 = medium, 3 = deep.
@@ -65,9 +74,32 @@ func _initialize() -> void:
 		quit(1)
 		return
 	img.convert(Image.FORMAT_RGBA8)
-	# Start from the three styles that were there: a taller or already-widened atlas is cut back to them
-	var base := Image.create(SIZE * STYLE, img.get_height(), false, Image.FORMAT_RGBA8)
+	# Sprites added by this look that the atlas does not have yet get a new row at the bottom
+	var height := img.get_height()
+	var added := []
+	for name in EXTRA:
+		if not meta.sprites.has(name):
+			added.append([name, height])
+			height += SIZE
+	# Start from the three styles that were there: an already-widened atlas is cut back to them
+	var base := Image.create(SIZE * STYLE, height, false, Image.FORMAT_RGBA8)
 	base.blit_rect(img, Rect2i(0, 0, SIZE * (STYLE - 1), img.get_height()), Vector2i.ZERO)
+	for entry in added:
+		var name: String = entry[0]
+		var like: Dictionary = meta.sprites[EXTRA[name].like]
+		var options := []
+		for n in STYLE - 1:
+			var from: Dictionary = like.options[n]
+			var lightened := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+			lightened.blit_rect(img, Rect2i(int(from.x), int(from.y), SIZE, SIZE), Vector2i.ZERO)
+			for y in SIZE:
+				for x in SIZE:
+					var c := lightened.get_pixel(x, y)
+					if c.a > 0.0:
+						lightened.set_pixel(x, y, Color(c.lerp(SAND, float(EXTRA[name].mix)), c.a))
+			base.blit_rect(lightened, Rect2i(0, 0, SIZE, SIZE), Vector2i(n * SIZE, int(entry[1])))
+			options.append({"n": n + 1, "x": n * SIZE, "y": int(entry[1]), "w": SIZE, "h": SIZE})
+		meta.sprites[name] = {"legend": EXTRA[name].legend, "kind": EXTRA[name].kind, "options": options}
 	for sprite in meta.sprites:
 		var options: Array = meta.sprites[sprite].options
 		var first: Dictionary = options[0]

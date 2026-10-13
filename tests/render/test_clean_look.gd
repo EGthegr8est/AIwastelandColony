@@ -160,6 +160,92 @@ func test_a_site_draws_its_quarter_of_the_big_picture() -> void:
 	assert_eq(b.sprite_pos.size() >= 1, true, "and the ground under it")
 
 
+# ---------------------------------------------------------------- roads
+
+func _road_tile() -> Vector2i:
+	var c := Vector2i(30, 30)
+	for d in [Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		Game.tile(c + d)["b"] = ""
+	return c
+
+
+func test_a_road_tile_is_drawn_from_rectangles_with_no_picture_and_no_letter() -> void:
+	var c := _road_tile()
+	Game.tile(c)["b"] = "road"
+	var b := _draw(c, Data.NONE, "road")
+	assert_eq(b.road_fill.size(), 1, "just the middle of the strip: nothing beside it")
+	assert_eq(b.road_out.size(), 1)
+	assert_eq(b.bld_pos.size(), 0, "not from the building atlas")
+	assert_eq(shown, [], "and no letter")
+
+
+func test_a_road_runs_on_to_each_neighbour_that_carries_a_road_a_bridge_or_a_ford() -> void:
+	var c := _road_tile()
+	Game.tile(c)["b"] = "road"
+	Game.tile(c + Vector2i.RIGHT)["b"] = "road"
+	Game.tile(c + Vector2i.UP)["b"] = "old_road"
+	Game.tile(c + Vector2i.LEFT)["b"] = "bridge"
+	assert_eq(_draw(c, Data.NONE, "road").road_fill.size(), 4, "the middle and three arms")
+	Game.tile(c + Vector2i.LEFT)["b"] = ""
+	Game.tile(c + Vector2i.DOWN)["t"] = "water"
+	Game.tile(c + Vector2i.DOWN)["f"] = true
+	assert_eq(_draw(c, Data.NONE, "road").road_fill.size(), 4, "a ford beside it takes the road on, in place of the bridge")
+	Game.tile(c + Vector2i.DOWN)["t"] = "sand"
+	Game.tile(c + Vector2i.DOWN)["f"] = false
+
+
+func test_a_road_never_spills_out_of_its_tile() -> void:
+	var c := _road_tile()
+	Game.tile(c)["b"] = "road"
+	for d in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.UP, Vector2i.DOWN]:
+		Game.tile(c + d)["b"] = "road"
+	var b := _draw(c, Data.NONE, "road")
+	var tile_rect := Rect2(Vector2(c) * MapView.CELL, MapView.CELL)
+	for r in b.road_out + b.road_fill:
+		assert_true(tile_rect.encloses(r), "%s is inside %s, so chunks never draw over each other's roads" % [r, tile_rect])
+
+
+func test_the_old_highway_is_grey_and_a_road_is_pale_earth() -> void:
+	var c := _road_tile()
+	Game.tile(c)["b"] = "road"
+	var road := _draw(c, Data.NONE, "road")
+	Game.tile(c)["b"] = "old_road"
+	var highway := _draw(c, Data.NONE, "old_road")
+	assert_eq(road.road_fill_colors[0], MapView.ROAD_FILL)
+	assert_eq(highway.road_fill_colors[0], MapView.HIGHWAY_FILL)
+	assert_ne(road.road_out_colors[0], highway.road_out_colors[0])
+
+
+func test_a_road_you_only_remember_is_drawn_darker() -> void:
+	var c := _road_tile()
+	Game.tile(c)["b"] = "road"
+	var seen := _draw(c, Data.NONE, "road")
+	var dim := _draw(c, Data.NONE, "road", {}, [], true)
+	assert_lt(dim.road_fill_colors[0].get_luminance(), seen.road_fill_colors[0].get_luminance())
+
+
+func test_a_neighbour_you_have_never_seen_gets_no_arm() -> void:
+	var c := _road_tile()
+	Game.tile(c)["b"] = "road"
+	Game.tile(c + Vector2i.RIGHT)["b"] = "road"
+	var mem := []
+	mem.resize(Game.tiles.size())
+	mem.fill([Data.NONE, ""])
+	mem[(c.y) * Game.w + c.x + 1] = null
+	assert_eq(_draw(c, Data.NONE, "road", {}, mem).road_fill.size(), 1, "the road beside it is unexplored")
+
+
+func test_the_legend_pictures_of_a_road_and_the_highway_are_8_by_8() -> void:
+	Sprites.choose(Sprites.CLEAN)
+	for highway in [false, true]:
+		var icon := Sprites.road_icon(highway)
+		assert_eq(icon.get_size(), Vector2(8, 8))
+	assert_ne(Sprites.road_icon(false).get_image().get_data(), Sprites.road_icon(true).get_image().get_data())
+	Sprites.choose(0)
+	assert_null(Sprites.road_icon(false), "the text glyphs have none")
+	Sprites.choose(Sprites.CLEAN)
+
+
 # ---------------------------------------------------------------- the rim where a feature meets plainer ground
 
 ## Sets two neighbouring tiles' ground for a test and puts them back afterwards.

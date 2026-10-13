@@ -20,6 +20,8 @@ const CLEAN := 4
 const TERRAIN := {"sand": "ash_sand", "dunes": "dunes", "scrub": "dead_scrub", "trees": "petrified_wood", "grove": "green_grove",
 	"rock": "rock", "ruins": "ruins", "crater": "crater", "glass": "fused_glass", "waste": "fallout_waste", "water": "river"}
 const SLOPES := {"gentle": "gentle_slope", "steep": "steep_incline"}
+## A river tile that can be waded has a picture of its own (it is still terrain "water", with a flag: see Game.is_ford).
+const FORD := "ford"
 const UNITS := {"scav": "scavenger", "scout": "scout", "caravan": "caravan", "car": "war_rig", "boat": "boat",
 	"plane": "recon_plane", "band": "raider_band"}
 const CAMPS := {"raider": "raider_camp", "trader": "trader_camp", "builder": "builder_camp"}
@@ -299,6 +301,42 @@ static var _building_loaded := false
 ## The whole building atlas as one texture, for the map to draw from (null if it can't be read).
 static func building_atlas_texture() -> Texture2D:
 	return picture(BUILDING_PNG)
+
+
+## The legend's picture of a road (a pale strip) or of the old highway (grey, with a dash): 8 x 8, drawn here, or null with the text glyphs.
+static func road_icon(highway: bool) -> Texture2D:
+	if state() == 0:
+		return null
+	var key := "road_icon:%s" % highway
+	if not _cache.has(key):
+		var fill := Color("7e7b75") if highway else Color("b3a37a")
+		var edge := Color("2b2926") if highway else Color("4a4030")
+		var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+		for y in SIZE:
+			img.set_pixel(1, y, edge)
+			img.set_pixel(6, y, edge)
+			for x in range(2, 6):
+				img.set_pixel(x, y, fill)
+		if highway:
+			for y in [1, 2, 5, 6]:
+				img.set_pixel(3, y, Color("c8c4b8"))
+		_cache[key] = ImageTexture.create_from_image(img)
+	return _cache[key]
+
+
+## A building's picture as its own texture (for the legend), or null where the other looks show it as a letter.
+static func building(id: String) -> Texture2D:
+	var atlas := building_atlas_texture()
+	var r := building_rect(id)
+	if atlas == null or r.size == Vector2.ZERO or not clean():
+		return null
+	var key := "building:" + id
+	if not _cache.has(key):
+		var t := AtlasTexture.new()
+		t.atlas = atlas
+		t.region = r
+		_cache[key] = t
+	return _cache[key]
 
 
 ## Where a building's 8 x 8 picture is in that texture, or an empty rectangle if it has none (it is then drawn as its letter).

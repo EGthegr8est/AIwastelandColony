@@ -94,6 +94,31 @@ func test_snapshot_clean_look_buildings_and_rims() -> void:
 	Game.changed.emit()
 
 
+## The old highway running onto the old bridge, and a road of your own: the strips join up and carry on over the bridge's deck.
+func test_snapshot_clean_look_highway_bridge_and_road() -> void:
+	Sprites.choose(Sprites.CLEAN)
+	Game.view = Data.NONE
+	var hq := Game.home(Data.PLAYER)
+	var made := []
+	for k in range(2, 12):
+		made.append(hq + Vector2i(k, 3))
+	for k in range(3, 8):
+		made.append(hq + Vector2i(11, k))
+	var was := {}
+	for c in made:
+		was[c] = Game.tile(c)["b"]
+		Game.tile(c)["b"] = "road"
+	Game.changed.emit()
+	var bridge := World.find_tile(func(c, t): return t["b"] == "old_bridge")
+	await fx.view_cell(bridge + Vector2i(0, -3), 3.0)
+	await _snap("clean_highway")
+	await fx.view_cell(hq + Vector2i(7, 5), 3.0)
+	await _snap("clean_roads")
+	for c in made:
+		Game.tile(c)["b"] = was[c]
+	Game.changed.emit()
+
+
 func test_snapshot_contours_close_up() -> void:
 	Game.view = Data.NONE
 	var i := Game.slopes.find("steep")

@@ -37,20 +37,77 @@ const CONTOUR_STEEP := " ║║║═╝╗╣═╚╔╠═╩╦╬"
 
 # How forces travel across the map. "days" is the time to cross one flat tile; "land", slopes
 # and water multiply it. A multiplier of 0 means that mover can't enter the tile at all.
+# The river is a wall for everything on the ground ("water" 0): only boats and planes cross it freely. A "ford" (shallow river, see
+# CROSSINGS below) can be waded on foot and on horseback, and a "bridge" (a tile with a bridge on it) carries every ground party;
+# boats pass under a bridge and scrape over a ford.
 const MOVERS := {
-	"foot":  {"name": "On foot",   "by": "on foot",      "color": Color("f0e0c0"), "days": 1.0,  "land": 1.0, "gentle": 1.5, "steep": 4.0, "water": 3.0, "shield": 1.0},
-	"horse": {"name": "Horseback", "by": "on horseback", "color": Color("d09050"), "days": 0.5,  "land": 1.0, "gentle": 1.5, "steep": 3.0, "water": 2.0, "shield": 1.0},
-	"car":   {"name": "War rig",   "by": "by war rig",   "color": Color("ff5a3c"), "days": 0.25, "land": 1.0, "gentle": 1.5, "steep": 0.0, "water": 4.0, "shield": 0.5},
-	"boat":  {"name": "Boat",      "by": "by boat",      "color": Color("8fd0ff"), "days": 0.4,  "land": 0.0, "gentle": 0.0, "steep": 0.0, "water": 1.0, "shield": 0.8},
-	"plane": {"name": "Plane",     "by": "by plane",     "color": Color("ffffff"), "days": 0.25, "land": 1.0, "gentle": 1.0, "steep": 1.0, "water": 1.0, "shield": 0.2},
+	"foot":  {"name": "On foot",   "by": "on foot",      "color": Color("f0e0c0"), "days": 1.0,  "land": 1.0, "gentle": 1.5, "steep": 4.0, "water": 0.0, "ford": 2.0, "bridge": 1.0, "shield": 1.0},
+	"horse": {"name": "Horseback", "by": "on horseback", "color": Color("d09050"), "days": 0.5,  "land": 1.0, "gentle": 1.5, "steep": 3.0, "water": 0.0, "ford": 2.0, "bridge": 1.0, "shield": 1.0},
+	"car":   {"name": "War rig",   "by": "by war rig",   "color": Color("ff5a3c"), "days": 0.25, "land": 1.0, "gentle": 1.5, "steep": 0.0, "water": 0.0, "ford": 0.0, "bridge": 1.0, "shield": 0.5},
+	"boat":  {"name": "Boat",      "by": "by boat",      "color": Color("8fd0ff"), "days": 0.4,  "land": 0.0, "gentle": 0.0, "steep": 0.0, "water": 1.0, "ford": 2.0, "bridge": 1.0, "shield": 0.8},
+	"plane": {"name": "Plane",     "by": "by plane",     "color": Color("ffffff"), "days": 0.25, "land": 1.0, "gentle": 1.0, "steep": 1.0, "water": 1.0, "ford": 1.0, "bridge": 1.0, "shield": 0.2},
 }
 # "shield" is the share of the radiation that gets through to the people riding (see RAD_* below).
+# How much longer a tile takes to cross because of its ground, on top of the slope (1.0 = like sand; a missing mover, such as a boat or
+# a plane, is 1.0). The two multiply: a steep incline on rock is 4.0 x 1.4 for a party on foot. A road or a highway tile will replace this.
+const TERRAIN_SPEED := {
+	"sand":   {"foot": 1.0, "horse": 1.0, "car": 1.0},
+	"scrub":  {"foot": 1.1, "horse": 1.1, "car": 1.2},
+	"waste":  {"foot": 1.1, "horse": 1.1, "car": 1.2},
+	"dunes":  {"foot": 1.2, "horse": 1.3, "car": 1.5},
+	"glass":  {"foot": 1.2, "horse": 1.4, "car": 1.2},
+	"trees":  {"foot": 1.3, "horse": 1.5, "car": 1.8},
+	"grove":  {"foot": 1.3, "horse": 1.4, "car": 1.6},
+	"ruins":  {"foot": 1.3, "horse": 1.5, "car": 1.8},
+	"crater": {"foot": 1.3, "horse": 1.4, "car": 1.6},
+	"rock":   {"foot": 1.4, "horse": 1.6, "car": 2.0},
+}
+# The broken leg. A foot or horseback party that enters a rock tile (or a steep incline) has this chance, per tile, that one of its people
+# breaks a leg (a horse goes lame, for a party on horseback). It slows the whole party: every step takes "slow" times as long, "more" longer
+# for each further broken leg, never past "max". It heals when the party gets home, or ends if that person dies. A Clumsy survivor is "clumsy"
+# times as likely to be the one; a party with a Light-Footed member has "light_footed" times the chance.
+const LEG := {"rock": 0.02, "steep": 0.04, "slow": 1.5, "more": 0.25, "max": 2.0, "clumsy": 2.0, "light_footed": 0.5}
+
 # The ways of travel shown as route dots when you click a tile, and offered for expeditions.
 const TRAVEL_PREVIEW := ["foot", "horse", "car"]
 # Troops lose 1% of their raid strength for every 4 days on the march (never below 60%).
 const MARCH_FATIGUE_DAYS := 400.0
 # Each season, everything on the move travels this many days' worth of its route.
 const SEASON_DAYS := 40.0
+
+# Where the river can be crossed (Game._pass_crossings, the last pass of map making; it uses its own random numbers, so it changes nothing
+# made before it). The old bridge is one tile wide, so it is a chokepoint: it goes in the middle column of the map, or the nearest column
+# (within BRIDGE_SEARCH) that a war rig can drive over from your HQ to the Rust Kings' fort. Fords are strips FORD_WIDTH columns wide across
+# the whole channel: one on the way to Dustwell, one on the way to the fort (FORDS: where, as a share of the map's width, give or take
+# FORD_JITTER columns) and a third at random. Crossings keep CROSSING_GAP columns apart, and the random one keeps FORD_EXTRA_GAP from all.
+const BRIDGE_SEARCH := 14
+const FORDS := [0.25, 0.58]
+const FORD_JITTER := 4
+const FORD_WIDTH := 2
+const CROSSING_GAP := 10
+const FORD_EXTRA_GAP := 12
+const FORD_EXTRA_EDGE := 6
+# Roads. The old highway is a ruined pre-war road through the cities and over the old bridge (Game._pass_highway); a road is what you and the
+# Rust Kings build. A tile with either takes `speed` times as long as a flat tile to a ground party, whatever the ground or the slope under it
+# (a war rig still cannot use a steep incline). A party walking the old highway rolls a d20 every `ambush_every` tiles, and a 1 is an ambush by a
+# raider band of a strength between the two `band` numbers. The Rust Kings lay up to `tiles` road tiles a season when they have `stone` and `food`
+# to spare after their walls (each tile costs what the road building costs). Any side can pay `repair` to turn a highway tile into a road.
+const HIGHWAY := {"speed": 0.8, "ambush_every": 10, "band": [3, 6], "repair": {"stone": 1}}
+const ROAD := {"speed": 0.6}
+# The old highway frays out into the wastes (Game._pass_spurs). From the centre of each city a few spurs (`per_city`) run out in a direction that points at no
+# other city (no nearer than `away`, as a cosine, to the way to any other city): a solid stretch of real highway (`solid` tiles) joined to the city, then
+# `fragments` pieces, none longer than `fragment_length` and each shorter than the last could be, with `gap` tiles missing between them, until the road is
+# gone. A step wanders a tile sideways now and then (`jog`). Nothing is laid within `keep` tiles of a base, the river and the edge of the map end a spur
+# early, and a building on the way swallows the tile of road under it.
+const SPURS := {"per_city": [1, 2], "away": 0.55, "solid": [5, 11], "fragments": [2, 4], "gap": [1, 3], "fragment_length": 3, "jog": 0.18, "keep": 18, "piece": 6}
+# The craters destroyed the old road long ago (Game._pass_crater_wear): none is left on a crater, and near one each tile of it survives only with the chance
+# (distance to the nearest crater tile) / `radius`, so there is less and less road the closer you get. A road in a stretch of `piece` tiles or more is a piece of road
+# worth heading for; anything smaller is a fragment.
+const CRATER_WEAR := {"radius": 5}
+const AI_ROAD := {"stone": 8, "food": 8, "tiles": 2}
+## The terrain name shown for a river tile that can be waded.
+const FORD := {"name": "Shallow ford", "glyph": "≈", "color": Color("b8d8c8"),
+	"desc": "Shallow river. Foot and horseback parties can wade it, twice as slowly as on land. War rigs cannot, boats scrape through, and planes ignore it."}
 
 # Rivers wind north to south, 1-2 tiles wide plus the extra tile where they bend
 # (about 2 on average), so boats can use them.
@@ -188,6 +245,18 @@ const BUILDINGS := {
 	"motor_pool": {"name": "Motor pool",  "glyph": "&", "color": Color("c06030"), "cost": {"metal": 15, "wood": 10}, "on": [], "tier": 2, "desc": "Builds war rigs."},
 	"port":       {"name": "Port",        "glyph": "Ψ", "color": Color("70c0c0"), "cost": {"wood": 20, "metal": 10, "gold": 10}, "on": [], "shore": true, "tier": 3, "desc": "Builds boats and launches them onto the river. Must stand on the riverbank."},
 	"airfield":   {"name": "Airfield",    "glyph": "Æ", "color": Color("e0e0e0"), "cost": {"metal": 40, "stone": 30, "gold": 30}, "on": [], "tier": 4, "desc": "Builds airplanes."},
+	# Bridges stand on river tiles. Every ground party can cross one (boats pass under it), yours and your enemies' alike. You build
+	# one out from your own bank, a tile at a time: each tile must touch your land or the last bridge tile, and becomes yours.
+	"bridge":     {"name": "Bridge",      "glyph": "=", "color": Color("c8a060"), "cost": {"wood": 10, "stone": 5}, "on": ["water"], "bridge": true,
+		"desc": "Carries foot, horseback and war rigs over the river (boats pass under). Build it out from your bank, a tile at a time. Raiders can use it too."},
+	# Roads go on land, on your own tiles or on free land out in the wastes: a road on free land stays free, so anyone can use it. You build one out
+	# from your land or from a road that reaches it, a tile at a time (the grain feeds the workers). Roads on your own land can be pulled down.
+	"road":       {"name": "Road",        "glyph": "=", "color": Color("b8a880"), "cost": {"stone": 2, "grain": 1}, "on": [], "road": true,
+		"desc": "A road: ground parties take 0.6 times as long here, on any ground. Out in the wastes it stays free land and anyone can use it, the Rust Kings and raiders too. The grain feeds the workers."},
+	"old_road":   {"name": "Old highway", "glyph": "=", "color": Color("8e8b84"), "cost": {}, "buildable": false, "road": true, "highway": true,
+		"desc": "The Hollow Mile: a pre-war highway, broken but quicker than open ground (0.8 times as long). Raiders lie in wait for travellers on it. Any side can pay a little stone to repair a stretch into a road."},
+	"old_bridge": {"name": "Old bridge",  "glyph": "=", "color": Color("a89870"), "cost": {}, "buildable": false, "bridge": true,
+		"desc": "A pre-war bridge, one tile wide: the one place every kind of party can cross the river. It can't be claimed or pulled down."},
 	# Points of interest: 2 x 2 tile sites placed when the map is made (see POIS below and Game._pass_pois). All four
 	# of a site's tiles carry the same id, they can't be built on or demolished, and a scavenger party works the
 	# whole site as one tile.
@@ -482,6 +551,17 @@ const ENDING_SCREENS := {
 	"raiders_defeated": {"title": "Raiders defeated", "win": true, "art": "res://art/end_raiders_defeated.png"},
 	"colony_prospers": {"title": "The colony prospers", "win": true, "art": "res://art/end_victory.png"},
 	"defeat": {"title": "The colony has fallen", "win": false, "art": "res://art/end_defeat.png"},
+}
+
+# The Hollow Mile is what the old highway is called. The first time your scouts see a tile of it a picture comes up and a click closes it: the grey overcast one
+# ("day") in a day season, high radiation or not; in a night season the orange dusk one ("night"), or the green moonlit one ("fallout") if the party that found it
+# is taking high radiation (its tile's R/h, after the shielding of how it travels, is `rad_high` or more: the bottom of the "High" band). The title card stands in
+# if a picture is missing.
+const HOLLOW_MILE := {
+	"name": "The Hollow Mile", "ratio": 1152.0 / 768.0, "rad_high": 45,
+	"day": "res://art/hollow_mile_day.png", "night": "res://art/hollow_mile_night.png", "fallout": "res://art/hollow_mile_fallout.png",
+	"note": "A broken pre-war highway runs through the cities. Raiders lie in wait on it, but it is quicker than open ground.",
+	"day_color": Color("d8c890"), "night_color": Color("ffb060"), "fallout_color": Color("86f06a"),
 }
 
 # One line under the stats heading for each way a game ends.

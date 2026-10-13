@@ -47,6 +47,13 @@ const OWN_TINT := 0.10        # how much of its owner's border colour an owned t
 const RIM_RANK := {"trees": 1, "grove": 2, "waste": 3, "ruins": 4, "rock": 5, "glass": 6, "crater": 7, "water": 8}
 const RIM_INK := Color(0.07, 0.05, 0.03, 0.5)
 const RIM := 2.0              # one art pixel, in canvas pixels
+# Roads and the old highway are drawn from rectangles in the clean look: a strip ROAD_WIDTH wide that runs on to the next road, bridge or ford
+# beside it, with a one-art-pixel dark edge. A road is pale packed earth, the old highway cracked grey asphalt.
+const ROAD_WIDTH := 8.0
+const ROAD_FILL := Color("b3a37a")
+const ROAD_EDGE := Color("4a4030")
+const HIGHWAY_FILL := Color("7e7b75")
+const HIGHWAY_EDGE := Color("2b2926")
 enum Shown {HIDDEN, SHOWN, DIM}   # how a unit standing on the map shows, see unit_shown()
 # What stands on the map and moves, drawn every frame in a layer of its own (see UnitLayer)
 const PATCH := Color(0, 0, 0, 0.7)         # the dark square under a unit
@@ -170,6 +177,10 @@ class Batch:
 	var bld_tint := PackedColorArray()
 	var edge_rects: Array[Rect2] = []            # the dark rim a feature (rock, water, ruins...) gets where it meets plainer ground
 	var edge_colors := PackedColorArray()
+	var road_out: Array[Rect2] = []              # the dark edges of the roads, drawn before their fills so tiles join without seams
+	var road_out_colors := PackedColorArray()
+	var road_fill: Array[Rect2] = []
+	var road_fill_colors := PackedColorArray()
 
 	func add_building(pos: Vector2, src: Rect2, tint: Color) -> void:
 		bld_pos.append(pos)
@@ -445,6 +456,10 @@ func _paint_art(canvas: CanvasItem, batch: Batch) -> void:
 		var poi_atlas := Sprites.poi_atlas_texture()
 		for k in batch.poi_pos.size():
 			canvas.draw_texture_rect_region(poi_atlas, Rect2(batch.poi_pos[k], CELL), batch.poi_src[k], batch.poi_tint[k])
+	for k in batch.road_out.size():
+		canvas.draw_rect(batch.road_out[k], batch.road_out_colors[k])
+	for k in batch.road_fill.size():
+		canvas.draw_rect(batch.road_fill[k], batch.road_fill_colors[k])
 	for p in batch.patch_pos:
 		canvas.draw_rect(Rect2(p + Vector2(2, 2), CELL - Vector2(4, 4)), PATCH)
 	if not batch.top_pos.is_empty():
@@ -497,7 +512,7 @@ func hover_text(c: Vector2i) -> String:
 	var known = _known(c)
 	if known == null:
 		return "Unexplored"
-	var ground: String = Data.TERRAIN[Game.tile(c)["t"]].name
+	var ground: String = Game.terrain_name(c)
 	if known[1] != "":
 		ground = "%s on %s" % [Data.BUILDINGS[known[1]].name, ground]
 	return "%s, %+d m" % [ground, Game.tile(c)["z"]]
@@ -1079,6 +1094,11 @@ func _draw_pops(layer: CanvasItem) -> void:
 			"home":
 				for dir in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
 					layer.draw_rect(Rect2(o + CELL * 0.5 + dir * (3.0 + 9.0 * t) - Vector2(1, 1), Vector2(2, 2)), Color("ffe066", fade))
+			"snap":
+				layer.draw_line(o + Vector2(8, 1), o + Vector2(5, 8), Color(1, 1, 1, fade), 2.0)
+				layer.draw_line(o + Vector2(5, 8), o + Vector2(10, 9), Color(1, 1, 1, fade), 2.0)
+				layer.draw_line(o + Vector2(10, 9), o + Vector2(7, 15), Color(1, 1, 1, fade), 2.0)
+				layer.draw_arc(o + CELL * 0.5, 3.0 + 7.0 * t, 0.0, TAU, 12, Color("ffe066", fade * 0.8), 1.0)
 			"smoke":
 				for i in 3:
 					layer.draw_circle(o + Vector2(5 + i * 3, 6.0 - 10.0 * t - i * 3), 2.0 + 3.0 * t + i * 0.6, Color(0.62, 0.6, 0.58, 0.7 * fade))
@@ -1155,12 +1175,12 @@ func _build_ground() -> void:
 			ground_pipes[i] = 1
 		else:
 			# Pick a glyph and shade from a hash of the position so the ground looks varied
-			var terrain: Dictionary = Data.TERRAIN[terrain_id]
+			var terrain: Dictionary = Data.FORD if (terrain_id == "water" and Game.tiles[i].get("f", false)) else Data.TERRAIN[terrain_id]
 			var hash_val := absi(i % Game.w * 73856093 ^ i / Game.w * 19349663)
 			ground_glyphs[i] = terrain.glyph[hash_val % terrain.glyph.length()]
 			color = terrain.color.darkened((hash_val % 5) * 0.07)
 			ground_pipes[i] = 0
-		ground_sprite[i] = Sprites.TERRAIN[terrain_id]
+		ground_sprite[i] = Sprites.FORD if (terrain_id == "water" and Game.tiles[i].get("f", false)) else Sprites.TERRAIN[terrain_id]
 		ground_slope[i] = Sprites.SLOPES.get(Game.slopes[i], "")   # slopes[i] is "" where no contour runs
 		ground_colors[i] = color
 		ground_dim[i] = color.darkened(0.6)   # remembered, not currently seen
@@ -1324,7 +1344,7 @@ func _draw_clean(c: Vector2i, i: int, owner: int, building: String, out_of_sight
 	batch.add_sprite(pos, ground_sprite[i], tint, ground_flip[i] == 1)
 	if ground_slope[i] != "" and not overlay.has(c):
 		batch.add_sprite(pos, ground_slope[i], tint)
-	var rank: int = RIM_RANK.get(Game.tiles[i]["t"], 0)
+	var rank: int = 0 if Game.tiles[i].get("f", false) else RIM_RANK.get(Game.tiles[i]["t"], 0)
 	if rank > 0:
 		_add_rim(pos, c, rank, mem, batch)
 	var wash := ground_shade[i]
@@ -1346,6 +1366,8 @@ func _draw_clean(c: Vector2i, i: int, owner: int, building: String, out_of_sight
 			batch.add_poi(pos, src, SPRITE_DIM if out_of_sight else Color.WHITE)
 		elif q == Vector2i.ZERO:
 			return [Data.BUILDINGS[building].glyph, Data.BUILDINGS[building].color.darkened(0.6 if out_of_sight else 0.0)]
+	elif building != "" and Data.BUILDINGS[building].get("road", false):
+		_add_road(pos, c, building, out_of_sight, mem, batch)   # drawn from rectangles: no picture and no letter
 	elif building != "":
 		var src := Sprites.building_rect(building)
 		if src.size != Vector2.ZERO:
@@ -1353,6 +1375,49 @@ func _draw_clean(c: Vector2i, i: int, owner: int, building: String, out_of_sight
 		else:
 			return [Data.BUILDINGS[building].glyph, Data.BUILDINGS[building].color.darkened(0.6 if out_of_sight else 0.0)]
 	return []
+
+
+## A road or highway tile: the middle of the strip and an arm to the edge of the tile towards each neighbour that carries a road, a bridge or a ford.
+func _add_road(pos: Vector2, c: Vector2i, building: String, out_of_sight: bool, mem: Array, batch: Batch) -> void:
+	var highway: bool = Data.BUILDINGS[building].get("highway", false)
+	var fill := HIGHWAY_FILL if highway else ROAD_FILL
+	var edge := HIGHWAY_EDGE if highway else ROAD_EDGE
+	if out_of_sight:
+		fill = fill.darkened(0.6)
+		edge = edge.darkened(0.6)
+	var half := ROAD_WIDTH / 2.0
+	var mid := pos + CELL / 2.0
+	var middle := Rect2(mid - Vector2(half, half), Vector2(ROAD_WIDTH, ROAD_WIDTH))
+	batch.road_out.append(middle.grow(RIM))
+	batch.road_out_colors.append(edge)
+	batch.road_fill.append(middle)
+	batch.road_fill_colors.append(fill)
+	for d in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
+		if not _carries_road(c + d, mem):
+			continue
+		var arm: Rect2
+		var arm_edge: Rect2   # wider on the two sides only: it must not spill into the next tile
+		if d.x == 0:
+			arm = Rect2(Vector2(mid.x - half, pos.y if d.y < 0 else mid.y), Vector2(ROAD_WIDTH, CELL.y / 2.0))
+			arm_edge = Rect2(arm.position - Vector2(RIM, 0.0), arm.size + Vector2(RIM * 2.0, 0.0))
+		else:
+			arm = Rect2(Vector2(pos.x if d.x < 0 else mid.x, mid.y - half), Vector2(CELL.x / 2.0, ROAD_WIDTH))
+			arm_edge = Rect2(arm.position - Vector2(0.0, RIM), arm.size + Vector2(0.0, RIM * 2.0))
+		batch.road_out.append(arm_edge)
+		batch.road_out_colors.append(edge)
+		batch.road_fill.append(arm)
+		batch.road_fill_colors.append(fill)
+
+
+## Does the tile at `n` carry a road, a bridge or a ford, as far as the viewer knows?
+func _carries_road(n: Vector2i, mem: Array) -> bool:
+	if not Game.in_bounds(n):
+		return false
+	var j := n.y * Game.w + n.x
+	var building: String = Game.tiles[j]["b"] if mem.is_empty() else ("" if mem[j] == null else mem[j][1])
+	if building != "" and (Data.BUILDINGS[building].get("road", false) or Data.BUILDINGS[building].get("bridge", false)):
+		return true
+	return Game.tiles[j].get("f", false) and (mem.is_empty() or mem[j] != null)   # a ford carries the road on
 
 
 ## The dark rim along the sides of tile `c` that meet plainer ground the viewer knows about (an unexplored neighbour is

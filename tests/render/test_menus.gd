@@ -253,7 +253,7 @@ func test_starting_a_colony_switches_to_the_game_music() -> void:
 	_press("Choose")
 	await wait_frames(2)
 	assert_eq(Music.mode, "game")
-	assert_has(Music.GAME, Music.track)
+	assert_eq(Music.track, Music.OPENING, "a new colony opens with the canyon track")
 
 
 func test_the_menu_in_the_middle_of_a_game_keeps_the_game_music() -> void:

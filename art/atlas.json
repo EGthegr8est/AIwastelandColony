@@ -273,6 +273,40 @@
         }
       ]
     },
+    "ford": {
+      "kind": "terrain",
+      "legend": "Shallow ford",
+      "options": [
+        {
+          "h": 8,
+          "n": 1,
+          "w": 8,
+          "x": 0,
+          "y": 184
+        },
+        {
+          "h": 8,
+          "n": 2,
+          "w": 8,
+          "x": 8,
+          "y": 184
+        },
+        {
+          "h": 8,
+          "n": 3,
+          "w": 8,
+          "x": 16,
+          "y": 184
+        },
+        {
+          "h": 8,
+          "n": 4,
+          "w": 8,
+          "x": 24,
+          "y": 184
+        }
+      ]
+    },
     "fused_glass": {
       "kind": "terrain",
       "legend": "Fused glass",

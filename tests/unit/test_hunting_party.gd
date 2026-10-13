@@ -125,6 +125,8 @@ func test_veterans_do_not_die_of_a_natural_1_on_the_kill_shot() -> void:
 	var u := _send()
 	u.stage = "site"
 	u.pos = target
+	for s in u.survivors:
+		s.traits.erase("lucky")   # the other traits are drawn at random, and a Lucky hunter would reroll the natural 1 and need a third die
 	var a: Dictionary = Units._add_animal("brown_bear", target)
 	Units.dice = ForcedDice.new([16, 1], [])   # found it, then a natural 1 on a DC 16 kill shot: for anyone else a fumble that can wipe them out
 	Units._start_hunt(u, a)

@@ -29,8 +29,9 @@ func test_tests_make_no_sound_and_leave_the_players_volume_alone() -> void:
 	assert_ne(Music.settings_path, Music.SETTINGS_PATH, "tests must never write the player's settings")
 
 
-func test_there_is_a_menu_track_and_all_seven_ost_tracks_are_in_the_game_playlist() -> void:
-	assert_eq(Music.GAME.size(), 7)
+func test_there_is_a_menu_track_and_all_eight_ost_tracks_are_in_the_game_playlist() -> void:
+	assert_eq(Music.GAME.size(), 8)
+	assert_has(Music.GAME, Music.OPENING)
 	assert_false(Music.GAME.has(Music.MENU), "the menu track is not part of the game playlist")
 	for path in Music.GAME:
 		assert_true(path.contains("OST"), path)
@@ -114,20 +115,87 @@ func test_the_game_music_is_never_the_menu_track() -> void:
 		Music.next_track()
 
 
-func test_the_game_tracks_play_through_all_seven_before_any_repeats() -> void:
+func test_the_game_tracks_play_through_all_eight_before_any_repeats() -> void:
 	Music.play_game()
 	var played := [Music.track]
-	for i in 27:
+	for i in 31:
 		Music.next_track()
 		played.append(Music.track)
 	for shuffle in 4:
-		var seven := played.slice(shuffle * 7, shuffle * 7 + 7)
+		var eight := played.slice(shuffle * 8, shuffle * 8 + 8)
 		var distinct := {}
-		for t in seven:
+		for t in eight:
 			distinct[t] = true
-		assert_eq(distinct.size(), 7, "shuffle %d plays each track once" % shuffle)
+		assert_eq(distinct.size(), 8, "shuffle %d plays each track once" % shuffle)
 	for i in played.size() - 1:
 		assert_ne(played[i], played[i + 1], "the same track never plays twice in a row")
+
+
+# ---------------------------------------------------------------- the opening track
+
+func test_the_canyon_track_is_a_real_wav_in_the_audio_folder_and_in_the_playlist() -> void:
+	assert_eq(Music.OPENING, "res://audio/wasteland_OST_canyon.wav")
+	var s := Music.stream_for(Music.OPENING)
+	assert_not_null(s)
+	assert_gt(s.get_length(), 100.0, "a full track, about two minutes")
+	assert_eq(s.loop_mode, AudioStreamWAV.LOOP_DISABLED, "it plays once in the shuffle like the others")
+
+
+func test_a_new_colony_opens_with_the_canyon_track_whatever_the_shuffle_says() -> void:
+	for s in 12:
+		seed(s)
+		Music.mode = ""
+		Music._queue = []
+		Music._last_game = Music.GAME[s % Music.GAME.size()]
+		Music.play_menu()
+		Music.play_opening()
+		assert_eq(Music.mode, "game")
+		assert_eq(Music.track, Music.OPENING, "seed %d" % s)
+
+
+func test_after_the_opening_the_other_seven_play_once_each_before_it_comes_round_again() -> void:
+	Music.play_menu()
+	Music.play_opening()
+	var rest := []
+	for i in 7:
+		Music.next_track()
+		rest.append(Music.track)
+	var distinct := {}
+	for t in rest:
+		distinct[t] = true
+	assert_eq(distinct.size(), 7, "seven different tracks")
+	assert_false(distinct.has(Music.OPENING), "the canyon track is not among them")
+	Music.next_track()   # a fresh shuffle of all eight
+	assert_ne(Music.track, rest[6], "it never repeats the last one")
+	var seen := {Music.track: true}
+	for i in 7:
+		Music.next_track()
+		seen[Music.track] = true
+	assert_eq(seen.size(), 8, "and the canyon track is in the next shuffle with the rest")
+
+
+func test_a_new_colony_started_from_a_game_in_progress_opens_with_it_again() -> void:
+	Music.play_game()
+	Music.next_track()
+	var starts := Music.starts
+	Music.play_opening()
+	assert_eq(Music.track, Music.OPENING)
+	assert_eq(Music.starts, starts + 1, "it starts over, rather than carrying on")
+
+
+func test_loading_a_game_does_not_play_the_opening_track() -> void:
+	Music._queue = [Music.GAME[0], Music.GAME[1]]
+	Music.play_menu()
+	Music.play_game()   # what loading a colony does
+	assert_eq(Music.track, Music.GAME[0], "it carries on with the shuffle")
+
+
+func test_the_opening_is_saved_with_the_shuffle() -> void:
+	Music.play_opening()
+	var cfg := ConfigFile.new()
+	assert_eq(cfg.load(Music.settings_path), OK)
+	assert_eq(cfg.get_value("audio", "last_game_track"), Music.OPENING)
+	assert_eq(cfg.get_value("audio", "game_queue").size(), 7)
 
 
 func test_asking_for_the_game_music_again_does_not_restart_it() -> void:
@@ -263,7 +331,7 @@ func test_the_shuffle_is_saved_as_it_goes() -> void:
 	assert_eq(cfg.load(Music.settings_path), OK)
 	assert_eq(cfg.get_value("audio", "last_game_track"), Music.track)
 	assert_eq(cfg.get_value("audio", "game_queue"), Music._queue)
-	assert_eq(Music._queue.size(), 5, "7 tracks, 2 played")
+	assert_eq(Music._queue.size(), 6, "8 tracks, 2 played")
 	assert_almost_eq(float(cfg.get_value("audio", "music_volume")), Music.volume, 0.001, "the volume is still kept alongside")
 
 

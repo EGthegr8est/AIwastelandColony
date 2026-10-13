@@ -18,10 +18,10 @@ static func requested() -> bool:
 static func run() -> Array:
 	var out := []
 	_check(out, Sprites.available(), "pixel-art atlas loads (art/atlas.png and atlas.json)")
-	_check(out, Sprites.names().size() == 23, "the atlas has all 23 sprites (has %d)" % Sprites.names().size())
+	_check(out, Sprites.names().size() == 24, "the atlas has all 24 sprites (has %d)" % Sprites.names().size())
 	_check(out, not Sprites.rects().is_empty() or Sprites.style == 0, "sprite rectangles are ready for the map")
 	_check(out, Sprites.animals_available() and Sprites.animals_texture().get_size() == Vector2(64, 16), "the animals' picture loads (art/animals.png, 4 pictures of 16 x 16)")
-	_check(out, Sprites.building_atlas_texture() != null and Sprites.building_ids().size() == 20, "the building pictures load (art/building_atlas.png and .json, 20 of them)")
+	_check(out, Sprites.building_atlas_texture() != null and Sprites.building_ids().size() == 22, "the building pictures load (art/building_atlas.png and .json, 22 of them)")
 	_check(out, Sprites.poi_available(), "points-of-interest atlas loads (art/poi_atlas.png and .json)")
 	_check(out, Sprites.poi_kinds().size() == Data.POIS.size(), "a sprite for each of the %d kinds of site" % Data.POIS.size())
 	var frames = load("res://d20_dice/d20_sprite_frames.tres") if ResourceLoader.exists("res://d20_dice/d20_sprite_frames.tres") else null
@@ -41,6 +41,9 @@ static func run() -> Array:
 	for kind in Data.ENDING_SCREENS:
 		var pic := Sprites.picture(Data.ENDING_SCREENS[kind].art)
 		_check(out, pic != null and pic.get_size() == Vector2(1200, 980), "ending picture loads (1200 x 980): %s" % kind)
+	for version in ["day", "night", "fallout"]:
+		var mile := Sprites.picture(Data.HOLLOW_MILE[version])
+		_check(out, mile != null and mile.get_size() == Vector2(1152, 768), "Hollow Mile picture loads (1152 x 768): %s" % version)
 	var menu := Music.stream_for(Music.MENU)
 	_check(out, menu != null and menu.loop_mode == AudioStreamWAV.LOOP_FORWARD, "the menu track loops")
 	_check(out, Data.LEADERS.size() == 3 and Data.TERRAIN.size() == 11, "game data is there")

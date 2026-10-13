@@ -33,6 +33,11 @@ THE BASICS
 - Hover the mouse over a tile to see what it is.
 - Every season the map fades between day and night (Spring and Autumn are day). Craters, camps you can see and ruins
   held by raiders keep glowing in the dark. The Legend tab has a Night On/Off switch.
+- The river is a wall: only boats and planes cross it, plus the shallow fords, the old bridge in the middle of the map (one tile wide) and any bridge you build out from your bank.
+- Rough ground (rock, forest, ruins, dunes) slows a party, and climbing rock or steep slopes can break a leg: the party slows until it is home.
+- A ruined highway (the Hollow Mile) runs through the cities and over the old bridge, but raiders ambush people on it. A picture comes up the first
+  time your scouts see it (a grey overcast picture by day; by night an orange dusk one, or a green one if the finders are in high radiation). Build roads (stone and grain) to reach it: anyone can use a road, the Rust Kings too, and they build their own. Select a
+  tile of the highway beside your road to repair it into a road for 1 stone, which ends the ambushes there.
 - The MUSIC slider is in the top bar (and on the menu screens). All the way down is off.
 
 YOUR SAVES

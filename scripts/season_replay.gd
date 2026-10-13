@@ -9,7 +9,7 @@ extends RefCounted
 ##                 "wild" (a wandering animal: it never decides how long the replay is, and a season where only animals moved plays nothing),
 ##                 "trail" ([[cell, day], ...] from day 0, one entry per tile reached), "gone_day" (the day it left
 ##                 the map, or -2.0 if it is still there)}
-##   events     things that happen once the walking is done: {"kind": "clash"|"ruin"|"home"|"smoke", "cell", "day"}
+##   events     things that happen once the walking is done: {"kind": "clash"|"ruin"|"home"|"smoke"|"snap", "cell", "day"}
 ##   reveals    ground your parties uncovered, [[cell, day], ...]: it stays dark until the party gets there
 ##   sight_before   what the player could see when the season began (a band is shown while it was in sight then or is now)
 ##   end_day    the day the last unit stopped (settle() works it out)

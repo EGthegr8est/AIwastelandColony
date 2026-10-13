@@ -2,10 +2,11 @@ extends Node
 ## Autoload "Music": what plays and how loud.
 ##   menu   one track, looping, for the title screen and the character selection screen (and the load
 ##          screen reached from them). It keeps playing across those screens, and isn't restarted.
-##   game   every OST track (the five gameplay pieces and the victory and defeat pieces), one after another in a
+##   game   every OST track (the six gameplay pieces and the victory and defeat pieces), one after another in a
 ##          shuffled order, then shuffled again, for as long as a colony is running. A track never plays twice
 ##          in a row, and the shuffle is remembered between launches, so a new launch carries on through the
-##          tracks it has not played yet instead of starting over.
+##          tracks it has not played yet instead of starting over. A NEW colony always opens with the canyon
+##          track (OPENING) to set the mood, then shuffles through the other seven; loading a game does not.
 ##   win    the victory track, looping, under the two winning ending screens and the stats screen after them
 ##   lose   the defeat track, looping, under the losing ending screen and its stats, until the player goes back to the menu
 ## (The victory and defeat tracks are in the game shuffle too. If one is already playing when its ending comes, it
@@ -21,12 +22,14 @@ signal volume_changed(volume: float)
 const MENU := "res://audio/wasteland_menu.wav"
 const WIN := "res://audio/wasteland_OST_lastcall_Victory.wav"
 const LOSE := "res://audio/wasteland_OST_signallost_DEFEAT.wav"
+const OPENING := "res://audio/wasteland_OST_canyon.wav"   # the first track of every new colony
 const GAME := [
 	"res://audio/wasteland_OST_dread.wav",
 	"res://audio/wasteland_OST_breath.wav",
 	"res://audio/wasteland_OST_ashfall.wav",
 	"res://audio/wasteland_OST_winter.wav",
 	"res://audio/wasteland_OST_dustpunk.wav",
+	OPENING,
 	WIN,
 	LOSE,
 ]
@@ -73,6 +76,20 @@ func play_menu() -> void:
 ## The game music. Already playing? Nothing changes.
 func play_game() -> void:
 	_switch("game")
+
+
+## A new colony has just been started: the opening track plays first (the title music crossfades into it, or whatever game track was playing),
+## then the shuffle carries on through the rest of the playlist, and the opening track takes its place in the later shuffles like any other.
+func play_opening() -> void:
+	mode = "game"
+	track = OPENING
+	_last_game = OPENING
+	_queue = GAME.filter(func(p): return p != OPENING)
+	_queue.shuffle()
+	starts += 1
+	_save_settings()
+	if audible:
+		_fade_out_then_start()
 
 
 ## The ending music, looping until something else is asked for: the win track or the defeat track.
