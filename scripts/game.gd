@@ -7,6 +7,10 @@ signal changed
 signal focus(cell: Vector2i)
 signal tile_selected
 signal game_ended(kind: String)   # the game has ended: "raiders_defeated", "colony_prospers" or "defeat"
+signal season_played(replay: Dictionary)   # END SEASON is done: here is how the units walked it, for the map to play back (season_replay.gd)
+signal troops_marched(path: Array, count: int)   # a raid is under way: a column of troops walks `path` (cells, HQ to target) and back
+signal replay_skip     # finish the replay or march that is playing at once
+signal replay_done     # the map has finished playing (or skipped) a replay or march
 
 const Data = preload("res://scripts/data.gd")
 const D20Data = preload("res://scripts/d20_data.gd")
@@ -30,6 +34,8 @@ var selected_scout := -1       # id of the scouting party you have picked (-1 = 
 var scout_route := {}          # that party's route to the selected tile: {"mover", "path", "days", "ratio"}, see refresh_scout_route()
 var refinery_on := {}          # tile index -> true for each refinery you've switched on (new ones start off)
 var res: Dictionary = {}
+var salt_on := false           # "Take Salt": parties take a dose for each survivor when they leave, if there is enough
+var items: Dictionary = {}     # what the colony keeps that is not a resource (Data.ITEMS): frog hides, Salt. No line in the top bar.
 var pop := 10
 var troops := 3
 var prisoners := 0
@@ -51,6 +57,7 @@ var stats := {}                # what the stats screen after an ending shows, se
 var prosper_streak := 0        # seasons in a row the Rust Kings have been too weak to threaten you
 var starved_now := false       # the colony starved this season
 var buildings_lost := 0        # your buildings destroyed this season, by anyone (capped by RAID_LOSS_CAP)
+var replaying := false         # the map is playing back a season or a march (the map sets it); END SEASON then skips it
 
 # Fog of war. memory[viewer] has one entry per tile: null if that colony has never
 # seen it, otherwise [owner, building] as it looked the last time it was in sight.
@@ -72,6 +79,7 @@ func _ready() -> void:
 
 ## Starts a colony led by a class of leader (and, from the selection screen, a particular person: see leaders.gd).
 func new_game(leader_id: String, info := {}) -> void:
+	skip_replay()   # a replay from the game before is over
 	leader = leader_id
 	leader_info = Leaders.fill(leader_id, info)
 	season = 1
@@ -95,12 +103,16 @@ func new_game(leader_id: String, info := {}) -> void:
 	for r in Data.RESOURCES:
 		res[r] = 0
 	res.merge({"wood": 30, "stone": 15, "metal": 5, "grain": 25, "veg": 10, "meat": 10, "gold": 15}, true)
+	items = {}
+	for item in Data.ITEMS:
+		items[item] = 0
+	salt_on = false
 	vehicles = {}
 	for v in Data.VEHICLES:
 		vehicles[v] = 0
 	ai = {"name": "The Rust Kings", "troops": 6, "walls": 0, "food": 20, "wood": 20, "stone": 10,
 		"metal": 5, "gold": 10, "relations": 0, "truce": 0, "raid_planned": false,
-		"horse": 0, "car": 0, "boat": 0, "plane": 0}
+		"horse": 0, "car": 0, "boat": 0, "plane": 0, "salt_stock": 0}
 	town = {"name": "Dustwell", "status": "neutral", "relations": 20}
 	_apply_start_quirks()
 	w = Data.MAP_W
@@ -1401,7 +1413,7 @@ func wall_breach() -> float:
 func player_wall_defense() -> float:
 	var wall_each := 2 + (2 if has("f2") else 0)
 	var d := count_building(Data.PLAYER, "wall") * wall_each
-	for b in ["tower", "keep", "citadel"]:
+	for b in ["tower", "keep", "citadel", "drug_factory"]:
 		d += count_building(Data.PLAYER, b) * Data.BUILDINGS[b].defense
 	if has("b_wf"):
 		d += count_building(Data.PLAYER, "outpost") * wall_each
@@ -1460,6 +1472,7 @@ func raid_ai() -> void:
 	if troops <= 0 or raided_this_season or not knows(Data.PLAYER, Data.AI) or not ending.is_empty():
 		return
 	raided_this_season = true
+	_march_to(home(Data.AI))
 	var att := player_attack(home(Data.AI))
 	var def := ai_defense(wall_breach())
 	if Units.free_vehicles("car") > 0 and route("car", home(Data.PLAYER), home(Data.AI)).is_empty():
@@ -1590,6 +1603,64 @@ func buy(r: String) -> void:
 		changed.emit()
 
 
+## Each Drug Factory turns one raw frog hide from the stores into HIDE_TO_SALT Salt, for as long as there are hides.
+func _drug_factories() -> void:
+	var hides := 0
+	for c in owned(Data.PLAYER):
+		if tile(c)["b"] == "drug_factory" and int(items.get("hide", 0)) > 0:
+			items["hide"] = int(items["hide"]) - 1
+			items["salt"] = int(items.get("salt", 0)) + Data.HIDE_TO_SALT
+			hides += 1
+	if hides > 0:
+		note("salt_made", hides * Data.HIDE_TO_SALT)
+		add_log("Drug Factory: %d frog %s processed into %d Salt (%d hides left)." % [hides, "hide" if hides == 1 else "hides", hides * Data.HIDE_TO_SALT, items["hide"]])
+
+
+## The Rust Kings' market sometimes has Salt for sale.
+func _restock_salt() -> void:
+	if int(ai.get("salt_stock", 0)) <= 0 and randf() < Data.SALT_STOCK_CHANCE:
+		ai["salt_stock"] = randi_range(Data.SALT_STOCK_DOSES[0], Data.SALT_STOCK_DOSES[1])
+
+
+func salt_for_sale() -> int:
+	return int(ai.get("salt_stock", 0))
+
+
+## What a dose of Salt sells for (a Haggler's 25% more, a Poor haggler's 15% less) and costs to buy (twice that, less 20% for a Haggler).
+func salt_sell_gold() -> int:
+	var gold := float(Data.SALT_PRICE)
+	if has_quirk("haggler"):
+		gold *= 1.25
+	elif has_quirk("poor_haggler"):
+		gold *= 0.85
+	return maxi(roundi(gold), 1)
+
+
+func salt_buy_price() -> int:
+	var price := float(Data.SALT_PRICE) * 2.0
+	if has_quirk("haggler"):
+		price *= 0.8
+	return maxi(roundi(price), 1)
+
+
+func sell_salt() -> void:
+	if can_trade() and int(items.get("salt", 0)) >= 1:
+		items["salt"] = int(items["salt"]) - 1
+		res["gold"] += salt_sell_gold()
+		ai["relations"] = mini(ai["relations"] + 1, 100)
+		changed.emit()
+
+
+func buy_salt() -> void:
+	var price := salt_buy_price()
+	if can_trade() and salt_for_sale() > 0 and res["gold"] >= price:
+		res["gold"] -= price
+		items["salt"] = int(items.get("salt", 0)) + 1
+		ai["salt_stock"] = salt_for_sale() - 1
+		ai["relations"] = mini(ai["relations"] + 1, 100)
+		changed.emit()
+
+
 func bribe() -> void:
 	if has("c4") and pay({"gold": 20}):
 		ai["truce"] = 3
@@ -1641,6 +1712,7 @@ func conquer_town() -> void:
 	if town["status"] != "neutral" or troops <= 0 or raided_this_season or not knows(Data.PLAYER, Data.TOWN):
 		return
 	raided_this_season = true
+	_march_to(home(Data.TOWN))
 	var att := player_attack(home(Data.TOWN))
 	var def := TOWN_DEFENSE
 	var roll := raid_roll(att, def, "Your attack on Dustwell")
@@ -1776,10 +1848,16 @@ func _circle(c: Vector2i, r: int) -> Array:
 	return out
 
 
-## Mark an area as explored (remembered) without it staying in sight.
-func reveal(viewer: int, c: Vector2i, r: int) -> void:
+## Mark an area as explored (remembered) without it staying in sight. Returns the tiles this explored for the first time.
+func reveal(viewer: int, c: Vector2i, r: int) -> Array:
+	var fresh := []
+	var mem: Array = memory[viewer]
 	for p in _circle(c, r):
-		_remember(viewer, idx(p))
+		var i := idx(p)
+		if mem[i] == null:
+			fresh.append(p)
+		_remember(viewer, i)
+	return fresh
 
 
 ## Store what a tile looks like now, and note first contact with whoever owns it.
@@ -1844,6 +1922,22 @@ func _ai_scout() -> Vector2i:
 	return at
 
 
+## Ends a replay or march the map is playing (it finishes at once) and does nothing if none is.
+func skip_replay() -> void:
+	if replaying:
+		replay_skip.emit()
+
+
+## A column of troops sets out for `target`: the map plays them walking there and back. The fight itself is already
+## decided where this is called; troops stay a number, this is only the picture.
+func _march_to(target: Vector2i) -> void:
+	var from := home(Data.PLAYER)
+	var path := route("foot", from, target)
+	if path.size() < 2:
+		path = [from, target]
+	troops_marched.emit(path, troops)
+
+
 func cycle_view() -> void:
 	var order := [Data.PLAYER, Data.AI, Data.NONE]
 	view = order[(order.find(view) + 1) % order.size()]
@@ -1855,15 +1949,20 @@ func cycle_view() -> void:
 func end_season() -> void:
 	if not ending.is_empty():
 		return
+	skip_replay()   # a replay still playing from the last season is over now
 	_gather()
 	_upkeep()
 	_ai_turn()
+	_restock_salt()
+	var sight_before: PackedByteArray = sight[Data.PLAYER].duplicate() if sight.has(Data.PLAYER) else PackedByteArray()
 	Units.season_turn()
 	season += 1
 	raided_this_season = false
 	buildings_lost = 0
 	update_fog()
 	_update_peaks()
+	Units.replay["sight_before"] = sight_before
+	season_played.emit(Units.replay)   # before check_ending(): the ending screen waits for the replay
 	check_ending()
 	if ending.is_empty():
 		save_game("autosave")   # a finished game is not saved: Resume has nothing to come back to
@@ -1913,6 +2012,7 @@ func _gather() -> void:
 	add_log("Gathered: %s%s" % [cost_text(gain), "" if eff >= 1.0 else " (short on workers)"])
 
 	_refine()
+	_drug_factories()
 
 	# Hunting is risky
 	for i in count_building(Data.PLAYER, "lodge"):
@@ -2246,6 +2346,7 @@ func ended() -> bool:
 
 ## After the ending screens: back to the main menu with no game running.
 func leave_game() -> void:
+	skip_replay()
 	in_game = false
 	ending = {}
 	selected = Vector2i(-1, -1)
@@ -2265,7 +2366,7 @@ func save_game(slot: String) -> void:
 		packed.append([t["t"], t["o"], t["b"], t["z"], t["r"], t["rad"]])
 	var data := {
 		"version": 3, "w": w, "h": h, "leader": leader, "season": season, "pop": pop, "troops": troops,
-		"prisoners": prisoners, "res": res, "upgrades": upgrades, "vehicles": vehicles,
+		"prisoners": prisoners, "res": res, "items": items, "salt_on": salt_on, "upgrades": upgrades, "vehicles": vehicles,
 		"units": Units.to_save(), "raided": raided_this_season, "ai": ai, "town": town,
 		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts,
 		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost, "leader_info": leader_info,
@@ -2284,6 +2385,7 @@ func load_game(slot: String) -> bool:
 	var data = JSON.parse_string(FileAccess.get_file_as_string(_path(slot)))
 	if typeof(data) != TYPE_DICTIONARY:
 		return false
+	skip_replay()   # the replay of the game being left is over
 	# JSON stores every number as a float, so turn them back into ints
 	leader = data["leader"]
 	leader_info = Leaders.fill(leader, data.get("leader_info", {}))   # none in saves from before named leaders
@@ -2295,6 +2397,10 @@ func load_game(slot: String) -> bool:
 	h = int(data.get("h", 36))
 	raided_this_season = data["raided"]
 	res = _ints(data["res"])
+	items = {}
+	for item in Data.ITEMS:   # saves from before frog hides and Salt have none
+		items[item] = int(data.get("items", {}).get(item, 0))
+	salt_on = bool(data.get("salt_on", false))
 	for k in res.keys():
 		if not k in Data.RESOURCES:
 			res.erase(k)   # scrap and silver are gone: a save from before that just loses them

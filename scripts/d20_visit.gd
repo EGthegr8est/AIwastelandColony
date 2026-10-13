@@ -7,6 +7,7 @@ extends RefCounted
 ## roll that hurts one marks "injury" on it.
 ##
 ## The stages, in the order a visit can reach them:
+##   track    a hunt's first roll: finding the animal (a "track" check). Then "kill", the kill shot (a combat check), and done
 ##   strike   a scouting party's attack on a building: one combat check against the building's DC, repeatable until it falls
 ##   site     a point of interest: one check against the site's DC, whose tier picks that site's outcome (see SITES in
 ##            d20_data.gd); an outcome may hurt someone, poison the party, force a fight, or hand the colony a reward
@@ -26,7 +27,8 @@ const Data = preload("res://scripts/d20_data.gd")
 const D20 = preload("res://scripts/d20.gd")
 
 const EVENT_NAMES := {"nothing": "nothing of note", "minor_find": "a small find", "cache": "a pre-war cache"}
-const CHECK_NAMES := {"cache": "Cache check", "trap": "Trap check", "ambush": "Ambush check", "combat": "Fight", "site": "Site check"}
+const CHECK_NAMES := {"cache": "Cache check", "trap": "Trap check", "ambush": "Ambush check", "combat": "Fight", "site": "Site check",
+	"track": "Track", "kill": "Kill shot"}
 
 
 # ---------------------------------------------------------------- the situation
@@ -184,6 +186,25 @@ static func begin_camp_strike(ctx: Dictionary, scale: float, dice, party: Array,
 	return visit
 
 
+## A party's hunt for an animal of `kind` (a key of HUNT): a track roll against its track DC, then the kill shot. A bear (strength above 0) is
+## also a fight: the kill shot is a combat check against the DC a raider of its strength has, with the usual injuries for a miss. `name` is
+## the animal as the panel says it ("black bear").
+static func begin_hunt(ctx: Dictionary, scale: float, dice, party: Array, kind: String, animal_id: int, name := "") -> Dictionary:
+	var visit := begin("safe", ctx, scale, dice, party)
+	var spec: Dictionary = Data.HUNT[kind]
+	var strength := int(spec.strength)
+	visit["ruin"] = "hunt"
+	visit["stage"] = "track"
+	visit["animal"] = kind
+	visit["animal_id"] = animal_id
+	visit["animal_name"] = name if name != "" else kind.replace("_", " ")
+	visit["enemy"] = strength
+	visit["track_dc"] = int(spec.track_dc)
+	visit["kill_dc"] = enemy_dc(strength) if strength > 0 else int(spec.kill_dc)
+	visit["kill_sit"] = 0
+	return visit
+
+
 ## A raider band meeting a party on the road: the ruin-fight rules, rolled at once for the party by its best fighter against the
 ## band's DC. Injuries land on the survivors as they do at the ruins. What the party carries, who dies and what happens to
 ## the band is for the caller: {"won", "tier", "d20", "roller", "wiped", "loot", "carried_loss", "log"}.
@@ -213,11 +234,15 @@ static func _dc_for(visit: Dictionary) -> int:
 			return enemy_dc(visit.enemy)
 		"strike":
 			return visit.strike_dc
+		"track":
+			return visit.track_dc
+		"kill":
+			return visit.kill_dc
 	return 0
 
 
 static func _check_for(visit: Dictionary) -> String:
-	return "combat" if visit.stage in ["fight", "strike"] else str(visit.stage)
+	return "combat" if visit.stage in ["fight", "strike", "kill"] else str(visit.stage)
 
 
 static func _extra_for(visit: Dictionary) -> Array:
@@ -225,12 +250,19 @@ static func _extra_for(visit: Dictionary) -> Array:
 		return [visit.fight_sit, "surprised" if visit.fight_sit < 0 else "sprang the ambush"]
 	if visit.stage == "ambush":
 		return [visit.ambush_sit, "the noise"]
+	if visit.stage == "kill":
+		return [int(visit.get("kill_sit", 0)), "charged" if int(visit.get("kill_sit", 0)) < 0 else "unseen"]
 	return [0, ""]
+
+
+## The situation a check of this kind is rolled in (the visit's radiation, the party's strength, the enemy's): for rolls made outside the visit's own stages.
+static func check_ctx(visit: Dictionary, check: String) -> Dictionary:
+	return _ctx(visit, check)
 
 
 static func _ctx(visit: Dictionary, check: String) -> Dictionary:
 	var ctx: Dictionary = visit.ctx.duplicate()
-	ctx["enemy_strength"] = visit.enemy if check == "combat" else 0
+	ctx["enemy_strength"] = visit.enemy if check in ["combat", "run", "dodge"] else 0
 	return ctx
 
 
@@ -242,7 +274,7 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 		"event":
 			out["text"] = "Search the ruins: a plain d20, no modifiers."
 			out["buttons"] = [{"id": "roll", "label": "Search the ruins (d20)"}, {"id": "home", "label": "Leave without searching"}]
-		"site", "cache", "trap", "ambush", "fight", "strike":
+		"site", "cache", "trap", "ambush", "fight", "strike", "track", "kill":
 			var check := _check_for(visit)
 			var extra := _extra_for(visit)
 			var ctx := _ctx(visit, check)
@@ -253,19 +285,21 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			var mod := D20.clamp_mod(parts_total(parts))
 			out["who"] = scout.name
 			out["traits"] = D20.trait_names(scout)
-			var check_name: String = "Attack" if visit.stage == "strike" else CHECK_NAMES[check]
+			var check_name: String = "Attack" if visit.stage == "strike" else (CHECK_NAMES["kill"] if visit.stage == "kill" else CHECK_NAMES[check])
 			out["check"] = check_name
 			out["dc"] = dc
 			out["mod"] = mod
 			out["parts"] = parts
 			out["text"] = "%s rolls. %s, DC %d, %+d" % [scout.name, check_name, dc, mod]
-			if visit.stage == "fight" or visit.ruin == "camp":
+			if visit.stage == "fight" or visit.ruin == "camp" or (visit.stage == "kill" and int(visit.enemy) > 0):
 				out["text"] += " (enemy strength %d)" % visit.enemy
 			out["buttons"] = [{"id": "roll", "label": "Roll d20 (%+d vs DC %d)" % [mod, dc]}]
 			if visit.stage == "site":
 				out["buttons"].append({"id": "home", "label": "Leave without searching"})
 			elif visit.stage == "strike":
 				out["buttons"].append({"id": "home", "label": "Back off"})
+			elif visit.stage == "track":
+				out["buttons"].append({"id": "home", "label": "Give up the hunt"})
 		"choice":
 			out["text"] = "Spotted in time. Fight (DC %d) or slip away?" % enemy_dc(visit.enemy)
 			out["buttons"] = [{"id": "fight", "label": "Fight"}, {"id": "slip", "label": "Slip away"}]
@@ -275,11 +309,29 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			out["buttons"] = [{"id": "deeper", "label": "Search deeper (DC %d)" % next_dc}, {"id": "home", "label": "Head home"}]
 		_:
 			out["text"] = _outcome_text(visit)
-			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped or visit.ruin in ["building", "camp"] else "Head home"}]
+			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped or visit.ruin in ["building", "camp", "hunt"] else "Head home"}]
 	return out
 
 
 static func _outcome_text(visit: Dictionary) -> String:
+	if visit.ruin == "hunt":
+		var what: String = str(visit.get("animal_name", "animal"))
+		match visit.outcome:
+			"wiped":
+				return "The party was wiped out."
+			"left":
+				return "You gave up the hunt."
+			"killed":
+				return ("The %s is down. %s" % [what, _carrying_text(visit)]).strip_edges()
+			"cold":
+				return "The trail went cold: the %s is gone." % what
+			"bolted":
+				return "The %s bolted." % what
+			"defeated":
+				return "The %s was too much. The survivors limp away." % what
+			"pulled":
+				return "You pulled back from the %s." % what
+		return "Wounded, the %s got away." % what
 	if visit.ruin == "building":
 		if visit.outcome == "wiped":
 			return "The party was wiped out."
@@ -343,6 +395,10 @@ static func step(visit: Dictionary, dice, party: Array, choice := "roll") -> voi
 			_fight(visit, dice, party)
 		"strike":
 			_strike(visit, dice, party, choice)
+		"track":
+			_track(visit, dice, party, choice)
+		"kill":
+			_kill(visit, dice, party)
 		"deeper":
 			_deeper(visit, dice, choice)
 	visit["log"].append_array(visit.last)
@@ -673,6 +729,80 @@ static func _strike(visit: Dictionary, dice, party: Array, choice: String) -> vo
 		visit.last.append("The camp holds." if camp else "The building holds.")
 
 
+## A hunt's first roll: finding the animal. A CRITICAL_SUCCESS creeps up on it unseen (the kill shot is easier), a SUCCESS finds it,
+## a FAILURE loses the trail, and a CRITICAL_FAILURE spooks it: a deer bolts and a bear charges (the kill shot is forced, at a penalty).
+static func _track(visit: Dictionary, dice, party: Array, choice: String) -> void:
+	if choice == "home":
+		visit["stage"] = "done"
+		visit["outcome"] = "left"
+		visit.last.append("The party gives up the hunt.")
+		return
+	var rolled := _roll(visit, dice, party)
+	var name: String = visit.animal_name
+	var frog: bool = visit.animal == "frog"   # the Giant Frog is not shot: the parties that find it wait for each other, then fight it together
+	match rolled.result.tier:
+		Data.CRITICAL_SUCCESS:
+			visit["stage"] = "frog_wait" if frog else "kill"
+			visit["kill_sit"] = Data.HUNT_UNSEEN
+			visit.last.append("You creep up on the %s unseen." % name)
+		Data.SUCCESS:
+			visit["stage"] = "frog_wait" if frog else "kill"
+			visit.last.append("You find the %s." % name)
+		Data.FAILURE:
+			visit["stage"] = "done"
+			visit["outcome"] = "cold"
+			visit.last.append("The trail goes cold.")
+		_:
+			if frog:
+				visit["stage"] = "frog_run"
+				visit.last.append("The %s spots you and comes at you!" % name)
+			elif int(visit.enemy) > 0:
+				visit["stage"] = "kill"
+				visit["kill_sit"] = Data.HUNT_CHARGED
+				visit.last.append("The %s spots you and charges!" % name)
+			else:
+				visit["stage"] = "done"
+				visit["outcome"] = "bolted"
+				visit.last.append("The %s spots you and bolts." % name)
+
+
+## The kill shot: a combat check. A hit brings the animal down and pays its meat (a critical one package size more) and a hide's gold for
+## a brown bear; a miss lets it get away, and a bear that is missed mauls the party (the injury, the lost load and the fatal fumble of a fight).
+static func _kill(visit: Dictionary, dice, party: Array) -> void:
+	var rolled := _roll(visit, dice, party)
+	var tier: String = rolled.result.tier
+	var bear := int(visit.enemy) > 0
+	if bear and _combat_toll(visit, dice, rolled, int(visit.kill_dc)):
+		return
+	visit["stage"] = "done"
+	if tier == Data.SUCCESS or tier == Data.CRITICAL_SUCCESS:
+		var spec: Dictionary = Data.HUNT[visit.animal]
+		var size: String = spec.pays
+		if tier == Data.CRITICAL_SUCCESS:
+			size = Data.SIZES[mini(Data.SIZES.find(size) + 1, Data.SIZES.size() - 1)]
+		size = D20.size_shifted(rolled.scout, "combat", tier, size)
+		visit["destroyed"] = true
+		visit["outcome"] = "killed"
+		visit.last.append("The %s goes down." % visit.animal_name)
+		_add_package(visit, _hunt_package(visit, dice, rolled.scout, size, "meat"))
+		if spec.extra != "":
+			_add_package(visit, _hunt_package(visit, dice, rolled.scout, spec.extra, "gold"))
+	else:
+		visit["outcome"] = "escaped"
+		if bear:
+			visit["carried_loss"] = Data.COMBAT[tier].carried_loss
+			visit.last.append("The %s mauls the party and lumbers off." % visit.animal_name)
+		else:
+			visit.last.append("The shot misses and the %s is gone." % visit.animal_name)
+
+
+## A package of meat or gold from a hunt: its dice, times the loot scale and the scout's multiplier, never below 1.
+static func _hunt_package(visit: Dictionary, dice, scout: Dictionary, size: String, resource: String) -> Dictionary:
+	var rolled: int = dice.roll(Data.HUNT_PACKAGE[size])
+	var mult := D20.loot_multiplier(scout, resource)
+	return {"size": size, "resource": resource, "rolled": rolled, "mult": mult, "amount": maxi(roundi(rolled * float(visit.scale) * mult), 1)}
+
+
 static func _deeper(visit: Dictionary, dice, choice: String) -> void:
 	if choice == "deeper":
 		visit["depth"] += 1
@@ -697,6 +827,9 @@ static func normalize(visit: Dictionary) -> Dictionary:
 	for k in ["reveal", "trust", "colonists", "troops"]:   # a visit saved before sites had outcomes lacks these
 		visit[k] = int(visit.get(k, 0))
 	visit["reveal_fort"] = bool(visit.get("reveal_fort", false))
+	for k in ["animal_id", "track_dc", "kill_dc", "kill_sit"]:   # a hunt's
+		if visit.has(k):
+			visit[k] = int(visit[k])
 	visit["strike_dc"] = int(visit.get("strike_dc", 0))   # and these, before scouting parties could attack
 	visit["cell"] = (visit.get("cell", [-1, -1]) as Array).map(func(n): return int(n))
 	visit["destroyed"] = bool(visit.get("destroyed", false))

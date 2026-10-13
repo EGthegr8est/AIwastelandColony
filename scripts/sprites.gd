@@ -5,6 +5,7 @@ extends RefCounted
 ## Image.load_from_file, like the portraits and icons are drawn in code, so it doesn't need importing.
 ## Show the textures with nearest-neighbour filtering to keep the pixels crisp.
 
+const SeasonReplay = preload("res://scripts/season_replay.gd")
 const ATLAS_PNG := "res://art/atlas.png"
 const ATLAS_JSON := "res://art/atlas.json"
 const SIZE := 8
@@ -28,6 +29,7 @@ const CHOICES := [1, 2, 3, 0]
 static var _atlas: Image
 static var _atlas_texture: ImageTexture
 static var _meta := {}
+static var _soldier_texture: ImageTexture
 static var _loaded := false
 static var _cache := {}
 static var _rects := {}
@@ -56,7 +58,20 @@ static func slope(id: String) -> Texture2D:
 
 
 static func unit(id: String) -> Texture2D:
+	if id == "soldier":
+		return soldier()
 	return texture(UNITS.get(id, ""))
+
+
+## The troop marker (and a hunting party): an 8 x 8 picture drawn from the rows in season_replay.gd, since it is not in the atlas.
+static func soldier() -> ImageTexture:
+	if _soldier_texture == null:
+		var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+		for y in SIZE:
+			for x in SIZE:
+				img.set_pixel(x, y, SeasonReplay.SOLDIER_COLORS.get(SeasonReplay.SOLDIER[y][x], Color(0, 0, 0, 0)))
+		_soldier_texture = ImageTexture.create_from_image(img)
+	return _soldier_texture
 
 
 static func camp(tribe_class: String) -> Texture2D:
@@ -141,6 +156,45 @@ static func image(sprite: String, use_style: int) -> Image:
 	var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	img.blit_rect(_atlas, Rect2i(int(o.x), int(o.y), int(o.w), int(o.h)), Vector2i.ZERO)
 	return img
+
+
+# ---------------------------------------------------------------- animals
+
+const ANIMALS := ["deer", "black_bear", "brown_bear", "frog"]   # the order of the 16 x 16 pictures in art/animals.png
+const ANIMALS_PNG := "res://art/animals.png"
+const ANIMAL_SIZE := 16
+static var _animal_cache := {}
+
+
+## False if the animals' picture can't be read: the map then shows each animal's letter.
+static func animals_available() -> bool:
+	return picture(ANIMALS_PNG) != null
+
+
+## The whole animals picture as one texture, for the map to draw from (they are not part of the 8 x 8 atlas: they are
+## drawn at their own 16 x 16, one to a tile, and the frog across 2 x 2 tiles).
+static func animals_texture() -> Texture2D:
+	return picture(ANIMALS_PNG)
+
+
+## Where an animal's 16 x 16 picture is in that texture, or an empty rectangle for an unknown kind.
+static func animal_rect(kind: String) -> Rect2:
+	var i := ANIMALS.find(kind)
+	return Rect2(i * ANIMAL_SIZE, 0, ANIMAL_SIZE, ANIMAL_SIZE) if i >= 0 else Rect2()
+
+
+## One animal's picture as its own texture (for the legend), or null.
+static func animal(kind: String) -> Texture2D:
+	var atlas := animals_texture()
+	var r := animal_rect(kind)
+	if atlas == null or r.size == Vector2.ZERO:
+		return null
+	if not _animal_cache.has(kind):
+		var t := AtlasTexture.new()
+		t.atlas = atlas
+		t.region = r
+		_animal_cache[kind] = t
+	return _animal_cache[kind]
 
 
 # ---------------------------------------------------------------- points of interest

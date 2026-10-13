@@ -5,6 +5,7 @@ extends Node2D
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
+const SeasonReplay = preload("res://scripts/season_replay.gd")
 # Sprites are 8 x 8, so a 16 pixel cell shows them at exactly 2x: every art pixel the same size,
 # and tiles that meet without gaps.
 const CELL := Vector2(16, 16)
@@ -30,6 +31,18 @@ const UNIT_DIM := Color(0.6, 0.6, 0.6)
 const SLOPE_TINT := Color(1, 1, 1, 0.5)
 const SLOPE_DIM := Color(0.4, 0.4, 0.4, 0.5)
 const CHUNK := 16   # the map is drawn in squares of CHUNK x CHUNK tiles
+enum Shown {HIDDEN, SHOWN, DIM}   # how a unit standing on the map shows, see unit_shown()
+# What stands on the map and moves, drawn every frame in a layer of its own (see UnitLayer)
+const PATCH := Color(0, 0, 0, 0.7)         # the dark square under a unit
+const HOP := 2.0                           # a step: the unit hops this many pixels (one art pixel)
+const HOP_HZ := 8.0                        # hops a second while it walks
+const IDLE_STEP := 0.6                     # a parked scouting party bobs one art pixel this often, in seconds
+const IDLE_REDRAW := 0.1                   # the unit layer redraws this often while something idles
+const DUST := {"foot": Color(0.95, 0.88, 0.7), "horse": Color(0.95, 0.88, 0.7), "car": Color(0.9, 0.82, 0.68), "boat": Color(0.8, 0.94, 1.0)}
+const DUST_ALPHA := 0.7
+const EMBER := [Color("ff9a2e"), Color("ffd24a"), Color("e8541c")]   # a camp's cooking fire
+const POP_COLOR := Color("ffe9a8")
+const BAND_FADE := 5.0                     # how fast a raider band fades in and out at the edge of your sight (per second)
 
 var font := SystemFont.new()
 var hover := Vector2i(-1, -1)
@@ -45,7 +58,18 @@ var check_needed := false               # the game changed: look for chunks that
 var checked_view := -1                  # Game.view, Game.map_version and Sprites.state() at the last check
 var checked_map := -1
 var checked_art := -1
+var unit_layer := UnitLayer.new()       # units and camp fires, above the chunks: they move every frame while a season replays
 var overlay_layer := OverlayLayer.new()
+var replay := {}                        # the season (or march) being played back, empty when none
+var playing := false
+var clock := 0.0                        # real seconds into it
+var replay_secs := 3.0                  # real seconds a whole season takes at the chosen speed
+var replay_length := 0.0                # real seconds this replay takes
+var replay_season := 0                  # Game.season when it began: a different one means a load or a new game
+var replay_ids := {}                    # unit id -> true for every unit the replay draws (the rest stand still)
+var _fade := {}                         # actor id -> how visible it is, 0 to 1 (raider bands fade at the edge of sight)
+var _last_delta := 0.0
+var _idle_accum := 0.0
 var _standing := {}                     # cache of _overlay() for the frame in _standing_frame
 var _standing_frame := -1
 # What each tile shows when nothing is built or standing on it. Terrain and contours only change
@@ -63,7 +87,7 @@ var bg_dim: Array[Color] = []             # OWNER_BG and OWNER_EDGE for tiles ou
 var edge_dim: Array[Color] = []
 ## Render counters for tests and benchmarks: tile-layer redraws, tiles drawn and the CPU time
 ## spent drawing them, plus overlay (hover, selection, routes) redraws.
-var stats := {"tile_draws": 0, "tiles": 0, "usec": 0, "overlay_draws": 0}
+var stats := {"tile_draws": 0, "tiles": 0, "usec": 0, "overlay_draws": 0, "unit_draws": 0}
 
 
 ## A square of tiles that draws itself once and keeps the result until the map changes. The
@@ -116,13 +140,29 @@ class OverlayLayer:
 		map.draw_overlay(self)
 
 
+## Draws the units (and the camp fires) over the cached chunks. The chunks only redraw when the ground changes, so a
+## unit standing, hopping or walking across the map costs a few sprites a frame and no chunk redraws.
+class UnitLayer:
+	extends Node2D
+	var map: Node2D
+
+	func _draw() -> void:
+		map.draw_units(self)
+
+
 func _ready() -> void:
 	font.font_names = PackedStringArray(["Consolas", "DejaVu Sans Mono", "Courier New", "monospace"])
 	Game.changed.connect(func(): check_needed = true)
 	add_child(tile_layer)
+	unit_layer.map = self
+	add_child(unit_layer)
 	overlay_layer.map = self
 	add_child(overlay_layer)
 	Game.changed.connect(overlay_layer.queue_redraw)
+	Game.changed.connect(unit_layer.queue_redraw)
+	Game.season_played.connect(_on_season_played)
+	Game.troops_marched.connect(_on_troops_marched)
+	Game.replay_skip.connect(finish_replay)
 	# A monospace glyph is narrower than our square cell, so pipes would leave gaps.
 	# Scale them so the glyph box exactly covers the cell, like a square DF tileset.
 	var glyph_box := font.get_string_size("─", HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE)
@@ -135,10 +175,14 @@ func _ready() -> void:
 
 ## Chunks keep what they drew, so moving the camera redraws nothing. When the game changes,
 ## the chunks on screen redraw right away and the rest wait until they scroll into view.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	tile_layer.visible = Game.in_game
+	unit_layer.visible = Game.in_game
 	if not Game.in_game:
+		if playing:
+			finish_replay()
 		return
+	_tick_replay(delta)
 	if chunk_map_size != Vector2i(Game.w, Game.h):
 		_make_chunks()
 	if check_needed:
@@ -192,6 +236,8 @@ func _find_changed_chunks() -> void:
 		checked_art = art
 		# Pixel art needs nearest-neighbour filtering to stay crisp. The text glyphs keep the default.
 		tile_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if art > 0 else CanvasItem.TEXTURE_FILTER_PARENT_NODE
+		unit_layer.texture_filter = tile_layer.texture_filter
+		unit_layer.queue_redraw()
 	var standing := {}   # chunk index -> what stands in it
 	var on_tiles := _standing_now()
 	for c in on_tiles:
@@ -325,6 +371,322 @@ func _draw_scout_route(layer: CanvasItem) -> void:
 			layer.draw_arc(at + CELL * 0.5, CELL.x * 0.5, 0.0, TAU, 20, FOOD_OUT, 1.5)
 
 
+# ---------------------------------------------------------------- units, and the season replay
+
+func _on_season_played(r: Dictionary) -> void:
+	finish_replay()   # one still playing from the last season is over
+	if SeasonReplay.mode == "off" or not SeasonReplay.has_motion(r):
+		return
+	_begin_replay(r, SeasonReplay.seconds())
+
+
+func _on_troops_marched(path: Array, count: int) -> void:
+	finish_replay()
+	if SeasonReplay.mode == "off":
+		return
+	_begin_replay(SeasonReplay.march(path, count), SeasonReplay.seconds())
+
+
+func _begin_replay(r: Dictionary, secs: float) -> void:
+	replay = r
+	replay_secs = secs
+	replay_length = SeasonReplay.length(r, secs)
+	replay_season = Game.season
+	clock = 0.0
+	replay_ids = {}
+	for a in r.actors:
+		replay_ids[a.id] = true
+	_fade = {}
+	r.reveals.sort_custom(func(a, b): return a[1] < b[1])
+	playing = true
+	Game.replaying = true
+	_update_fades()
+	unit_layer.queue_redraw()
+
+
+## A map taken out of the tree mid-replay must not leave the game thinking one is still playing.
+func _exit_tree() -> void:
+	if playing:
+		finish_replay()
+
+
+## Ends the replay (or skips the rest of it): the units stand where the season left them.
+func finish_replay() -> void:
+	if not playing:
+		return
+	playing = false
+	replay = {}
+	replay_ids = {}
+	_fade = {}
+	Game.replaying = false
+	unit_layer.queue_redraw()
+	Game.replay_done.emit()
+
+
+## Which day of the season the replay has got to (-1 when none is playing).
+func replay_day() -> float:
+	return clock * Data.SEASON_DAYS / replay_secs if playing else -1.0
+
+
+## Once a frame: runs the replay clock, or, with nothing playing, keeps parked parties bobbing and camp fires flickering.
+func _tick_replay(delta: float) -> void:
+	if playing:
+		clock += delta
+		if clock >= replay_length or Game.season != replay_season:
+			finish_replay()
+			return
+		_update_fades(delta)
+		unit_layer.queue_redraw()
+		return
+	if SeasonReplay.mode == "off":
+		return
+	_idle_accum += delta
+	if _idle_accum >= IDLE_REDRAW:
+		_idle_accum = 0.0
+		if not Units.tribes.is_empty() or Units.units.any(_is_parked):
+			unit_layer.queue_redraw()
+
+
+static func _is_parked(u: Dictionary) -> bool:
+	return u.job == "scout" and u.stage == "station"
+
+
+## Raider bands fade in and out as they cross the edge of what you can see; your own parties are always there.
+func _update_fades(delta := 0.0) -> void:
+	var day := replay_day()
+	for a in replay.actors:
+		if Game.view == Data.NONE or a.owner == Game.view:
+			continue
+		var target := 1.0 if _seen(Vector2i(SeasonReplay.position_at(a.trail, day).round())) else 0.0
+		_fade[a.id] = target if not _fade.has(a.id) else move_toward(_fade[a.id], target, delta * BAND_FADE)
+
+
+## Can the viewer see this tile: in sight now, or (for the player) in sight when the season began?
+func _seen(cell: Vector2i) -> bool:
+	if not Game.in_bounds(cell):
+		return false
+	var i := Game.idx(cell)
+	if Game.sight[Game.view][i] == 1:
+		return true
+	return Game.view == Data.PLAYER and i < replay.sight_before.size() and replay.sight_before[i] == 1
+
+
+## How visible an actor is now: faded by the edge of your sight, and fading away once it has left the map.
+func _actor_alpha(a: Dictionary, day: float) -> float:
+	var alpha: float = _fade.get(a.id, 1.0)
+	if a.gone_day >= 0.0 and day > a.gone_day:
+		alpha *= 1.0 - (day - a.gone_day) / SeasonReplay.FADE_DAYS
+	return alpha
+
+
+## The unit layer's drawing: camp fires, then (while a replay plays) the ground still to be uncovered, dust, and every
+## unit where its walk has put it, then the flashes; otherwise just the units where they stand.
+func draw_units(layer: CanvasItem) -> void:
+	if not Game.in_game:
+		return
+	var t0 := Time.get_ticks_usec()
+	var rects := Sprites.rects()
+	var art := not rects.is_empty()
+	_draw_fires(layer)
+	if playing:
+		var day := replay_day()
+		_draw_fog_lift(layer, day)
+		for a in replay.actors:
+			_draw_dust(layer, a, day)
+		_draw_standing(layer, rects, art, replay_ids)
+		for a in replay.actors:
+			_draw_actor(layer, a, day, rects, art)
+		_draw_pops(layer)
+	else:
+		_draw_standing(layer, rects, art, {})
+	stats.unit_draws += 1
+	stats.usec += Time.get_ticks_usec() - t0
+
+
+## Units that stand where they are (all of them when nothing replays; during a replay only the ones it doesn't know,
+## like a party you have just sent out). `skip` holds the ids to leave out.
+func _draw_standing(layer: CanvasItem, rects: Dictionary, art: bool, skip: Dictionary) -> void:
+	var idle := SeasonReplay.mode != "off"
+	var beat := int(Time.get_ticks_msec() / (IDLE_STEP * 1000.0))
+	for u in Units.units:
+		if skip.has(u.id):
+			continue
+		var shown := unit_shown(u)
+		if shown == Shown.HIDDEN:
+			continue
+		var hop := HOP if idle and _is_parked(u) and (beat + u.id) % 2 == 0 else 0.0
+		_draw_unit(layer, Units.glyph_kind(u), Vector2(u.pos) * CELL, hop, UNIT_DIM if shown == Shown.DIM else Color.WHITE, rects, art)
+	for a in Units.animals:   # wild animals: shown only where you can see them, like raider bands
+		if not skip.has(a.id) and unit_shown(a) == Shown.SHOWN:
+			_draw_unit(layer, a.kind, Vector2(a.pos) * CELL, 0.0, Color.WHITE, rects, art)
+	if Units.frog.get("state", "") == "loose" and not skip.has(Units.FROG_ID) and frog_shown():
+		_draw_unit(layer, "frog", Vector2(Units.frog.pos) * CELL, 0.0, Color.WHITE, rects, art)
+
+
+## How a unit that stands where it is shows to the viewer: not at all (on ground they have not explored, or a raider band
+## out of their sight), dimmed (their own party, out of their sight right now) or as it is. With no fog everything shows.
+func unit_shown(u: Dictionary) -> Shown:
+	if Game.view == Data.NONE:
+		return Shown.SHOWN
+	if not Game.knows_tile(Game.view, u.pos):
+		return Shown.HIDDEN
+	if Game.in_sight(Game.view, u.pos):
+		return Shown.SHOWN
+	return Shown.DIM if u.get("owner", Data.NONE) == Game.view else Shown.HIDDEN
+
+
+func _draw_actor(layer: CanvasItem, a: Dictionary, day: float, rects: Dictionary, art: bool) -> void:
+	var alpha := _actor_alpha(a, day)
+	if alpha <= 0.0:
+		return
+	var at: Vector2 = (SeasonReplay.position_at(a.trail, day) * CELL).round()
+	var hop := 0.0
+	if SeasonReplay.moving_at(a.trail, day):
+		hop = HOP if (int(clock * HOP_HZ) + absi(a.id)) % 2 == 0 else 0.0
+	elif a.parked:
+		hop = HOP if (int(Time.get_ticks_msec() / (IDLE_STEP * 1000.0)) + a.id) % 2 == 0 else 0.0
+	_draw_unit(layer, a.kind, at, hop, Color(1, 1, 1, alpha), rects, art)
+
+
+## Can the viewer see the Giant Frog (any of the four tiles it stands across), while it is loose?
+func frog_shown() -> bool:
+	if Game.view == Data.NONE:
+		return true
+	var p: Vector2i = Units.frog.pos
+	for c in [p, p + Vector2i(1, 0), p + Vector2i(0, 1), p + Vector2i(1, 1)]:
+		if Game.in_bounds(c) and Game.in_sight(Game.view, c):
+			return true
+	return false
+
+
+## An animal, from its own 16 x 16 picture (the frog across 2 x 2 tiles), or its letter in text mode. No dark patch: the pictures are drawn to stand on the ground.
+func _draw_animal(layer: CanvasItem, kind: String, at: Vector2, hop: float, tint: Color, art: bool) -> void:
+	var size := CELL * (2.0 if kind == "frog" else 1.0)
+	var up := Vector2(0, -hop)
+	if art and Sprites.animals_available():
+		layer.draw_texture_rect_region(Sprites.animals_texture(), Rect2(at + up, size), Sprites.animal_rect(kind), tint)
+		return
+	var spec: Dictionary = Data.FROG if kind == "frog" else Data.ANIMALS[kind]
+	var shift := Vector2(CELL.x * 0.5, CELL.y * 0.5) if kind == "frog" else Vector2.ZERO
+	layer.draw_string(font, at + up + shift + Vector2(0, CELL.y * 0.8), spec.glyph, HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, spec.color * tint)
+
+
+## One unit: the dark patch it stands on and its sprite (or glyph), `hop` pixels up.
+func _draw_unit(layer: CanvasItem, kind: String, at: Vector2, hop: float, tint: Color, rects: Dictionary, art: bool) -> void:
+	if kind == "frog" or Data.ANIMALS.has(kind):
+		_draw_animal(layer, kind, at, hop, tint, art)
+		return
+	layer.draw_rect(Rect2(at + Vector2(2, 2), CELL - Vector2(4, 4)), Color(PATCH.r, PATCH.g, PATCH.b, PATCH.a * tint.a))
+	var up := Vector2(0, -hop)
+	if kind == "soldier":
+		if art:
+			layer.draw_texture_rect(_soldier(), Rect2(at + up, CELL), false, tint)
+		else:
+			layer.draw_string(font, at + up + Vector2(0, CELL.y * 0.8), "♠", HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, SeasonReplay.SOLDIER_COLORS["1"] * tint)
+		return
+	if art:
+		layer.draw_texture_rect_region(Sprites.atlas_texture(), Rect2(at + up, CELL), rects[Sprites.UNITS[kind]], tint)
+	else:
+		var info: Dictionary = Units.kind_info(kind)
+		layer.draw_string(font, at + up + Vector2(0, CELL.y * 0.8), info.glyph, HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, info.color * tint)
+
+
+## The troop marker as a texture (see Sprites.soldier).
+func _soldier() -> ImageTexture:
+	return Sprites.soldier()
+
+
+## A few faint dots behind a unit that is walking, where it has just been.
+func _draw_dust(layer: CanvasItem, a: Dictionary, day: float) -> void:
+	if not DUST.has(a.mover) or not SeasonReplay.moving_at(a.trail, day):
+		return
+	var alpha := _actor_alpha(a, day)
+	if alpha <= 0.0:
+		return
+	for p in SeasonReplay.recent(a.trail, day, SeasonReplay.DUST_DAYS):
+		var cell: Vector2i = p[0]
+		var h := absi(hash(cell))
+		var at := (Vector2(cell) * CELL + CELL * 0.5 + Vector2(h % 9 - 4, (h / 9) % 9 - 4)).round()
+		at = (at / 2.0).floor() * 2.0   # on the art pixel grid
+		var c: Color = DUST[a.mover]
+		c.a = DUST_ALPHA * (1.0 - p[1] / SeasonReplay.DUST_DAYS) * alpha
+		layer.draw_rect(Rect2(at, Vector2(2, 2)), c)
+
+
+## The tiles your parties uncover after `day` of the replay: they stay dark until then.
+func pending_reveals(day: float) -> Array:
+	var out := []
+	if Game.view != Data.PLAYER:
+		return out
+	var reveals: Array = replay.get("reveals", [])
+	for i in range(reveals.size() - 1, -1, -1):
+		if reveals[i][1] <= day:
+			break   # sorted by day: the rest were uncovered already
+		out.append(reveals[i][0])
+	return out
+
+
+## Ground a party uncovered this season stays dark until it gets there.
+func _draw_fog_lift(layer: CanvasItem, day: float) -> void:
+	for c in pending_reveals(day):
+		layer.draw_rect(Rect2(Vector2(c) * CELL, CELL), FOG)
+
+
+## Each camp's cooking fire: a spark that flickers between embers (so the map moves even when nothing walks).
+func _draw_fires(layer: CanvasItem) -> void:
+	if SeasonReplay.mode == "off":
+		return
+	var step := int(Time.get_ticks_msec() / 140)
+	for t in Units.tribes:
+		if Game.view != Data.NONE and not Game.knows_tile(Game.view, t.pos):
+			continue
+		var n := posmod(step + t.id * 5, 4)
+		if n == 3:
+			continue   # a gap between flickers
+		var c: Color = EMBER[n]
+		if Game.view != Data.NONE and not Game.in_sight(Game.view, t.pos):
+			c = c.darkened(0.5)
+		layer.draw_rect(Rect2(Vector2(t.pos) * CELL + Vector2(10, 4 - n % 2 * 2), Vector2(2, 2)), c)
+
+
+## The flashes showing right now, as [event, how far through it (0 to 1)].
+func active_pops() -> Array:
+	var out := []
+	if not playing or Game.view == Data.AI:
+		return out
+	var per_day := replay_secs / Data.SEASON_DAYS
+	for e in replay.events:
+		var age: float = clock - e.day * per_day
+		if age >= 0.0 and age < SeasonReplay.POP_SECONDS:
+			out.append([e, age / SeasonReplay.POP_SECONDS])
+	return out
+
+
+## Flashes and puffs where things happened, once the walking is done: crossed swords, an exclamation mark at a ruin,
+## a gold glint for a party home with loot, a smoke puff where a vehicle gave out.
+func _draw_pops(layer: CanvasItem) -> void:
+	for p in active_pops():
+		var e: Dictionary = p[0]
+		var t: float = p[1]
+		var o := Vector2(e.cell) * CELL
+		var fade := 1.0 - t
+		match e.kind:
+			"clash":
+				layer.draw_line(o + Vector2(3, 3), o + Vector2(13, 13), Color(POP_COLOR, fade), 2.0)
+				layer.draw_line(o + Vector2(13, 3), o + Vector2(3, 13), Color(POP_COLOR, fade), 2.0)
+				layer.draw_arc(o + CELL * 0.5, 4.0 + 8.0 * t, 0.0, TAU, 16, Color("ff7a3a", fade), 2.0)
+			"ruin":
+				var y := -12.0 - 6.0 * t
+				layer.draw_rect(Rect2(o + Vector2(7, y), Vector2(2, 6)), Color(SELECT, fade))
+				layer.draw_rect(Rect2(o + Vector2(7, y + 8), Vector2(2, 2)), Color(SELECT, fade))
+			"home":
+				for dir in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+					layer.draw_rect(Rect2(o + CELL * 0.5 + dir * (3.0 + 9.0 * t) - Vector2(1, 1), Vector2(2, 2)), Color("ffe066", fade))
+			"smoke":
+				for i in 3:
+					layer.draw_circle(o + Vector2(5 + i * 3, 6.0 - 10.0 * t - i * 3), 2.0 + 3.0 * t + i * 0.6, Color(0.62, 0.6, 0.58, 0.7 * fade))
+
+
 ## Throw away anything cached and redraw the whole map.
 func redraw_all() -> void:
 	_mark_all_stale()
@@ -347,19 +709,14 @@ func _standing_now() -> Dictionary:
 	return _standing
 
 
-## Tribe camps and things on the move, by cell: [glyph, color, sprite]. Camps show on explored
-## tiles; moving units only where the viewer can see right now (your own are always shown).
+## Tribe camps by cell: [glyph, color, sprite]. Camps show on explored tiles. (Units are not here: they are drawn by the
+## unit layer, every frame, over the chunks.)
 func _overlay() -> Dictionary:
 	var out := {}
 	for t in Units.tribes:
 		if Game.view == Data.NONE or Game.knows_tile(Game.view, t.pos):
 			var cls: Dictionary = Data.TRIBE_CLASSES[t.class]
 			out[t.pos] = [cls.glyph, cls.color, Sprites.CAMPS[t.class]]
-	for u in Units.units:
-		if Game.view == Data.NONE or u.owner == Game.view or Game.in_sight(Game.view, u.pos):
-			var id := Units.glyph_kind(u)
-			var kind: Dictionary = Data.UNITS[id]
-			out[u.pos] = [kind.glyph, kind.color, Sprites.UNITS[id]]
 	return out
 
 
@@ -547,6 +904,9 @@ static func _add_line(lines: PackedVector2Array, colors: PackedColorArray, from:
 func _unhandled_input(event: InputEvent) -> void:
 	if not Game.in_game:
 		return
+	if playing and ((event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)
+			or (event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER])):
+		finish_replay()   # a click, Space or Enter skips what is playing
 	if event is InputEventMouseMotion:
 		var c := Vector2i((get_global_mouse_position() / CELL).floor())
 		if c != hover:

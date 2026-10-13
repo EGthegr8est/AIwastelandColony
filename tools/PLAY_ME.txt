@@ -20,10 +20,15 @@ THE BASICS
 - Pan the map: WASD / arrow keys, or right-drag. Zoom: mouse wheel.
 - F11 goes fullscreen, and F11 again goes back. The game fills whatever size the window is.
 - Left-click a tile to look at it, claim it or build on it.
-- END SEASON (top right) moves time on. The game autosaves every season.
+- END SEASON (top right) moves time on. The game autosaves every season. The map then plays the
+  season's walking back, so you watch your parties go; a click, Space or Enter skips it, and the
+  WALK button beside END SEASON sets it to Normal, Fast or Off.
 - Menu (top right) goes back to the title screen: Resume, Load, Quit.
 - Click a scouting party to pick it, then click somewhere to see how far its food goes.
   Esc lets go.
+- Deer and bears wander the wastes. Click one and send hunters (two dice rolls: track it, then
+  the kill shot). Bears attack parties that come too close. Something huge sleeps under the
+  biggest ruined city: scavenging near it is a gamble, and its hide makes Salt (build a Drug Factory).
 - The ART button switches the map between three pixel-art styles and old-school text.
 - The MUSIC slider is in the top bar (and on the menu screens). All the way down is off.
 

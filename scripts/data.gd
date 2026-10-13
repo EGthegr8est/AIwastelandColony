@@ -17,6 +17,9 @@ const TOWN_START := Vector2i(36, 18)
 const SEASONS := ["Spring", "Summer", "Autumn", "Winter"]
 
 const RESOURCES := ["wood", "stone", "metal", "fuel", "grain", "veg", "meat", "gold"]
+# Things a party can carry home and the colony keeps in its stores (Game.res) that are not resources: they have no line in the top bar,
+# no price at the market's usual table and no use in a building's cost. The frog's raw hide, and the Salt made from it.
+const ITEMS := ["hide", "salt"]
 
 # Fog of war: these colonies each keep their own memory of the map.
 const FOG_VIEWERS := [PLAYER, AI]
@@ -179,6 +182,8 @@ const BUILDINGS := {
 	"tower":    {"name": "Watchtower",    "glyph": "↑", "color": Color("d0b090"), "cost": {"wood": 10, "stone": 10}, "on": [], "req": "f3", "defense": 2, "sight": 7, "desc": "+2 defense. Sees 7 tiles."},
 	"keep":     {"name": "Garrison keep", "glyph": "◙", "color": Color("e0d0b0"), "cost": {"stone": 30, "metal": 10}, "on": [], "req": "f4", "defense": 5, "sight": 4, "desc": "+5 defense. Sees 4 tiles."},
 	"citadel":  {"name": "Citadel",       "glyph": "☼", "color": Color("ffffff"), "cost": {"stone": 60, "metal": 30, "gold": 20}, "on": [], "req": "f5", "defense": 15, "sight": 5, "desc": "+15 defense. While it stands your land can't be taken."},
+	"drug_factory": {"name": "Drug Factory", "glyph": "Ψ", "color": Color("b070e0"), "cost": {"wood": 10, "metal": 15, "stone": 10}, "on": [], "defense": 1,
+		"desc": "+1 defense. Each season turns 1 raw frog hide from your stores into 2 Salt. Click it to see how many hides and how much Salt you hold."},
 	"horse_farm": {"name": "Horse farm",  "glyph": "H", "color": Color("c08a50"), "cost": {"wood": 12, "grain": 10}, "on": ["sand", "scrub"], "desc": "Breeds horses."},
 	"motor_pool": {"name": "Motor pool",  "glyph": "&", "color": Color("c06030"), "cost": {"metal": 15, "wood": 10}, "on": [], "tier": 2, "desc": "Builds war rigs."},
 	"port":       {"name": "Port",        "glyph": "Ψ", "color": Color("70c0c0"), "cost": {"wood": 20, "metal": 10, "gold": 10}, "on": [], "shore": true, "tier": 3, "desc": "Builds boats and launches them onto the river. Must stand on the riverbank."},
@@ -350,7 +355,12 @@ const EXPEDITIONS := {
 	"boat":    {"name": "River trader",    "verb": "Send boat downriver", "crew": 2, "cost": {"grain": 3}},
 	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {}},   # the tank it fills is its cost
 	"scout":   {"name": "Scouting party",  "verb": "Send scouts", "crew": 2, "cost": {}},
+	# A hunting party is troops, not colonists: its crew leave your troops (not your people) and come back to them, and a death is a troop
+	# lost for good. They are trained: every one has the Veteran trait (see Units._make_crew). They only go hunting.
+	"hunters": {"name": "Hunting party", "verb": "Send hunting party", "crew": 3, "cost": {"grain": 3}},
 }
+# What a hunting party on foot or horseback is drawn as (it has no sprite in the atlas: the troop marker's own picture).
+const SOLDIER := {"name": "Hunting party", "glyph": "♠", "color": Color("c9e07a"), "sight": 3}
 
 # Scouting parties stay where you send them until you give new orders. They leave with a pack of
 # SCOUT_PACK food taken from your stores (FOOD_KINDS, in that order) and each survivor eats
@@ -399,6 +409,7 @@ const WEIGHT := {
 	"wood": 2.0, "stone": 3.0, "metal": 2.0, "fuel": 2.0,
 	"grain": 1.0, "veg": 1.0, "meat": 1.0, "gold": 0.5,
 }
+const ITEM_WEIGHT := {"hide": 6.0, "salt": 0.5}   # the same for Data.ITEMS: a raw frog hide is heavy
 const CARRY_PER_PERSON := 10.0
 const CARRY_BY_MOVER := {"foot": 0.0, "horse": 20.0, "car": 50.0, "boat": 80.0, "plane": 30.0}
 const OVERLOAD_SLOWDOWN := 1.0
@@ -481,3 +492,51 @@ const ENDING_WHY := {
 	"overrun": "The Rust Kings overran the colony.",
 	"starved": "The colony starved.",
 }
+
+
+# ---------------------------------------------------------------- wild animals and the Giant Frog
+# Deer and two kinds of bear wander the wastes. A party can hunt them (the rolls are HUNT in d20_data.gd), and a bear within
+# BEAR_REACH tiles of one of your parties at the end of a season attacks it. "start" is how many there are when a game
+# begins and "cap" how many the wastes hold; below the cap a new one wanders in each season with chance "respawn", at
+# least ANIMAL_ARRIVE_GAP tiles from your HQ. They start on "terrain", at least ANIMAL_MIN_GAP tiles from any camp or
+# colony, and stray at most ANIMAL_HOME_RANGE tiles from where they started, "wander" tiles a season.
+# The picture of each is a 16 x 16 square of art/animals.png, in the order of Sprites.ANIMALS (the frog is the fourth).
+const ANIMALS := {
+	"deer": {"name": "Deer", "glyph": "d", "color": Color("c08a4a"), "terrain": ["scrub", "dunes", "grove"],
+		"start": 8, "cap": 8, "wander": 2, "respawn": 0.15},
+	"black_bear": {"name": "Black bear", "glyph": "B", "color": Color("7a7a90"), "terrain": ["grove", "rock", "trees"],
+		"start": 3, "cap": 3, "wander": 1, "respawn": 0.06},
+	"brown_bear": {"name": "Brown bear", "glyph": "B", "color": Color("b07040"), "terrain": ["grove", "rock", "trees"],
+		"start": 2, "cap": 2, "wander": 1, "respawn": 0.06},
+}
+const ANIMAL_MIN_GAP := 12
+const ANIMAL_HOME_RANGE := 5
+const ANIMAL_ARRIVE_GAP := 20
+const ANIMAL_MOVE_CHANCE := 0.7   # per season, an animal moves at all
+const BEAR_REACH := 2.0
+const BEAR_RETREAT := 5           # tiles a bear that was beaten off, or a hunted animal that got away, runs
+
+# The one Giant Frog. It sleeps under the biggest field of ruins (the epicenter with the most ruin tiles around it) and
+# wakes when a natural 1 is rolled at a ruin within "wake_radius" tiles of that lair and a second d20 comes up "wake_roll" or
+# less. Awake, it walks "pace" tiles a day (SEASON_DAYS a season) toward your HQ or the Rust Kings' fort, whichever a coin
+# flip picked, and each season it stands there it makes one raid (the raiding dice, at "raid_strength"): a win costs the colony
+# up to "raid_buildings" buildings and "raid_troops" of its troops, a miss makes it rest a season. It heals fully every season.
+# The fight itself (its wounds, DCs and slams) is FROG in d20_data.gd. Its hide: "hides" raw frog hides drop when it dies.
+const FROG := {"name": "Giant Frog", "glyph": "F", "color": Color("8fd040"), "wake_radius": 10, "wake_roll": 3, "pace": 1.0,
+	"raid_strength": 14.0, "raid_buildings": 3, "raid_troops": 0.2, "hides": 3}
+
+
+# ---------------------------------------------------------------- Salt
+# The Giant Frog's raw hides (Data.ITEMS) are carried home and turned into Salt by Drug Factories: each season every factory takes
+# one hide from the stores and makes HIDE_TO_SALT Salt. A dose protects one survivor: for SALT_SEASONS seasons the radiation they take
+# in is multiplied by SALT_RESIST, and when a whole party is salted the penalty radiation puts on its rolls shrinks the same way. A party takes
+# a dose for each survivor when it leaves if "Take Salt" is switched on. Salt sells at the market for SALT_PRICE gold a dose and costs
+# twice that to buy (the market's usual rule); the Rust Kings have SALT_STOCK_DOSES of it for sale in SALT_STOCK_CHANCE of the seasons,
+# and a caravan to a trader camp brings a dose home instead of its usual goods with chance SALT_CARAVAN_CHANCE.
+const HIDE_TO_SALT := 2
+const SALT_SEASONS := 5
+const SALT_RESIST := 0.5
+const SALT_PRICE := 30
+const SALT_STOCK_CHANCE := 0.10
+const SALT_STOCK_DOSES := [1, 2]
+const SALT_CARAVAN_CHANCE := 0.05

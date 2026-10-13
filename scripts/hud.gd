@@ -8,8 +8,10 @@ const Icons = preload("res://scripts/icons.gd")
 const Geiger = preload("res://scripts/geiger.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
+const SeasonReplay = preload("res://scripts/season_replay.gd")
 const D20 = preload("res://scripts/d20.gd")
 const D20Visit = preload("res://scripts/d20_visit.gd")
+const D20Data = preload("res://scripts/d20_data.gd")
 const Leaders = preload("res://scripts/leaders.gd")
 const D20DiceScene = preload("res://d20_dice/D20Dice.tscn")
 const DICE_SCALE := 3          # the pixel-art die is 64 x 80: shown at 3x it is 192 x 240
@@ -55,7 +57,9 @@ var music_sliders: Array = []            # [slider, reading] for each volume sli
 var view_button: Button
 var rad_button: Button
 var art_button: Button
-var dice: Control                        # the one clickable d20 (see d20_dice/), moved into whichever panel shows it
+var walk_button: Button
+var end_button: Button
+var dice: Control                       # the one clickable d20 (see d20_dice/), moved into whichever panel shows it
 var dice_holder := Control.new()         # gives the scaled die its room in a panel
 var dice_phase := "idle"                 # "idle" (the ROLL face), "rolling" or "landed" (the number is up)
 var dice_uid := -1                       # the party the die is for
@@ -79,6 +83,7 @@ func _ready() -> void:
 	_build_menu()
 	_build_dice()
 	_build_ending()
+	SeasonReplay.load_mode()   # the speed of the season replay you last chose, if you chose one
 	Game.game_ended.connect(_on_game_ended)
 	Game.changed.connect(refresh, CONNECT_DEFERRED)
 	Music.volume_changed.connect(_sync_music_sliders)
@@ -116,12 +121,14 @@ func _build_top_bar() -> void:
 	row.add_child(top_text)
 	_music_row(row, false)   # a fixed size: the resource text beside it needs the room
 	view_button = _button(row, "Map: you", Game.cycle_view)
-	view_button.tooltip_text = "Switch whose knowledge the map shows"
-	rad_button = _button(row, "Radiation: off", Game.toggle_radiation_view)
-	rad_button.tooltip_text = "Tint the tiles your scouts have measured by how hot they are"
+	view_button.tooltip_text = "Switch whose knowledge the map shows: what you know, what the Rust Kings know, or everything (no fog, for debugging)"
+	rad_button = _button(row, "Rad: off", Game.toggle_radiation_view)
+	rad_button.tooltip_text = "Radiation view: tint the tiles your scouts have measured by how hot they are"
 	art_button = _button(row, "Art: style 1", _cycle_art)
 	art_button.tooltip_text = "Switch the map and legend between the three pixel-art styles and the old text glyphs"
-	_button(row, "END SEASON", Game.end_season)
+	walk_button = _button(row, "Walk: Normal", _cycle_walk)
+	walk_button.tooltip_text = "How fast the map plays back each season's walking: Normal, Fast or Off (no animation at all). A click, Space or Enter skips it."
+	end_button = _button(row, "END SEASON", end_season_pressed)
 	_button(row, "Save", show_save_menu)
 	_button(row, "Load", show_load_menu)
 	_button(row, "Menu", show_main_menu)
@@ -590,10 +597,11 @@ func _refresh_top() -> void:
 	for r in Data.RESOURCES:
 		t += "%s [color=#ffd88a]%d[/color]%s " % [r, Game.res[r], _resource_icon(r)]   # name, amount, picture; one space before the next
 	top_text.text = t
-	var views := {Data.PLAYER: "Map: what you know", Data.AI: "Map: what Rust Kings know", Data.NONE: "Map: no fog (debug)"}
+	var views := {Data.PLAYER: "Map: you", Data.AI: "Map: Rust Kings", Data.NONE: "Map: no fog"}   # short: the top bar is full
 	view_button.text = views[Game.view]
-	rad_button.text = "Radiation: " + ("on" if Game.show_radiation else "off")
+	rad_button.text = "Rad: " + ("on" if Game.show_radiation else "off")   # short: the top bar is full
 	art_button.text = "Art: " + Sprites.choice_name(Sprites.state())
+	walk_button.text = "Walk: " + SeasonReplay.mode_text()
 
 
 ## The parties of yours standing on the selected tile, each with a portrait per survivor.
@@ -644,7 +652,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 	card.add_child(_mover_badge(u))
 	if u.has("fuel"):
 		card.add_child(_gauge_box(u))
-	var kind: Dictionary = Data.UNITS[Units.glyph_kind(u)]
+	var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
 	var info := VBoxContainer.new()
 	info.custom_minimum_size = Vector2(210, 0)
 	card.add_child(info)
@@ -888,6 +896,22 @@ func _cycle_art() -> void:
 	Game.changed.emit()
 
 
+## Normal, Fast or Off for the season replay.
+func _cycle_walk() -> void:
+	SeasonReplay.cycle()
+	walk_button.text = "Walk: " + SeasonReplay.mode_text()
+	Game.skip_replay()
+
+
+## END SEASON. While the map is still playing the last season (or a march) back, the press only skips that: it does not
+## end another season behind your back.
+func end_season_pressed() -> void:
+	if Game.replaying:
+		Game.skip_replay()
+	else:
+		Game.end_season()
+
+
 func _refresh_tile() -> void:
 	var box: VBoxContainer = boxes["Tile"]
 	_detach_dice()   # the die lives on between rebuilds: take it out before the panel is cleared
@@ -907,8 +931,13 @@ func _refresh_tile() -> void:
 		_label(box, " ●    Click a scouting party to see its route from where it stands: white while its food lasts, yellow as it runs low, red once it's gone", Color("ffe03a"))
 		for kind in Data.UNITS:
 			_legend_row(box, Sprites.unit(kind), Data.UNITS[kind].glyph, Data.UNITS[kind].name, Data.UNITS[kind].color)
+		_legend_row(box, null, Data.SOLDIER.glyph, Data.SOLDIER.name + " (your troops: hunt with them)", Data.SOLDIER.color)
 		for cls in Data.TRIBE_CLASSES:
 			_legend_row(box, Sprites.camp(cls), Data.TRIBE_CLASSES[cls].glyph, "%s camp" % Data.TRIBE_CLASSES[cls].name, Data.TRIBE_CLASSES[cls].color)
+		for kind in Data.ANIMALS:
+			var spec: Dictionary = Data.ANIMALS[kind]
+			_legend_row(box, Sprites.animal(kind), spec.glyph, spec.name + (" (hunt it for meat)" if kind == "deer" else " (dangerous: hunt it to make the land safe)"), spec.color, Sprites.ANIMAL_SIZE)
+		_legend_row(box, Sprites.animal("frog"), Data.FROG.glyph, Data.FROG.name + " (a boss: only one, and it sleeps)", Data.FROG.color, Sprites.ANIMAL_SIZE)
 		for kind in Data.POIS:
 			var building: Dictionary = Data.BUILDINGS["poi_" + kind]
 			_legend_row(box, Sprites.poi_sprite(kind), building.glyph, building.name, building.color, Sprites.POI_SIZE)
@@ -951,11 +980,13 @@ func _refresh_tile() -> void:
 		_label(box, "%s %s: %s" % [b.glyph, b.name, b.desc], b.color)
 		if known[0] == Data.PLAYER and known[1] == "refinery":
 			_refinery_controls(box, c)
+		if known[0] == Data.PLAYER and known[1] == "drug_factory":
+			_drug_factory_block(box)
 		if known[0] == Data.PLAYER and known[1] != "hq" and not b.has("poi"):
 			_button(box, "Demolish", func(): Game.demolish(c))
 	for u in Units.units_at(c):
 		if u.owner == Data.PLAYER or seen:
-			var kind: Dictionary = Data.UNITS[Units.glyph_kind(u)]
+			var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
 			if u.job == "band":
 				_label(box, "%s Raider band here (strength %d)!" % [kind.glyph, u.strength], kind.color)
 			else:
@@ -965,6 +996,11 @@ func _refresh_tile() -> void:
 	var tribe := Units.tribe_at(c)
 	if not tribe.is_empty():
 		_tribe_info(box, tribe)
+	var animal := Units.animal_at(c)
+	if not animal.is_empty() and seen:
+		_animal_block(box, animal)
+	if Units.frog_at(c) and seen:
+		_frog_block(box)
 	if known[1] != "" and Data.BUILDINGS[known[1]].has("poi"):
 		_poi_block(box, c)
 	var party_here: bool = Units.units.any(func(p): return p.job == "scav" and p.target == c and p.stage == "site")
@@ -1098,6 +1134,8 @@ func _hint_box() -> StyleBoxFlat:
 
 
 func _on_game_ended(kind: String) -> void:
+	if Game.replaying:   # the season that ended the game finishes walking (or is skipped) first
+		await Game.replay_done
 	var screen: Dictionary = Data.ENDING_SCREENS[kind]
 	Music.play_ending(screen.win)
 	var art := Sprites.picture(screen.art)
@@ -1218,7 +1256,7 @@ func _visit_panel(box: VBoxContainer, u: Dictionary) -> void:
 		dice_phase = "idle"   # the die was busy for another party: its result is already in the game
 		dice_lines = []
 	dice_uid = uid
-	_header(box, "Attack" if view.ruin in ["building", "camp"] else "Scavenge")
+	_header(box, "Hunt" if view.ruin in ["hunt", "frog"] else ("Attack" if view.ruin in ["building", "camp"] else "Scavenge"))
 	var wants_roll: bool = view.buttons.any(func(b): return b.id == "roll")
 	if dice_phase == "landed" or dice_phase == "rolling":
 		box.add_child(dice_holder)
@@ -1321,6 +1359,10 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 		var camp_id: int = camp.id
 		_button(box, "Attack the %s at %d,%d (DC %d, strength %d)" % [camp.name, camp.pos.x, camp.pos.y, D20Visit.enemy_dc(int(camp.strength)), camp.strength],
 			func(): Units.begin_camp_strike(uid, camp_id))
+	for animal in Units.hunt_targets(u):
+		var animal_id: int = animal.id
+		_button(box, "Hunt the %s at %d,%d (track DC %d, kill DC %d)" % [Units.animal_name(animal), animal.pos.x, animal.pos.y,
+			D20Data.HUNT[animal.kind].track_dc, Units.kill_dc(animal.kind)], func(): Units.begin_hunt(uid, animal_id))
 	if u.stage != "back" and u.stage != "site":
 		_button(box, "Recall %s to camp" % Units.names_text(u), func(): Units.recall_scouts(uid))
 
@@ -1332,6 +1374,7 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 	_header(box, "Scouting")
 	_label(box, "Scouts stay and keep watch until you move them or recall them. They set out with %d food and each eats %d a season, so a party can only stay out so long." % [
 		Data.SCOUT_PACK, Data.SCOUT_RATION], DIM)
+	_salt_toggle(box)
 	for u in Units.units:
 		if u.owner == Data.PLAYER and u.job == "scout" and not (u.pos == c and u.stage == "station"):
 			var uid: int = u.id
@@ -1377,8 +1420,9 @@ func _recon_button(box: VBoxContainer, c: Vector2i) -> void:
 
 
 ## One button per way of travel you own, with how long the trip out takes.
-func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest := -1) -> void:
+func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest := -1, verb := "") -> void:
 	var e: Dictionary = Data.EXPEDITIONS[job]
+	_salt_toggle(box)
 	for mover in Data.TRAVEL_PREVIEW:
 		if mover in Data.VEHICLES and Game.vehicles[mover] == 0:
 			continue
@@ -1386,8 +1430,56 @@ func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest
 		var trip := ""
 		if why == "":
 			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), target)))
-		_button(box, "%s %s (%d crew, %s%s)" % [e.verb, Data.MOVERS[mover].by, e.crew, Game.cost_text(e.cost), trip],
+		var cost_text := Game.cost_text(e.cost)
+		if Units.salt_doses(job) > 0:
+			cost_text = ("%d Salt" if cost_text == "free" else cost_text + ", %d Salt") % Units.salt_doses(job)
+		_button(box, "%s %s (%d crew, %s%s)" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by, e.crew, cost_text, trip],
 			func(): Units.send(job, mover, target, dest), why)
+
+
+## The Drug Factory you clicked: how many raw frog hides and how much Salt the colony holds (they have no line in the top bar).
+func _drug_factory_block(box: VBoxContainer) -> void:
+	_header(box, "Drug Factory")
+	_label(box, "Frog hides in the stores: %d" % int(Game.items.get("hide", 0)), BRIGHT)
+	_label(box, "Salt in the stores: %d" % int(Game.items.get("salt", 0)), BRIGHT)
+	_label(box, "Each season every Drug Factory turns 1 frog hide into %d Salt. You have %d." % [Data.HIDE_TO_SALT, Game.count_building(Data.PLAYER, "drug_factory")], DIM)
+
+
+## "Take Salt" beside the send buttons, once there is Salt to take.
+func _salt_toggle(box: VBoxContainer) -> void:
+	if int(Game.items.get("salt", 0)) <= 0:
+		return
+	var b := _button(box, "Take Salt: %s (%d in the stores)" % ["on" if Game.salt_on else "off", int(Game.items["salt"])], func():
+		Game.salt_on = not Game.salt_on
+		Game.changed.emit())
+	b.tooltip_text = "A party takes one dose of Salt for each survivor when it leaves: for %d seasons they take in half the radiation." % Data.SALT_SEASONS
+
+
+## The awake Giant Frog on the selected tile: what it is doing, and the way to hunt it.
+func _frog_block(box: VBoxContainer) -> void:
+	var rule: Dictionary = D20Data.FROG_FIGHT
+	_header(box, Data.FROG.name)
+	_label(box, "%s The Giant Frog, awake. It is heading for %s and raids it once a season. It heals fully every season." % [
+		Data.FROG.glyph, "your colony" if Units.frog.target == "player" else "the Rust Kings' fort"], RED)
+	_label(box, "Track it (DC %d) with each party, then attack with everyone who found it: %d wounds to take, and it slams %d times a round. Six survivors can just do it; nine nearly always." % [
+		int(rule.track_dc), int(rule.wounds), int(rule.slams)], DIM)
+	_expedition_buttons(box, "scav", Units.frog.pos, Units.FROG_ID, "Hunt with scavengers")
+	_expedition_buttons(box, "hunters", Units.frog.pos, Units.FROG_ID, "Send hunting party")
+
+
+## A wild animal on the selected tile: what it is, and the way to hunt it.
+func _animal_block(box: VBoxContainer, a: Dictionary) -> void:
+	var spec: Dictionary = Data.ANIMALS[a.kind]
+	var hunt: Dictionary = D20Data.HUNT[a.kind]
+	_header(box, spec.name)
+	if int(hunt.strength) > 0:
+		_label(box, "%s %s (strength %d). It attacks a party that comes within %d tiles at the end of a season. Hunting it makes the land safer." % [
+			spec.glyph, spec.name, int(hunt.strength), int(Data.BEAR_REACH)], RED)
+	else:
+		_label(box, "%s A deer. Hunt it for meat." % spec.glyph, spec.color)
+	_label(box, "Two rolls: track it (DC %d), then the kill shot (DC %d)." % [int(hunt.track_dc), Units.kill_dc(a.kind)], DIM)
+	_expedition_buttons(box, "scav", a.pos, a.id, "Hunt with scavengers")
+	_expedition_buttons(box, "hunters", a.pos, a.id, "Send hunting party")
 
 
 func _tribe_info(box: VBoxContainer, t: Dictionary) -> void:
@@ -1514,7 +1606,7 @@ func _refresh_colony() -> void:
 	if mine.is_empty():
 		_label(box, "None out. Click pre-war ruins to send scavengers, or any tile to send scouts.", DIM)
 	for u in mine:
-		var kind: Dictionary = Data.UNITS[Units.glyph_kind(u)]
+		var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
 		var pos: Vector2i = u.pos
 		_button(box, "%s %s %s, %s at %d,%d (%d crew)" % [kind.glyph, Data.EXPEDITIONS[u.job].name, Data.MOVERS[u.mover].by,
 			Units.stage_text(u), pos.x, pos.y, u.crew],
@@ -1584,6 +1676,15 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void
 			name_label.custom_minimum_size.x = 60
 			_button(row, "Sell %d +%dg" % [amount, pays], func(): Game.sell(r), "" if Game.res[r] >= amount else "Not enough")
 			_button(row, "Buy %d -%dg" % [amount, costs], func(): Game.buy(r), "" if Game.res["gold"] >= costs else "Not enough gold")
+		if int(Game.items.get("salt", 0)) > 0 or Game.salt_for_sale() > 0:   # Salt: rare, and worth a lot
+			var salt_row := HBoxContainer.new()
+			box.add_child(salt_row)
+			var salt_label := _label(salt_row, "Salt")
+			salt_label.custom_minimum_size.x = 60
+			_button(salt_row, "Sell 1 +%dg" % Game.salt_sell_gold(), Game.sell_salt, "" if int(Game.items.get("salt", 0)) >= 1 else "None to sell")
+			var stock := Game.salt_for_sale()
+			var buy_price := Game.salt_buy_price()
+			_button(salt_row, "Buy 1 -%dg (%d for sale)" % [buy_price, stock], Game.buy_salt, "" if stock > 0 and Game.res["gold"] >= buy_price else ("None for sale" if stock <= 0 else "Not enough gold"))
 
 
 func _diplomacy_town(box: VBoxContainer, raid_why: String) -> void:

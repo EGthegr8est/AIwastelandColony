@@ -66,8 +66,36 @@ warning, where saves live). The zip lands in `..\WastelandColony3-release\`: sen
 ## Controls
 - **WASD / arrows**: pan. **Mouse wheel**: zoom. **Right-drag**: pan. **F11**: fullscreen, and back to the window (or maximized) it came from.
 - **Left-click** a tile to inspect, claim or build on it. Click one of your scouting parties to pick it. **Esc** deselects it.
-- **END SEASON** runs gather, upkeep and the AI turn, then autosaves.
+- **END SEASON** runs gather, upkeep and the AI turn, then autosaves, and the map plays the season's walking back (see "The living map").
+  While that is playing, the button only skips it.
+- **Walk: Normal / Fast / Off** (top bar) is the speed of that replay. A click on the map, Space or Enter skips it too.
 - **Map: ...** button (top bar) switches whose knowledge the map shows: yours, the Rust Kings', or no fog (debug).
+
+## The living map
+END SEASON still decides everything at once, but the map then plays the season back so you can watch it (`scripts/season_replay.gd`).
+While `Units.season_turn()` walks every unit its season, `Units._advance` notes each tile it reaches and the day it got there (a season
+is 40 days), plus what happened (`Units.replay`, handed to the map by `Game.season_played`). Nothing the game decides depends on it.
+- **The walk.** Every party, caravan, boat, plane and raider band glides along the route it walked, at its real speed (a war rig
+  crosses four times the ground of a party on foot), all in about 3 seconds for the whole 40 days (Normal; Fast is 1.2 s). A party
+  that only walked half a season takes half as long, and a season in which nobody walks plays nothing. A party that gets home or is
+  wiped out fades off the map where it happened; a band that spawned this season appears at its camp and sets off.
+- **Fog lifts as they walk.** Ground a party uncovers stays dark until it gets there (`Game.reveal` says which tiles were new).
+- **Bands in the fog stay hidden.** A raider band is drawn while its tile was in your sight when the season began or is now, and fades
+  in and out at the edge of what you see. Your own parties are always drawn.
+- **A little life.** A hop on every step and a few dust dots behind a walking unit, a parked scouting party bobbing one pixel, a flicker
+  at each camp fire. Flashes where things happen once the walking is done: crossed swords where a band catches a party or hits your
+  outskirts, an exclamation mark where a party reaches its ruin, a gold glint when one gets home with loot, smoke where a vehicle is
+  abandoned or a plane crashes.
+- **Troops march.** Troops are only a number, but when you raid the Rust Kings' fort, attack a camp or take Dustwell, up to six troop
+  markers walk from your HQ to the target (two tiles a day, so a far fort is a long march: at most 24 days of the clock), the fight
+  flashes there and they come home (`Game.troops_marched`, `SeasonReplay.march`). The
+  fight is decided at the button press as before; the march is only the picture.
+- **Skipping.** The replay and the march are skipped by a click on the map, Space, Enter, or pressing END SEASON (that press does not
+  end another season). If a season ends the game, the ending screen waits for the replay to finish or be skipped.
+- **Walk: Off** (top bar, remembered in `settings.cfg`) turns all of this off, camp fires and bobbing included.
+- **Units have a layer of their own.** `MapView.UnitLayer` draws the units and camp fires every frame over the cached map chunks, so a
+  moving unit redraws no tiles. `tests/unit/test_season_replay.gd`, `tests/render/test_unit_layer.gd` and
+  `tests/render/test_season_replay_map.gd` pin all of it; the test run sets the speed to Off.
 
 ## Fog of war
 Every colony keeps its own memory of the map (`Game.memory`). Black tiles have never been seen.
@@ -364,6 +392,59 @@ camp, fort and Dustwell buttons show the DC and the chance before you commit. Ev
   the load, and the party can try again or "Back off".
 `tests/unit/test_raid_dice.gd`, `test_field_fight.gd`, `test_camp_strike.gd`, `test_nat20.gd` and `tests/render/test_raid_panel.gd` pin all of it.
 
+## Wild animals and hunting
+Deer, black bears and brown bears roam the wastes (`Data.ANIMALS`, drawn from `art/animals.png`, one 16 x 16 picture to a tile). A game starts with 8 deer, 3
+black bears and 2 brown bears on open ground at least 12 tiles from any camp or colony (deer on scrub, dunes and groves; bears on groves, rock and petrified
+wood). Each season an animal may drift a tile or two, never more than 5 from where it started and never onto land that is anybody's. They are shown only where
+you can see them, like raider bands, and they walk in the season replay. A killed animal is replaced in time: below the cap there is a chance each season (15% a
+deer, 6% a bear) that one wanders in from 20 or more tiles from your HQ and out of your sight.
+- **Hunting** is two rolls, one die press each, in the panel headed "Hunt" (`D20Visit.begin_hunt`, stages "track" and "kill"). Click an animal's tile and press
+  "Hunt with scavengers on foot / on horseback / by war rig" to send a scavenger party (3 crew, 3 grain) or a hunting party; a scouting party (not in a plane or boat) standing on or beside it gets
+  a "Hunt the ..." button. The party arrives, and the animal may have strayed up to 3 tiles (the track roll is the search for it; farther and the trail is
+  cold). The **track roll** (the scavenging traits) is DC 8 for a deer, 11 for a black bear and 13 for a brown bear: a CRITICAL_SUCCESS creeps up unseen (+3 on the
+  kill shot), a FAILURE loses the trail (the animal wanders off), a CRITICAL_FAILURE spooks it (a deer bolts, a bear charges: the kill shot is forced at -4). The
+  **kill shot** (the combat traits) is DC 10 for a deer, and for a bear the DC of a raider of its strength (3 or 5, so 12 and 16, `D20Visit.enemy_dc`) with the
+  outnumbered penalty against a party weaker than the bear (a war rig adds 3 to the party's strength). A hit pays meat: a medium package for a deer, a large one
+  for a bear, a small package of gold more for a brown bear's hide, one size more on a critical (`HUNT` and `HUNT_PACKAGE` in `d20_data.gd`, times the loot scale). A
+  miss against a deer costs nothing; against a bear it mauls the party like any fight (an injury, a quarter of the load, a fatal fumble at DC 14 and up) and the
+  bear lives and runs off.
+- **The hunting party** is the other way to hunt: three of your troops (not colonists) sent out as a party (3 grain), every one a Veteran (`Units._make_crew(n, true)`):
+  +2 on the kill shot, no outnumbered penalty, and a natural 1 is not a fatal one. "Send hunting party" is beside the scavengers' "Hunt with scavengers" on an
+  animal's tile and on the Giant Frog's. The troops leave `Game.troops` while they are out (so they are not there to defend or raid) and come back to it, minus
+  anyone who died. It only hunts, and it counts toward the six survivors it takes to kill the frog. Tests: `tests/unit/test_hunting_party.gd`.
+- **Bears attack parties that come too close.** At the end of a season a bear within `BEAR_REACH` (2) tiles of one of your parties (not a plane or boat, standing
+  parties included) attacks it as a field fight on the raider-band rules (`Units._bear_attacks`): a win drives the bear 5 tiles away, a miss costs an injury and
+  a quarter of the load, and a natural 1 kills someone. A party that is hunting that bear is not also attacked by it. Hunting bears makes the land safe until
+  another wanders in.
+- Tests: `tests/unit/test_hunting.gd`, `tests/render/test_animals_map.gd`.
+
+## The Giant Frog
+One frog, asleep under the biggest field of ruins (the epicenter with the most ruin tiles around it, `Units.frog.lair`), not drawn and not huntable while it sleeps
+(`Data.FROG`, `FROG_FIGHT` in `d20_data.gd`).
+- **Waking.** A natural 1 on any roll of a scavenging visit within 10 tiles of the lair rolls another d20, and 3 or less wakes it (`Units._frog_wakes`). It tears
+  out where the party stands and the fight is on: the party may try to run once (DC 11; a miss lets the frog slam them) or stand and fight. A coin flip picks its
+  target: your HQ or the Rust Kings' fort.
+- **Loose.** Awake, it walks about a tile a day toward its target, is drawn across 2 x 2 tiles whenever you can see it, and each season it stands at a colony it
+  raids once on the raiding dice at strength 14 (`Units._frog_raid`): a win costs the colony up to 3 buildings and a fifth of its troops (the Rust Kings a fifth of
+  theirs and some walls), a miss makes it rest a season. It heals fully each season.
+- **Killing it.** Send parties to its tile (the same "Hunt" buttons). Each rolls the track roll (DC 14); a party that finds it waits, and when you press Attack
+  every party waiting there fights together, one die press a round: every standing survivor rolls a combat check against DC 13 (a hit is a wound, a natural 20 or
+  6 over two), the frog has 12 wounds, and then it slams 3 times; each slam picks a standing survivor who rolls to dodge (DC 11): a miss fells them (a severe injury,
+  out of the fight) and a natural 1 kills them. "Pull back" between rounds. With random traits, over 600 fights each: 3 survivors win 2% of the time, 5 win 16%,
+  6 win 38%, 7 win 58%, 9 win 93% and 12 always. It drops 3 raw frog hides, shared round-robin between the parties, which have to carry them home.
+- Tests: `tests/unit/test_frog.gd`, `tests/render/test_animals_map.gd`.
+
+## Frog hide, the Drug Factory and Salt
+Raw frog hides and Salt are not resources: they live in `Game.items` (`Data.ITEMS`) with no line in the top bar, and parties carry them home like loot.
+- **Drug Factory** (10 wood, 15 metal, 10 stone, any land of yours): +1 defense, and each season each factory turns 1 hide from the stores into 2 Salt
+  (`Game._drug_factories`). Click it to see how many hides and how much Salt the colony holds.
+- **Salt**: a dose protects one survivor for 5 seasons by halving the radiation they take in (`Units._expose`), and a whole salted party halves the radiation that
+  penalises its rolls (`Units.visit_ctx`). Switch "Take Salt" on (it appears beside the send buttons once you hold some; off by default) and a party takes a dose
+  for each survivor when it leaves, if there are enough. Salted survivors say so in the party panel.
+- **Trade**: a dose sells for 30 gold at the Rust Kings' market and costs 60; the market has 1 or 2 for sale in about one season in ten, and a caravan to a trader
+  camp brings a dose home instead of its usual goods about one trip in twenty.
+- Tests: `tests/unit/test_salt.gd`, `tests/render/test_drug_factory_panel.gd`.
+
 ## How the game ends
 There are three endings (`Data.ENDINGS` holds the numbers), each shown once: the ending picture (click, or press Enter, to continue), then a
 stats screen, then a click on **Return to main menu**. The win or defeat music loops the whole way (`wasteland_OST_lastcall_Victory.wav` for
@@ -385,7 +466,9 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/d20_data.gd`, `d20.gd`, `d20_visit.gd`, `dice.gd` | The d20 roll system: its numbers, its rules, one ruin visit, and the dice. |
 | `d20_dice/` | The pixel-art d20 and its roll animations, used by the right panel. |
 | `scripts/game.gd` | Autoload `Game`. The whole simulation, plus save/load (JSON in `user://saves/`). |
-| `scripts/map_view.gd` | Draws the map: pixel-art sprites, or colored text glyphs. |
+| `scripts/map_view.gd` | Draws the map: pixel-art sprites, or colored text glyphs. Units and camp fires are drawn by its own layer, and it plays the season replay. |
+| `art/animals.png` | The deer, black bear, brown bear and Giant Frog, four 16 x 16 pictures in a row (made from the SVGs in `Usable Art/ANIMALS`). |
+| `scripts/season_replay.gd` | The season replay: where a unit is on a given day, the replay's length, the troop march, and the Walk speed setting. |
 | `scripts/hud.gd` | All the UI, built in code. |
 | `scripts/portrait.gd` | Draws the pixel-art survivor portraits. |
 | `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |

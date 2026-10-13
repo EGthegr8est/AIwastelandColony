@@ -34,6 +34,9 @@ const CHECK_MODS := {
 	"trap": ["scavenge", "trap"],
 	"cache": ["scavenge"],
 	"site": ["scavenge"],
+	"track": ["scavenge"],
+	"run": ["scavenge", "ambush"],
+	"dodge": ["scavenge", "ambush"],
 }
 
 # What a scout runs into: a plain d20, no modifiers, so traits never change what exists at a site. A high roll is a good
@@ -192,7 +195,7 @@ const SITES := {
 const BUILDING_DC := {
 	"farm": 8, "lodge": 8, "horse_farm": 8, "salvage": 8, "market": 8,
 	"mine": 10, "refinery": 10, "motor_pool": 10, "port": 10, "airfield": 10,
-	"outpost": 11, "wall": 12, "tower": 12, "keep": 15, "ai_wall": 12,
+	"outpost": 11, "wall": 12, "tower": 12, "keep": 15, "ai_wall": 12, "drug_factory": 10,
 }
 const STONE_WALL_DC := 2
 const RAID_BONUS := [[2.0, 4], [1.5, 2], [1.0, 0]]
@@ -278,3 +281,30 @@ const TRAITS := {
 	"magpie": {"name": "Magpie", "mods": {"combat": -1, "scavenge": 1, "ambush": 0, "trap": 0},
 		"loot_mult": {"gold": 1.5}},
 }
+
+
+# ---------------------------------------------------------------- hunting
+# A hunt is two rolls, one die press each. The track roll (a "track" check, the party's scavenging traits) against the animal's
+# "track_dc" finds it; the kill shot (a "combat" check) against its kill DC brings it down. A bear's kill DC is the one a raider
+# of its "strength" has (ENEMY_DC), so a bear that catches a party on the road and one the party hunts are the same animal; a
+# deer (strength 0) has its own "kill_dc". "pays" is the size of the meat package (HUNT_PACKAGE, times the loot scale like any
+# loot), "extra" a second package of gold for a hide. A CRITICAL_SUCCESS on the kill shot pays one size more.
+const HUNT := {
+	"deer": {"track_dc": 8, "strength": 0, "kill_dc": 10, "pays": "medium", "extra": ""},
+	"black_bear": {"track_dc": 11, "strength": 3, "kill_dc": 0, "pays": "large", "extra": ""},
+	"brown_bear": {"track_dc": 13, "strength": 5, "kill_dc": 0, "pays": "large", "extra": "small"},
+	"frog": {"track_dc": 14, "strength": 0, "kill_dc": 0, "pays": "", "extra": ""},   # tracked like the rest, then fought in rounds: see FROG_FIGHT
+}
+const HUNT_PACKAGE := {"small": "1d6", "medium": "2d6", "large": "4d6"}
+# Tracking: a CRITICAL_SUCCESS creeps up unseen (the kill shot gets this much), a CRITICAL_FAILURE spooks it: a deer bolts and a
+# bear charges (the kill shot is forced, at this penalty). A FAILURE loses the trail.
+const HUNT_UNSEEN := 3
+const HUNT_CHARGED := -4
+
+# The Giant Frog fight (see FROG in data.gd for where it sleeps and what it does). Track it at "track_dc", then fight in rounds,
+# one die press each: every standing survivor rolls a combat check against "hit_dc" (a hit is one wound, a natural 20 or 6 over
+# two, a natural 1 a miss), then the frog slams "slams" times. A slam picks a standing survivor, who rolls to dodge at "dodge_dc":
+# a miss fells them (severe injury, out of the fight) and a natural 1 kills them. "strength" is what a party's strength is
+# measured against for the outnumbered penalty: 0, because no party of three is "as strong" as the frog and the fight is tuned without it. A party that wakes it by a natural 1 may try to run once at "run_dc"; a miss costs
+# a round of slams. The frog's wounds heal fully each season.
+const FROG_FIGHT := {"track_dc": 14, "wounds": 12, "hit_dc": 13, "slams": 3, "dodge_dc": 11, "run_dc": 11, "strength": 0}
