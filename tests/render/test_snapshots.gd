@@ -52,7 +52,7 @@ func test_snapshot_home_in_text_glyphs() -> void:
 
 
 func test_snapshot_home_in_each_pixel_art_style() -> void:
-	for style in [2, 3]:
+	for style in [2, 3, 4]:
 		Sprites.choose(style)
 		Game.changed.emit()   # the map only redraws when told the game changed
 		await fx.view_cell(Game.home(Data.PLAYER), 1.0)
@@ -63,6 +63,35 @@ func test_snapshot_whole_map_without_fog() -> void:
 	Game.view = Data.NONE
 	await fx.view_cell(Vector2i(Game.w / 2, Game.h / 2), 0.34)
 	await _snap("whole_map")
+
+
+## The clean look (art style 4): the whole map with no fog, where telling the grounds apart matters most.
+func test_snapshot_clean_look_whole_map() -> void:
+	Sprites.choose(Sprites.CLEAN)
+	Game.view = Data.NONE
+	Game.changed.emit()
+	await fx.view_cell(Vector2i(Game.w / 2, Game.h / 2), 0.7)
+	await _snap("clean_whole_map")
+
+
+## The clean look close up, with a row of buildings on real ground: the pictures, the dark rims and the slope ledges.
+func test_snapshot_clean_look_buildings_and_rims() -> void:
+	Sprites.choose(Sprites.CLEAN)
+	Game.view = Data.NONE
+	var hq := Game.home(Data.PLAYER)
+	var ids := ["hq", "ai_hq", "town", "ai_wall", "farm", "lodge", "mine", "salvage", "refinery", "outpost", "market", "wall",
+		"tower", "keep", "citadel", "drug_factory", "horse_farm", "motor_pool", "port", "airfield"]
+	var cells := []
+	for n in ids.size():
+		var cell := hq + Vector2i(-5 + n % 10, 3 + (n / 10) * 2)
+		cells.append([cell, Game.tile(cell)["b"]])
+		Game.tiles[cell.y * Game.w + cell.x]["b"] = ids[n]
+	Game.changed.emit()
+	await fx.view_cell(hq + Vector2i(0, 3), 3.0)
+	await _snap("clean_buildings")
+	for entry in cells:
+		Game.tiles[entry[0].y * Game.w + entry[0].x]["b"] = entry[1]
+	Game.changed.emit()
 
 
 func test_snapshot_contours_close_up() -> void:

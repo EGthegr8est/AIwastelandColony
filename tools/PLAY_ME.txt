@@ -29,7 +29,10 @@ THE BASICS
 - Deer and bears wander the wastes. Click one and send hunters (two dice rolls: track it, then
   the kill shot). Bears attack parties that come too close. Something huge sleeps under the
   biggest ruined city: scavenging near it is a gamble, and its hide makes Salt (build a Drug Factory).
-- The ART button switches the map between three pixel-art styles and old-school text.
+- The ART button switches the map between four pixel-art styles (4, the clean look, is the default) and old-school text.
+- Hover the mouse over a tile to see what it is.
+- Every season the map fades between day and night (Spring and Autumn are day). Craters, camps you can see and ruins
+  held by raiders keep glowing in the dark. The Legend tab has a Night On/Off switch.
 - The MUSIC slider is in the top bar (and on the menu screens). All the way down is off.
 
 YOUR SAVES

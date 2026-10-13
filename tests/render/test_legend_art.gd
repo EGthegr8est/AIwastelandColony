@@ -1,10 +1,11 @@
 extends "res://tests/framework/test_case.gd"
 ## The legend in the side panel shows the pixel-art sprites in place of the text glyphs, with
-## buttons to flip between the three styles. Driven through the real game scene and its HUD.
+## buttons to flip between the four styles. Driven through the real game scene and its HUD.
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const Leaders = preload("res://scripts/leaders.gd")
+const Daylight = preload("res://scripts/daylight.gd")
 
 var main: Node2D
 var hud: CanvasLayer
@@ -27,6 +28,8 @@ func before_each() -> void:
 
 func after_each() -> void:
 	Sprites.style = 1
+	Daylight.enabled = false   # the test setup keeps it day
+	DirAccess.remove_absolute(Music.settings_path)
 
 
 ## The pictures in the legend (8 x 8 sprites, not the portraits and icons elsewhere).
@@ -81,6 +84,11 @@ func test_the_style_buttons_flip_the_whole_legend() -> void:
 	_press("3")
 	await wait_frames(2)
 	assert_eq(Sprites.style, 3)
+	_press("4")
+	await wait_frames(2)
+	assert_eq(Sprites.style, 4)
+	tile_box = hud.boxes["Tile"]
+	assert_eq(_sprites().size(), 23, "the clean look has a picture for everything too")
 	_press("1")
 	await wait_frames(2)
 	assert_eq(Sprites.style, 1)
@@ -111,11 +119,11 @@ func test_the_ascii_button_brings_back_the_text_glyphs_everywhere() -> void:
 func test_the_art_button_in_the_top_bar_cycles_the_map_and_legend() -> void:
 	assert_eq(hud.art_button.text, "Art: style 1")
 	var seen := []
-	for i in 4:
+	for i in 5:
 		_press("Art:")
 		await wait_frames(3)
 		seen.append(Sprites.state())
-	assert_eq(seen, [2, 3, 0, 1])
+	assert_eq(seen, [2, 3, 4, 0, 1])
 	tile_box = hud.boxes["Tile"]
 	assert_eq(_sprites().size(), 23, "back on style 1: the pictures are back")
 
@@ -130,6 +138,67 @@ func test_without_the_art_the_legend_falls_back_to_the_old_glyphs() -> void:
 	assert_true(_labels().any(func(t): return t.begins_with(Data.UNITS["scav"].glyph)))
 	assert_true(_labels().any(func(t): return t.begins_with("─│┌┐")))
 	hud.refresh()
+
+
+func test_the_legend_has_a_night_switch_beside_the_art_buttons() -> void:
+	assert_true(_labels().has("Night:"))
+	var found := 0
+	for b in tile_box.find_children("*", "Button", true, false):
+		if b.text in ["On", "Off"]:
+			found += 1
+	assert_eq(found, 2)
+
+
+func test_the_night_switch_you_are_on_cannot_be_pressed_again() -> void:
+	Daylight.enabled = true
+	hud.refresh()
+	await wait_frames(2)
+	tile_box = hud.boxes["Tile"]
+	for b in tile_box.find_children("*", "Button", true, false):
+		if b.text == "On":
+			assert_true(b.disabled)
+		elif b.text == "Off":
+			assert_false(b.disabled)
+
+
+func test_the_night_switch_turns_the_night_off_and_on_and_remembers_it() -> void:
+	Daylight.enabled = true
+	hud.refresh()
+	await wait_frames(2)
+	tile_box = hud.boxes["Tile"]
+	_press("Off")
+	await wait_frames(2)
+	assert_false(Daylight.enabled)
+	Daylight.enabled = true
+	Daylight.load_setting()
+	assert_false(Daylight.enabled, "it was saved")
+	tile_box = hud.boxes["Tile"]
+	_press("On")
+	await wait_frames(2)
+	assert_true(Daylight.enabled)
+
+
+func test_the_top_bar_says_day_or_night_beside_the_season() -> void:
+	Daylight.enabled = true
+	Game.season = 3
+	hud._refresh_top()
+	assert_true(hud.top_text.text.contains("Autumn (day)"), hud.top_text.text)
+	Game.season = 2
+	hud._refresh_top()
+	assert_true(hud.top_text.text.contains("Summer (night)"), hud.top_text.text)
+	Game.season = 1
+	hud._refresh_top()
+	assert_true(hud.top_text.text.contains("Spring (day)"))
+
+
+func test_with_the_night_off_the_top_bar_is_just_the_season() -> void:
+	Daylight.enabled = false
+	Game.season = 2
+	hud._refresh_top()
+	assert_true(hud.top_text.text.contains("Summer"))
+	assert_false(hud.top_text.text.contains("(night)"))
+	assert_false(hud.top_text.text.contains("(day)"))
+	Game.season = 1
 
 
 ## Presses the first visible, enabled HUD button whose text is exactly `text` (or starts with it, for the long ones).

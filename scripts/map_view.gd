@@ -6,6 +6,7 @@ extends Node2D
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
+const Daylight = preload("res://scripts/daylight.gd")
 # Sprites are 8 x 8, so a 16 pixel cell shows them at exactly 2x: every art pixel the same size,
 # and tiles that meet without gaps.
 const CELL := Vector2(16, 16)
@@ -14,6 +15,10 @@ const FONT_SIZE := 16
 const OWNER_BG := [Color("15100b"), Color("1d2814"), Color("33140f"), Color("132030")]
 const OWNER_EDGE := [Color(0, 0, 0, 0), Color("8fbf3a"), Color("d0402b"), Color("5a8fc5")]
 const SELECT := Color("ffb642")
+const LABEL_FONT := 14                       # the hover label's text size on screen, whatever the zoom
+const LABEL_BG := Color(0.08, 0.06, 0.04, 0.92)
+const LABEL_EDGE := Color(1.0, 0.71, 0.26, 0.6)
+const LABEL_TEXT := Color("f0e0c0")
 const FOG := Color("050403")
 # Where each way of travel puts its route dot inside a tile, so overlapping routes stay visible
 const ROUTE_DOT := {"foot": Vector2(3, 13), "horse": Vector2(8, 13), "car": Vector2(13, 13)}
@@ -31,6 +36,17 @@ const UNIT_DIM := Color(0.6, 0.6, 0.6)
 const SLOPE_TINT := Color(1, 1, 1, 0.5)
 const SLOPE_DIM := Color(0.4, 0.4, 0.4, 0.5)
 const CHUNK := 16   # the map is drawn in squares of CHUNK x CHUNK tiles
+
+# The clean look (art style 4): its pictures cover the whole tile, so height and ownership are laid over them as
+# faint washes. A third of the land is "low" (a touch darker) and a third "high" (a touch lighter).
+const SHADE_LOW := Color(0, 0, 0, 0.07)
+const SHADE_HIGH := Color(1, 1, 1, 0.08)
+const OWN_TINT := 0.10        # how much of its owner's border colour an owned tile takes on
+# A feature (anything but sand, dunes and scrub) gets a thin dark rim on each side that meets plainer ground, so a rock range
+# or a lake reads as one shape. Where two features meet, the one with the higher number draws the rim.
+const RIM_RANK := {"trees": 1, "grove": 2, "waste": 3, "ruins": 4, "rock": 5, "glass": 6, "crater": 7, "water": 8}
+const RIM_INK := Color(0.07, 0.05, 0.03, 0.5)
+const RIM := 2.0              # one art pixel, in canvas pixels
 enum Shown {HIDDEN, SHOWN, DIM}   # how a unit standing on the map shows, see unit_shown()
 # What stands on the map and moves, drawn every frame in a layer of its own (see UnitLayer)
 const PATCH := Color(0, 0, 0, 0.7)         # the dark square under a unit
@@ -38,6 +54,7 @@ const HOP := 2.0                           # a step: the unit hops this many pix
 const HOP_HZ := 8.0                        # hops a second while it walks
 const IDLE_STEP := 0.6                     # a parked scouting party bobs one art pixel this often, in seconds
 const IDLE_REDRAW := 0.1                   # the unit layer redraws this often while something idles
+const HALO_REDRAW := 0.1                   # the halos redraw this often at night, so they flicker
 const DUST := {"foot": Color(0.95, 0.88, 0.7), "horse": Color(0.95, 0.88, 0.7), "car": Color(0.9, 0.82, 0.68), "boat": Color(0.8, 0.94, 1.0)}
 const DUST_ALPHA := 0.7
 const EMBER := [Color("ff9a2e"), Color("ffd24a"), Color("e8541c")]   # a camp's cooking fire
@@ -46,6 +63,7 @@ const BAND_FADE := 5.0                     # how fast a raider band fades in and
 
 var font := SystemFont.new()
 var hover := Vector2i(-1, -1)
+var over_panel := false         # the mouse is over a panel or button, not the map: no hover label then
 var pipe_scale := Vector2.ONE   # stretches box-drawing glyphs to fill a whole cell
 var pipe_ascent := 0.0
 var last_view := Transform2D()
@@ -58,8 +76,26 @@ var check_needed := false               # the game changed: look for chunks that
 var checked_view := -1                  # Game.view, Game.map_version and Sprites.state() at the last check
 var checked_map := -1
 var checked_art := -1
+var night_layer := NightLayer.new()     # day and night (daylight.gd): between the ground and everything standing on it
+var glow_layer := GlowLayer.new()
+var halo_layer := HaloLayer.new()
 var unit_layer := UnitLayer.new()       # units and camp fires, above the chunks: they move every frame while a season replays
 var overlay_layer := OverlayLayer.new()
+var light := 1.0                        # 1 = full day, 0 = full night: fades over the turn change
+var _light_from := 1.0
+var _light_to := 1.0
+var _fade_clock := -1.0                 # real seconds into the fade, or -1 when none is running
+var glow_cells := []                    # everything glowing right now: [cell, halo kind or "", how strongly (0 to 1)]
+var glow_lit := {}                      # cell -> true: ruins that glow (an enemy party standing there is lit by them)
+var glow_batch := Batch.new()           # the glowing tiles, drawn again over the night at full brightness
+var glow_dirty := true
+var glow_art := -1                      # Sprites.state() and Game.map_version when glow_batch was made
+var glow_map := -1
+var _glow_ground_map := -1
+var _glow_ground: Array = []            # [cell, halo kind or ""] for every crater, and the waste and glass that keep their speckles
+var _ruin_cells: Array = []
+var _halo_accum := 0.0
+var _halo_image: ImageTexture
 var replay := {}                        # the season (or march) being played back, empty when none
 var playing := false
 var clock := 0.0                        # real seconds into it
@@ -82,6 +118,8 @@ var ground_bg := PackedColorArray()       # terrain color and height wash over t
 var ground_bg_dim := PackedColorArray()
 var ground_sprite := PackedStringArray()  # the atlas sprite for the terrain
 var ground_slope := PackedStringArray()   # the atlas sprite for the slope laid over it, or ""
+var ground_shade := PackedColorArray()    # the clean look's height wash: transparent for middling ground and water
+var ground_flip := PackedByteArray()      # 1 where the clean look mirrors the ground picture
 var ground_map := -1
 var bg_dim: Array[Color] = []             # OWNER_BG and OWNER_EDGE for tiles out of sight
 var edge_dim: Array[Color] = []
@@ -118,11 +156,36 @@ class Batch:
 	var poi_tint := PackedColorArray()           # dimmed when out of sight
 	var heat_pos := PackedVector2Array()         # radiation tints that go over the sprites
 	var heat_color := PackedColorArray()
+	# The clean look draws in more passes: ground sprites, then the height and ownership washes, then (above the wash)
+	# the dark patch under a camp and the camps themselves.
+	var sprite_flip := PackedByteArray()         # 1 where the sprite is drawn mirrored, for a little variety
+	var shade_pos := PackedVector2Array()
+	var shade_color := PackedColorArray()
+	var patch_pos := PackedVector2Array()
+	var top_pos := PackedVector2Array()          # sprites that go over the wash
+	var top_src: Array[Rect2] = []
+	var top_tint := PackedColorArray()
+	var bld_pos := PackedVector2Array()          # building pictures (their own atlas), over everything else on the tile
+	var bld_src: Array[Rect2] = []
+	var bld_tint := PackedColorArray()
+	var edge_rects: Array[Rect2] = []            # the dark rim a feature (rock, water, ruins...) gets where it meets plainer ground
+	var edge_colors := PackedColorArray()
 
-	func add_sprite(pos: Vector2, sprite: String, tint: Color) -> void:
+	func add_building(pos: Vector2, src: Rect2, tint: Color) -> void:
+		bld_pos.append(pos)
+		bld_src.append(src)
+		bld_tint.append(tint)
+
+	func add_sprite(pos: Vector2, sprite: String, tint: Color, flip := false) -> void:
 		sprite_pos.append(pos)
 		sprite_src.append(rects[sprite])
 		sprite_tint.append(tint)
+		sprite_flip.append(1 if flip else 0)
+
+	func add_top(pos: Vector2, sprite: String, tint: Color) -> void:
+		top_pos.append(pos)
+		top_src.append(rects[sprite])
+		top_tint.append(tint)
 
 	func add_poi(pos: Vector2, src: Rect2, tint: Color) -> void:
 		poi_pos.append(pos)
@@ -150,10 +213,51 @@ class UnitLayer:
 		map.draw_units(self)
 
 
+## The night: one white rectangle over the map, multiplied into the ground under it (its strength is its self_modulate).
+class NightLayer:
+	extends Node2D
+	var map: Node2D
+
+	func _ready() -> void:
+		var multiply := CanvasItemMaterial.new()
+		multiply.blend_mode = CanvasItemMaterial.BLEND_MODE_MUL
+		material = multiply
+
+	func _draw() -> void:
+		draw_rect(map.map_pixels().grow(512.0), Color.WHITE)
+
+
+## The glowing tiles, drawn again over the night at full brightness (the clean look only: the other looks keep them dark).
+class GlowLayer:
+	extends Node2D
+	var map: Node2D
+
+	func _draw() -> void:
+		map.draw_glow_tiles(self)
+
+
+## The soft light round glowing things and your own parties. A layer of its own, smooth-filtered: the map's layers are pixel art.
+class HaloLayer:
+	extends Node2D
+	var map: Node2D
+
+	func _draw() -> void:
+		map.draw_halos(self)
+
+
 func _ready() -> void:
 	font.font_names = PackedStringArray(["Consolas", "DejaVu Sans Mono", "Courier New", "monospace"])
-	Game.changed.connect(func(): check_needed = true)
+	Game.changed.connect(func():
+		check_needed = true
+		glow_dirty = true)
 	add_child(tile_layer)
+	night_layer.map = self
+	add_child(night_layer)
+	glow_layer.map = self
+	add_child(glow_layer)
+	halo_layer.map = self
+	halo_layer.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(halo_layer)
 	unit_layer.map = self
 	add_child(unit_layer)
 	overlay_layer.map = self
@@ -178,11 +282,17 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	tile_layer.visible = Game.in_game
 	unit_layer.visible = Game.in_game
+	_sync_night_layers()
 	if not Game.in_game:
 		if playing:
 			finish_replay()
 		return
 	_tick_replay(delta)
+	_tick_light(delta)
+	var on_panel := get_viewport().gui_get_hovered_control() != null
+	if on_panel != over_panel:
+		over_panel = on_panel
+		overlay_layer.queue_redraw()
 	if chunk_map_size != Vector2i(Game.w, Game.h):
 		_make_chunks()
 	if check_needed:
@@ -299,14 +409,7 @@ func draw_chunk(chunk: Chunk) -> void:
 	for y in range(r.position.y, r.end.y):
 		for x in range(r.position.x, r.end.x):
 			_draw_tile(chunk, Vector2i(x, y), mem, seen, standing, batch)
-	if not batch.sprite_pos.is_empty():
-		var atlas := Sprites.atlas_texture()
-		for k in batch.sprite_pos.size():
-			chunk.draw_texture_rect_region(atlas, Rect2(batch.sprite_pos[k], CELL), batch.sprite_src[k], batch.sprite_tint[k])
-	if not batch.poi_pos.is_empty():
-		var poi_atlas := Sprites.poi_atlas_texture()
-		for k in batch.poi_pos.size():
-			chunk.draw_texture_rect_region(poi_atlas, Rect2(batch.poi_pos[k], CELL), batch.poi_src[k], batch.poi_tint[k])
+	_paint_art(chunk, batch)
 	for k in batch.heat_pos.size():
 		chunk.draw_rect(Rect2(batch.heat_pos[k], CELL), batch.heat_color[k])
 	for g in batch.glyphs:
@@ -322,6 +425,36 @@ func draw_chunk(chunk: Chunk) -> void:
 	stats.tile_draws += 1
 	stats.tiles += r.get_area()
 	stats.usec += Time.get_ticks_usec() - t0
+
+
+## The art passes of a batch, in order: ground sprites, the wash over them, the rims, sites, the dark patches under camps, camps and
+## buildings. (The chunks draw this, and so does the night's glow layer for the glowing tiles it shows at full brightness.)
+func _paint_art(canvas: CanvasItem, batch: Batch) -> void:
+	if not batch.sprite_pos.is_empty():
+		var atlas := Sprites.atlas_texture()
+		for k in batch.sprite_pos.size():
+			var at := Rect2(batch.sprite_pos[k], CELL)
+			if batch.sprite_flip[k] == 1:
+				at = Rect2(at.position, Vector2(-CELL.x, CELL.y))   # a negative width mirrors it, in place
+			canvas.draw_texture_rect_region(atlas, at, batch.sprite_src[k], batch.sprite_tint[k])
+	for k in batch.shade_pos.size():
+		canvas.draw_rect(Rect2(batch.shade_pos[k], CELL), batch.shade_color[k])
+	for k in batch.edge_rects.size():
+		canvas.draw_rect(batch.edge_rects[k], batch.edge_colors[k])
+	if not batch.poi_pos.is_empty():
+		var poi_atlas := Sprites.poi_atlas_texture()
+		for k in batch.poi_pos.size():
+			canvas.draw_texture_rect_region(poi_atlas, Rect2(batch.poi_pos[k], CELL), batch.poi_src[k], batch.poi_tint[k])
+	for p in batch.patch_pos:
+		canvas.draw_rect(Rect2(p + Vector2(2, 2), CELL - Vector2(4, 4)), PATCH)
+	if not batch.top_pos.is_empty():
+		var top_atlas := Sprites.atlas_texture()
+		for k in batch.top_pos.size():
+			canvas.draw_texture_rect_region(top_atlas, Rect2(batch.top_pos[k], CELL), batch.top_src[k], batch.top_tint[k])
+	if not batch.bld_pos.is_empty():
+		var building_atlas := Sprites.building_atlas_texture()
+		for k in batch.bld_pos.size():
+			canvas.draw_texture_rect_region(building_atlas, Rect2(batch.bld_pos[k], CELL), batch.bld_src[k], batch.bld_tint[k])
 
 
 ## The color of a route dot once `ratio` of the party's food would be eaten (0 = none, 1 = all of it):
@@ -350,8 +483,53 @@ func draw_overlay(layer: CanvasItem) -> void:
 		layer.draw_rect(Rect2(Vector2(hover) * CELL, CELL), Color(1, 0.8, 0.4, 0.35), false, 1.0)
 	if Game.in_bounds(Game.selected):
 		layer.draw_rect(Rect2(Vector2(Game.selected) * CELL, CELL), SELECT, false, 2.0)
+	if not over_panel:
+		_draw_hover_label(layer)
 	stats.overlay_draws += 1
 	stats.usec += Time.get_ticks_usec() - t0
+
+
+## What the hover label says about tile `c`: what stands on it (if anything), its ground and its height, as far as the viewer
+## knows. "Unexplored" for ground the viewer has never seen, and empty off the map.
+func hover_text(c: Vector2i) -> String:
+	if not Game.in_bounds(c):
+		return ""
+	var known = _known(c)
+	if known == null:
+		return "Unexplored"
+	var ground: String = Data.TERRAIN[Game.tile(c)["t"]].name
+	if known[1] != "":
+		ground = "%s on %s" % [Data.BUILDINGS[known[1]].name, ground]
+	return "%s, %+d m" % [ground, Game.tile(c)["z"]]
+
+
+## Where the hover label's top-left corner goes, in screen pixels: below and to the right of the tile, or above and to the left
+## of it where that would run off the window (never off the top or left edge).
+static func label_position(cell_at: Vector2, cell_size: Vector2, box: Vector2, view: Vector2) -> Vector2:
+	var at := cell_at + Vector2(cell_size.x + 6, cell_size.y + 4)
+	if at.x + box.x > view.x:
+		at.x = cell_at.x - box.x - 6
+	if at.y + box.y > view.y:
+		at.y = cell_at.y - box.y - 4
+	return at.max(Vector2.ZERO)
+
+
+## The hover label: a small box by the cursor's tile, drawn at a fixed size on screen (so it reads at any zoom) and kept
+## inside the window.
+func _draw_hover_label(layer: CanvasItem) -> void:
+	var text := hover_text(hover)
+	if text == "":
+		return
+	var to_screen := get_canvas_transform()
+	var cell_at := to_screen * (Vector2(hover) * CELL)
+	var cell_size := CELL * to_screen.get_scale()
+	var box := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT) + Vector2(12, 8)
+	var at := label_position(cell_at, cell_size, box, get_viewport_rect().size)
+	layer.draw_set_transform_matrix(to_screen.affine_inverse())   # draw in screen pixels
+	layer.draw_rect(Rect2(at, box), LABEL_BG)
+	layer.draw_rect(Rect2(at, box), LABEL_EDGE, false, 1.0)
+	layer.draw_string(font, at + Vector2(6, 4 + font.get_ascent(LABEL_FONT)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FONT, LABEL_TEXT)
+	layer.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 ## The picked party's route, a dot per tile from where it stands. Unlike the HQ routes it is drawn
@@ -375,6 +553,7 @@ func _draw_scout_route(layer: CanvasItem) -> void:
 
 func _on_season_played(r: Dictionary) -> void:
 	finish_replay()   # one still playing from the last season is over
+	_start_fade()     # the light changes with the season, whether or not anything walks
 	if SeasonReplay.mode == "off" or not SeasonReplay.has_motion(r):
 		return
 	_begin_replay(r, SeasonReplay.seconds())
@@ -515,12 +694,13 @@ func _draw_standing(layer: CanvasItem, rects: Dictionary, art: bool, skip: Dicti
 		if shown == Shown.HIDDEN:
 			continue
 		var hop := HOP if idle and _is_parked(u) and (beat + u.id) % 2 == 0 else 0.0
-		_draw_unit(layer, Units.glyph_kind(u), Vector2(u.pos) * CELL, hop, UNIT_DIM if shown == Shown.DIM else Color.WHITE, rects, art)
+		var tint := (UNIT_DIM if shown == Shown.DIM else Color.WHITE) * _night_tint(u.get("owner", Data.NONE), u.pos)
+		_draw_unit(layer, Units.glyph_kind(u), Vector2(u.pos) * CELL, hop, tint, rects, art)
 	for a in Units.animals:   # wild animals: shown only where you can see them, like raider bands
 		if not skip.has(a.id) and unit_shown(a) == Shown.SHOWN:
-			_draw_unit(layer, a.kind, Vector2(a.pos) * CELL, 0.0, Color.WHITE, rects, art)
+			_draw_unit(layer, a.kind, Vector2(a.pos) * CELL, 0.0, _night_tint(Data.NONE, a.pos), rects, art)
 	if Units.frog.get("state", "") == "loose" and not skip.has(Units.FROG_ID) and frog_shown():
-		_draw_unit(layer, "frog", Vector2(Units.frog.pos) * CELL, 0.0, Color.WHITE, rects, art)
+		_draw_unit(layer, "frog", Vector2(Units.frog.pos) * CELL, 0.0, _night_tint(Data.NONE, Units.frog.pos), rects, art)
 
 
 ## How a unit that stands where it is shows to the viewer: not at all (on ground they have not explored, or a raider band
@@ -545,7 +725,8 @@ func _draw_actor(layer: CanvasItem, a: Dictionary, day: float, rects: Dictionary
 		hop = HOP if (int(clock * HOP_HZ) + absi(a.id)) % 2 == 0 else 0.0
 	elif a.parked:
 		hop = HOP if (int(Time.get_ticks_msec() / (IDLE_STEP * 1000.0)) + a.id) % 2 == 0 else 0.0
-	_draw_unit(layer, a.kind, at, hop, Color(1, 1, 1, alpha), rects, art)
+	var tint := Color(1, 1, 1, alpha) * _night_tint(a.get("owner", Data.NONE), Vector2i((at / CELL).round()))
+	_draw_unit(layer, a.kind, at, hop, tint, rects, art)
 
 
 ## Can the viewer see the Giant Frog (any of the four tiles it stands across), while it is loose?
@@ -649,6 +830,222 @@ func _draw_fires(layer: CanvasItem) -> void:
 		layer.draw_rect(Rect2(Vector2(t.pos) * CELL + Vector2(10, 4 - n % 2 * 2), Vector2(2, 2)), c)
 
 
+# ---------------------------------------------------------------- day and night (the rules are in daylight.gd)
+
+## The whole map in pixels (what the night layer covers).
+func map_pixels() -> Rect2:
+	return Rect2(Vector2.ZERO, Vector2(Game.w, Game.h) * CELL)
+
+
+## Is it any darker than full day?
+func is_dark() -> bool:
+	return light < 0.999
+
+
+## Starts the fade to the light the new season has. A season that leaves the light as it was (the switch off) does nothing.
+func _start_fade() -> void:
+	var target := Daylight.target_light(Game.season)
+	if absf(target - light) < 0.001:
+		_fade_clock = -1.0
+		return
+	_light_from = light
+	_light_to = target
+	_fade_clock = 0.0
+
+
+## Moves the light along its fade. With no fade running the light simply goes to what the season says (a new game, a loaded
+## one, or the Night switch): no fade there.
+func _tick_light(delta: float) -> void:
+	var target := Daylight.target_light(Game.season)
+	var before := light
+	if _fade_clock >= 0.0 and absf(target - _light_to) < 0.001:
+		_fade_clock += delta
+		var k := clampf(_fade_clock / maxf(Daylight.fade_seconds(), 0.01), 0.0, 1.0)
+		light = lerpf(_light_from, _light_to, smoothstep(0.0, 1.0, k))
+		if k >= 1.0:
+			_fade_clock = -1.0
+			light = _light_to
+	else:
+		_fade_clock = -1.0
+		light = target
+	if light != before:
+		unit_layer.queue_redraw()
+		halo_layer.queue_redraw()
+	if is_dark() and Game.in_game:
+		if glow_dirty or glow_art != Sprites.state() or glow_map != Game.map_version:
+			_build_glows()
+		_halo_accum += delta
+		if playing or _fade_clock >= 0.0 or _halo_accum >= HALO_REDRAW:
+			_halo_accum = 0.0
+			halo_layer.queue_redraw()   # the halos flicker
+
+
+func _sync_night_layers() -> void:
+	var dark := Game.in_game and is_dark()
+	night_layer.visible = dark
+	glow_layer.visible = dark and Sprites.clean()
+	halo_layer.visible = dark
+	night_layer.self_modulate = Daylight.ground(light)
+
+
+## What the night does to something standing on the map that is not the ground. Your own parties keep their colours (and carry a
+## small glow: see draw_halos). Wild animals and enemy parties take part of the dimness and never glow, unless they stand in ruins
+## that glow, which light them.
+func _night_tint(owner: int, cell: Vector2i) -> Color:
+	if not is_dark() or owner == Data.PLAYER or glow_lit.has(cell):
+		return Color.WHITE
+	return Daylight.things(light)
+
+
+## How strongly the viewer can make out a glowing tile: fully if they see it now, a little if they only remember it, not at all
+## if they have never seen it.
+func _glow_strength(c: Vector2i) -> float:
+	if Game.view == Data.NONE:
+		return 1.0
+	if not Game.knows_tile(Game.view, c):
+		return 0.0
+	return 1.0 if Game.in_sight(Game.view, c) else Daylight.REMEMBERED_GLOW
+
+
+func _sees(c: Vector2i) -> bool:
+	return Game.view == Data.NONE or Game.in_sight(Game.view, c)
+
+
+## Finds, once per map, the tiles that can glow: craters (with a halo), fallout waste and fused glass (their speckles stay bright, no halo),
+## and every ruins tile (some are held by raiders).
+func _find_glow_ground() -> void:
+	_glow_ground_map = Game.map_version
+	_glow_ground = []
+	_ruin_cells = []
+	for i in Game.tiles.size():
+		var c := Vector2i(i % Game.w, i / Game.w)
+		match Game.tiles[i]["t"]:
+			"crater":
+				_glow_ground.append([c, "crater"])
+			"glass", "waste":
+				_glow_ground.append([c, ""])
+			"ruins":
+				_ruin_cells.append(c)
+
+
+## Works out what glows right now: craters, waste and glass the viewer knows of; ruins that raiders hold (once found out) or an enemy party
+## stands in; the camps the viewer can see. In the clean look each is also drawn again at full brightness over the night.
+func _build_glows() -> void:
+	glow_dirty = false
+	glow_art = Sprites.state()
+	glow_map = Game.map_version
+	if _glow_ground_map != Game.map_version:
+		_find_glow_ground()
+	glow_cells = []
+	glow_lit = {}
+	glow_batch = Batch.new()
+	glow_batch.rects = Sprites.rects()
+	var mem: Array = [] if Game.view == Data.NONE else Game.memory[Game.view]
+	var seen: PackedByteArray = PackedByteArray() if Game.view == Data.NONE else Game.sight[Game.view]
+	var camps := _overlay()
+	for g in _glow_ground:
+		var strength := _glow_strength(g[0])
+		if strength > 0.0:
+			_add_glow(g[0], g[1], strength, mem, seen, camps)
+	for c in _ruin_cells:
+		if Game.tile(c)["r"] == "rogue_seen" and _sees(c):
+			_add_glow(c, "ruins", 1.0, mem, seen, camps)
+	for u in Units.units:
+		if u.get("owner", Data.NONE) != Data.PLAYER and unit_shown(u) == Shown.SHOWN and Game.tile(u.pos)["t"] == "ruins" \
+				and not glow_lit.has(u.pos):
+			_add_glow(u.pos, "ruins", 1.0, mem, seen, camps)
+	for t in Units.tribes:
+		if t.found and _sees(t.pos):
+			_add_glow(t.pos, t["class"], 1.0, mem, seen, camps)
+	glow_layer.queue_redraw()
+	halo_layer.queue_redraw()
+
+
+func _add_glow(c: Vector2i, kind: String, strength: float, mem: Array, seen: PackedByteArray, camps: Dictionary) -> void:
+	glow_cells.append([c, kind, strength])
+	if kind == "ruins":
+		glow_lit[c] = true
+	if not Sprites.clean():
+		return
+	var i := c.y * Game.w + c.x
+	var owner: int
+	var building: String
+	if mem.is_empty():
+		owner = Game.tiles[i]["o"]
+		building = Game.tiles[i]["b"]
+	elif mem[i] == null:
+		return
+	else:
+		owner = mem[i][0]
+		building = mem[i][1]
+	var out_of_sight := not seen.is_empty() and seen[i] == 0
+	_draw_clean(c, i, owner, building, out_of_sight, {c: camps[c]} if camps.has(c) else {}, mem, glow_batch)
+
+
+func draw_glow_tiles(layer: CanvasItem) -> void:
+	_paint_art(layer, glow_batch)
+
+
+## The edge of what the camera sees, in map pixels.
+func _view_rect() -> Rect2:
+	var inv := get_canvas_transform().affine_inverse()
+	var screen := get_viewport_rect()
+	return Rect2(inv * screen.position, Vector2.ZERO).expand(inv * screen.end)
+
+
+## A soft round light, white in the middle and clear at the edge, made once.
+func _halo() -> ImageTexture:
+	if _halo_image == null:
+		var n := 128
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5 - n / 2.0, y + 0.5 - n / 2.0).length() / (n / 2.0)
+				img.set_pixel(x, y, Color(1, 1, 1, pow(clampf(1.0 - d, 0.0, 1.0), 1.8)))
+		_halo_image = ImageTexture.create_from_image(img)
+	return _halo_image
+
+
+## Where your own parties are right now (centres, in map pixels), for their small glow: the replay's positions while it plays.
+func _party_spots() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var half := CELL * 0.5
+	if playing:
+		var day := replay_day()
+		for a in replay.actors:
+			if a.owner == Data.PLAYER and not a.get("wild", false) and _actor_alpha(a, day) > 0.0:
+				out.append((SeasonReplay.position_at(a.trail, day) * CELL).round() + half)
+	for u in Units.units:
+		if u.get("owner", Data.NONE) == Data.PLAYER and not (playing and replay_ids.has(u.id)) and unit_shown(u) != Shown.HIDDEN:
+			out.append(Vector2(u.pos) * CELL + half)
+	return out
+
+
+## The halos: a soft glow round every glowing thing (flickering a little) and a small, dim one round each of your own parties.
+func draw_halos(layer: CanvasItem) -> void:
+	if not Game.in_game or not is_dark():
+		return
+	var dark := Daylight.darkness(light)
+	var seconds := Time.get_ticks_msec() / 1000.0
+	var view := _view_rect().grow(CELL.x * 4.0)
+	var tex := _halo()
+	for g in glow_cells:
+		var h := Daylight.halo(g[1])
+		if h.is_empty():
+			continue
+		var centre := (Vector2(g[0]) + Vector2(0.5, 0.5)) * CELL
+		if not view.has_point(centre):
+			continue
+		var r: float = h.radius * CELL.x
+		var a: float = h.alpha * dark * g[2] * Daylight.flicker(seconds, g[0].x * 31 + g[0].y)
+		layer.draw_texture_rect(tex, Rect2(centre - Vector2(r, r), Vector2(r, r) * 2.0), false, Color(h.color, a))
+	var party := Daylight.halo("party")
+	var pr: float = party.radius * CELL.x
+	for at in _party_spots():
+		if view.has_point(at):
+			layer.draw_texture_rect(tex, Rect2(at - Vector2(pr, pr), Vector2(pr, pr) * 2.0), false, Color(party.color, party.alpha * dark))
+
+
 ## The flashes showing right now, as [event, how far through it (0 to 1)].
 func active_pops() -> Array:
 	var out := []
@@ -732,12 +1129,21 @@ func _build_ground() -> void:
 	ground_bg_dim.resize(n)
 	ground_sprite.resize(n)
 	ground_slope.resize(n)
+	ground_shade.resize(n)
+	ground_flip.resize(n)
 	var z_min := 1000000
 	var z_max := -1000000
+	var land_z := PackedInt32Array()
 	for t in Game.tiles:
 		if t["t"] != "water":
 			z_min = mini(z_min, t["z"])
 			z_max = maxi(z_max, t["z"])
+			land_z.append(t["z"])
+	# the clean look's three steps hold a third of the land each (a few tall peaks stretch the height range, so equal slices of
+	# it would leave almost nothing "high")
+	land_z.sort()
+	var z_low: int = land_z[land_z.size() / 3] if land_z.size() > 0 else 0
+	var z_high: int = land_z[land_z.size() * 2 / 3] if land_z.size() > 0 else 0
 	for i in n:
 		var terrain_id: String = Game.tiles[i]["t"]
 		var contour: String = Game.contours[i]
@@ -758,9 +1164,16 @@ func _build_ground() -> void:
 		ground_slope[i] = Sprites.SLOPES.get(Game.slopes[i], "")   # slopes[i] is "" where no contour runs
 		ground_colors[i] = color
 		ground_dim[i] = color.darkened(0.6)   # remembered, not currently seen
-		var bg := _ground_bg(terrain_id, inverse_lerp(z_min, z_max, Game.tiles[i]["z"]))
+		var height := inverse_lerp(z_min, z_max, Game.tiles[i]["z"])
+		var bg := _ground_bg(terrain_id, height)
 		ground_bg[i] = bg
 		ground_bg_dim[i] = Color(bg.r * 0.4, bg.g * 0.4, bg.b * 0.4, bg.a)
+		# The clean look: three steps of height instead of the smooth wash (water has none), and a mirrored
+		# picture on about half the tiles so a wide field of one ground doesn't look like wallpaper
+		var z: int = Game.tiles[i]["z"]
+		ground_shade[i] = Color(0, 0, 0, 0) if terrain_id == "water" else (SHADE_LOW if z < z_low
+			else (SHADE_HIGH if z > z_high else Color(0, 0, 0, 0)))
+		ground_flip[i] = 1 if ((i % Game.w) * 73856093 ^ (i / Game.w) * 19349663) & 1 == 1 else 0
 
 
 ## The wash drawn over a tile's background: the terrain's own color (if it has one) with sand
@@ -819,11 +1232,13 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 		owner = mem[i][0]
 		building = mem[i][1]
 	var out_of_sight := not seen.is_empty() and seen[i] == 0
-	canvas.draw_rect(Rect2(pos, CELL), bg_dim[owner] if out_of_sight else OWNER_BG[owner])
-	var wash: Color = ground_bg_dim[i] if out_of_sight else ground_bg[i]
-	if wash.a > 0.0:
-		canvas.draw_rect(Rect2(pos, CELL), wash)
 	var pixel_art := not batch.rects.is_empty()
+	var clean := pixel_art and Sprites.clean()   # its pictures cover the tile: no background or wash under them
+	if not clean:
+		canvas.draw_rect(Rect2(pos, CELL), bg_dim[owner] if out_of_sight else OWNER_BG[owner])
+		var wash: Color = ground_bg_dim[i] if out_of_sight else ground_bg[i]
+		if wash.a > 0.0:
+			canvas.draw_rect(Rect2(pos, CELL), wash)
 	if Game.show_radiation:
 		var heat := _rad_tint(i)
 		if heat.a > 0.0:
@@ -838,7 +1253,12 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 	var glyph: String
 	var color: Color
 	var is_pipe := false
-	if overlay.has(c):
+	if clean:
+		var shown := _draw_clean(c, i, owner, building, out_of_sight, overlay, mem, batch)
+		if not shown.is_empty():
+			glyph = shown[0]
+			color = shown[1]
+	elif overlay.has(c):
 		# Something is standing here: draw it over the ground, like a creature in Dwarf Fortress
 		canvas.draw_rect(Rect2(pos + Vector2(2, 2), CELL - Vector2(4, 4)), Color(0, 0, 0, 0.7))
 		if pixel_art:
@@ -893,6 +1313,89 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 		_add_line(batch.lines, batch.line_colors, pos, pos + Vector2(0, CELL.y), edge)
 	if c.x == w - 1 or _owner_at(i + 1, mem) != owner:
 		_add_line(batch.lines, batch.line_colors, pos + Vector2(CELL.x, 0), pos + CELL, edge)
+
+
+## One tile in the clean look: the ground picture over the whole tile (mirrored on about half of them), its slope ledge, one wash
+## for its height and its owner, then what stands on it. A building with no picture yet comes back as [glyph, color] to
+## be written over the ground; anything else comes back empty.
+func _draw_clean(c: Vector2i, i: int, owner: int, building: String, out_of_sight: bool, overlay: Dictionary, mem: Array, batch: Batch) -> Array:
+	var pos := Vector2(c) * CELL
+	var tint := SPRITE_DIM if out_of_sight else Color.WHITE
+	batch.add_sprite(pos, ground_sprite[i], tint, ground_flip[i] == 1)
+	if ground_slope[i] != "" and not overlay.has(c):
+		batch.add_sprite(pos, ground_slope[i], tint)
+	var rank: int = RIM_RANK.get(Game.tiles[i]["t"], 0)
+	if rank > 0:
+		_add_rim(pos, c, rank, mem, batch)
+	var wash := ground_shade[i]
+	if owner != Data.NONE:
+		wash = _wash_over(wash, Color(OWNER_EDGE[owner], OWN_TINT))
+	if wash.a > 0.0:
+		if out_of_sight:
+			wash = Color(wash.r * 0.4, wash.g * 0.4, wash.b * 0.4, wash.a)
+		batch.shade_pos.append(pos)
+		batch.shade_color.append(wash)
+	if overlay.has(c):
+		batch.patch_pos.append(pos)
+		batch.add_top(pos, overlay[c][2], UNIT_DIM if out_of_sight else Color.WHITE)
+	elif building != "" and Data.BUILDINGS[building].has("poi"):
+		# each of a site's four tiles draws its quarter of the 16 x 16 picture
+		var q := Game.poi_quadrant(c)
+		var src := Sprites.poi_quadrant_rect(Data.BUILDINGS[building].poi, q)
+		if src.size != Vector2.ZERO:
+			batch.add_poi(pos, src, SPRITE_DIM if out_of_sight else Color.WHITE)
+		elif q == Vector2i.ZERO:
+			return [Data.BUILDINGS[building].glyph, Data.BUILDINGS[building].color.darkened(0.6 if out_of_sight else 0.0)]
+	elif building != "":
+		var src := Sprites.building_rect(building)
+		if src.size != Vector2.ZERO:
+			batch.add_building(pos, src, SPRITE_DIM if out_of_sight else Color.WHITE)
+		else:
+			return [Data.BUILDINGS[building].glyph, Data.BUILDINGS[building].color.darkened(0.6 if out_of_sight else 0.0)]
+	return []
+
+
+## The dark rim along the sides of tile `c` that meet plainer ground the viewer knows about (an unexplored neighbour is
+## never peeked at). Vertical rims stop short of the corners that a horizontal rim already covers.
+func _add_rim(pos: Vector2, c: Vector2i, rank: int, mem: Array, batch: Batch) -> void:
+	var up := _rim_beside(c + Vector2i(0, -1), rank, mem)
+	var down := _rim_beside(c + Vector2i(0, 1), rank, mem)
+	var left := _rim_beside(c + Vector2i(-1, 0), rank, mem)
+	var right := _rim_beside(c + Vector2i(1, 0), rank, mem)
+	var top := RIM if up else 0.0
+	var side_height := CELL.y - top - (RIM if down else 0.0)
+	if up:
+		_rim(batch, Rect2(pos, Vector2(CELL.x, RIM)))
+	if down:
+		_rim(batch, Rect2(pos + Vector2(0, CELL.y - RIM), Vector2(CELL.x, RIM)))
+	if left:
+		_rim(batch, Rect2(pos + Vector2(0, top), Vector2(RIM, side_height)))
+	if right:
+		_rim(batch, Rect2(pos + Vector2(CELL.x - RIM, top), Vector2(RIM, side_height)))
+
+
+func _rim(batch: Batch, r: Rect2) -> void:
+	batch.edge_rects.append(r)
+	batch.edge_colors.append(RIM_INK)
+
+
+## True if the tile at `n` is known to the viewer and plainer than a feature of rank `rank`.
+func _rim_beside(n: Vector2i, rank: int, mem: Array) -> bool:
+	if not Game.in_bounds(n):
+		return false
+	var j := n.y * Game.w + n.x
+	if not mem.is_empty() and mem[j] == null:
+		return false
+	return RIM_RANK.get(Game.tiles[j]["t"], 0) < rank
+
+
+## `top` laid over `under`, both with their own opacity, as one color (so a tile needs just one wash rectangle).
+static func _wash_over(top: Color, under: Color) -> Color:
+	if top.a <= 0.0:
+		return under
+	var a := top.a + under.a * (1.0 - top.a)
+	var rgb := (Vector3(top.r, top.g, top.b) * top.a + Vector3(under.r, under.g, under.b) * under.a * (1.0 - top.a)) / a
+	return Color(rgb.x, rgb.y, rgb.z, a)
 
 
 static func _add_line(lines: PackedVector2Array, colors: PackedColorArray, from: Vector2, to: Vector2, color: Color) -> void:

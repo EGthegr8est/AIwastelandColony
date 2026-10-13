@@ -9,6 +9,7 @@ const Geiger = preload("res://scripts/geiger.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
+const Daylight = preload("res://scripts/daylight.gd")
 const D20 = preload("res://scripts/d20.gd")
 const D20Visit = preload("res://scripts/d20_visit.gd")
 const D20Data = preload("res://scripts/d20_data.gd")
@@ -84,6 +85,7 @@ func _ready() -> void:
 	_build_dice()
 	_build_ending()
 	SeasonReplay.load_mode()   # the speed of the season replay you last chose, if you chose one
+	Daylight.load_setting()    # and whether you switched the night off
 	Game.game_ended.connect(_on_game_ended)
 	Game.changed.connect(refresh, CONNECT_DEFERRED)
 	Music.volume_changed.connect(_sync_music_sliders)
@@ -125,7 +127,7 @@ func _build_top_bar() -> void:
 	rad_button = _button(row, "Rad: off", Game.toggle_radiation_view)
 	rad_button.tooltip_text = "Radiation view: tint the tiles your scouts have measured by how hot they are"
 	art_button = _button(row, "Art: style 1", _cycle_art)
-	art_button.tooltip_text = "Switch the map and legend between the three pixel-art styles and the old text glyphs"
+	art_button.tooltip_text = "Switch the map and legend between the four pixel-art styles (4 is the clean look) and the old text glyphs"
 	walk_button = _button(row, "Walk: Normal", _cycle_walk)
 	walk_button.tooltip_text = "How fast the map plays back each season's walking: Normal, Fast or Off (no animation at all). A click, Space or Enter skips it."
 	end_button = _button(row, "END SEASON", end_season_pressed)
@@ -591,9 +593,14 @@ func _resource_icon(id: String) -> String:
 	return _icon_tags[id]
 
 
+## "Year 3, Autumn (day)": the season and whether the map is in daylight or moonlight (just the season with the Night switch off).
+func _season_text() -> String:
+	return Game.season_name() + (" (%s)" % Daylight.word(Game.season) if Daylight.enabled else "")
+
+
 func _refresh_top() -> void:
 	var t := "[color=#ffd88a]%s[/color]   Pop [b]%d[/b]/%d   Troops %d   Prisoners %d   Leader: %s\n" % [
-		Game.season_name(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Leaders.label(Game.leader_info)]
+		_season_text(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Leaders.label(Game.leader_info)]
 	for r in Data.RESOURCES:
 		t += "%s [color=#ffd88a]%d[/color]%s " % [r, Game.res[r], _resource_icon(r)]   # name, amount, picture; one space before the next
 	top_text.text = t
@@ -869,7 +876,7 @@ func _sync_music_sliders(_volume: float) -> void:
 		s[1].add_theme_color_override("font_color", RED if Music.volume <= 0.0 else DIM)
 
 
-## Each sprite comes in three styles: these buttons flip the whole legend between them.
+## Each sprite comes in four styles: these buttons flip the whole legend between them.
 func _legend_style_row(box: VBoxContainer) -> void:
 	if not Sprites.available():
 		return
@@ -885,7 +892,26 @@ func _legend_style_row(box: VBoxContainer) -> void:
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 
-## Switches the legend and the map between the three art styles and the old text glyphs.
+## The Night switch: on fades the map between day and night each season, off keeps it day.
+func _legend_night_row(box: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
+	var title := _label(row, "Night:", DIM)
+	title.autowrap_mode = TextServer.AUTOWRAP_OFF
+	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	title.tooltip_text = "Each season the map fades between daylight and moonlight. Switch it off to keep it day."
+	for on in [true, false]:
+		var b := _button(row, "On" if on else "Off", func(): _set_night(on), "Showing this" if on == Daylight.enabled else "")
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+
+func _set_night(on: bool) -> void:
+	Daylight.set_enabled(on)
+	Game.changed.emit()
+
+
+## Switches the legend and the map between the four art styles and the old text glyphs.
 func _set_art_style(n: int) -> void:
 	Sprites.choose(n)
 	Game.changed.emit()   # redraws the map (and, a moment later, every panel)
@@ -921,10 +947,11 @@ func _refresh_tile() -> void:
 		_label(box, "Click a tile on the map.\n\nWASD / arrows: pan\nMouse wheel: zoom\nRight-drag: pan\nF11: fullscreen")
 		_header(box, "Legend")
 		_legend_style_row(box)
+		_legend_night_row(box)
 		for id in Data.TERRAIN:
 			var t: Dictionary = Data.TERRAIN[id]
 			_legend_row(box, Sprites.terrain(id), t.glyph[0], "%s  %s" % [t.name, Game.cost_text(t.yield) if not t.yield.is_empty() else ""], t.color)
-		_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a line every 10 m): slows everyone a little", AMBER)
+		_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a %s every 10 m): slows everyone a little" % ("ledge" if Sprites.clean() else "line"), AMBER)
 		_legend_row(box, Sprites.slope("steep"), "═║╔╗", "Steep incline: war rigs can't climb it, foot and horses cross slowly", AMBER)
 		for mover in Data.TRAVEL_PREVIEW:
 			_label(box, " ●    %s route from your HQ to the tile you click" % Data.MOVERS[mover].name, Data.MOVERS[mover].color)

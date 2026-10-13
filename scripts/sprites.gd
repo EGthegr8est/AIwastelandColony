@@ -1,7 +1,9 @@
 extends RefCounted
 ## The pixel-art sprites (8 x 8 each) from art/atlas.png, described by art/atlas.json: one picture for
-## every kind of ground, slope, unit and tribe camp. Each comes in three styles, and `style` picks
-## which one the game shows (the legend has buttons to flip between them). The atlas is read with
+## every kind of ground, slope, unit and tribe camp. Each comes in four styles, and `style` picks
+## which one the game shows (the legend has buttons to flip between them). Styles 1 to 3 are sparse
+## pictures on a dim ground; style 4 (CLEAN, the default) fills the whole tile with one colour and one bold
+## shape, with its slopes drawn as dark ledges: see tools/make_style4.gd. The atlas is read with
 ## Image.load_from_file, like the portraits and icons are drawn in code, so it doesn't need importing.
 ## Show the textures with nearest-neighbour filtering to keep the pixels crisp.
 
@@ -9,7 +11,10 @@ const SeasonReplay = preload("res://scripts/season_replay.gd")
 const ATLAS_PNG := "res://art/atlas.png"
 const ATLAS_JSON := "res://art/atlas.json"
 const SIZE := 8
-const STYLES := 3
+const STYLES := 4
+## The clean look: every ground picture covers its whole tile, so the map skips the ground wash under it, and it
+## lays height shades and your territory's tint over the picture instead.
+const CLEAN := 4
 
 # Which sprite in the atlas draws each thing in the game
 const TERRAIN := {"sand": "ash_sand", "dunes": "dunes", "scrub": "dead_scrub", "trees": "petrified_wood", "grove": "green_grove",
@@ -21,10 +26,10 @@ const CAMPS := {"raider": "raider_camp", "trader": "trader_camp", "builder": "bu
 # A sprite that should always use one particular style, whatever `style` says: {"war_rig": 2}
 const PINNED := {}
 
-## What the legend and the map show: one of the three styles (1 to 3), or 0 for the old text glyphs.
-static var style := 1
+## What the legend and the map show: one of the four styles (1 to 4), or 0 for the old text glyphs.
+static var style := CLEAN
 ## The things you can pick, in the order the buttons cycle through them.
-const CHOICES := [1, 2, 3, 0]
+const CHOICES := [1, 2, 3, 4, 0]
 
 static var _atlas: Image
 static var _atlas_texture: ImageTexture
@@ -53,8 +58,24 @@ static func terrain(id: String) -> Texture2D:
 	return texture(TERRAIN.get(id, ""))
 
 
+## A slope's picture for the legend. In the clean look a slope is a see-through dark ledge that only means something
+## over ground, so it is shown over a sand tile (on the dark legend panel it would vanish).
 static func slope(id: String) -> Texture2D:
-	return texture(SLOPES.get(id, ""))
+	var sprite: String = SLOPES.get(id, "")
+	if state() != CLEAN:
+		return texture(sprite)
+	var key := "%s:on_sand" % sprite
+	if not _cache.has(key):
+		if not _meta.get("sprites", {}).has(sprite):
+			return null
+		var img := image(TERRAIN["sand"], CLEAN)
+		img.blend_rect(image(sprite, CLEAN), Rect2i(0, 0, SIZE, SIZE), Vector2i.ZERO)
+		_cache[key] = ImageTexture.create_from_image(img)
+	return _cache[key]
+
+## True when the clean look (style 4) is showing.
+static func clean() -> bool:
+	return state() == CLEAN
 
 
 static func unit(id: String) -> Texture2D:
@@ -265,6 +286,46 @@ static func _load_poi() -> void:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(POI_JSON))
 	if typeof(parsed) == TYPE_DICTIONARY and parsed.has("sprites"):
 		_poi_meta = parsed
+
+
+# ---------------------------------------------------------------- buildings (clean look only)
+
+const BUILDING_PNG := "res://art/building_atlas.png"    # one row of 8 x 8 pictures, see tools/make_buildings.gd
+const BUILDING_JSON := "res://art/building_atlas.json"
+static var _building_meta := {}
+static var _building_loaded := false
+
+
+## The whole building atlas as one texture, for the map to draw from (null if it can't be read).
+static func building_atlas_texture() -> Texture2D:
+	return picture(BUILDING_PNG)
+
+
+## Where a building's 8 x 8 picture is in that texture, or an empty rectangle if it has none (it is then drawn as its letter).
+static func building_rect(id: String) -> Rect2:
+	_load_buildings()
+	var sprites: Dictionary = _building_meta.get("sprites", {})
+	if not sprites.has(id) or building_atlas_texture() == null:
+		return Rect2()
+	var o: Dictionary = sprites[id]
+	return Rect2(float(o.x), float(o.y), float(o.w), float(o.h))
+
+
+## Every building that has a picture.
+static func building_ids() -> Array:
+	_load_buildings()
+	return _building_meta.get("sprites", {}).keys()
+
+
+static func _load_buildings() -> void:
+	if _building_loaded:
+		return
+	_building_loaded = true
+	if not FileAccess.file_exists(BUILDING_JSON):
+		return
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(BUILDING_JSON))
+	if typeof(parsed) == TYPE_DICTIONARY and parsed.has("sprites"):
+		_building_meta = parsed
 
 
 # ---------------------------------------------------------------- the title screen and the logo

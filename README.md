@@ -97,6 +97,28 @@ is 40 days), plus what happened (`Units.replay`, handed to the map by `Game.seas
   moving unit redraws no tiles. `tests/unit/test_season_replay.gd`, `tests/render/test_unit_layer.gd` and
   `tests/render/test_season_replay_map.gd` pin all of it; the test run sets the speed to Off.
 
+## Day and night
+Each season the map fades between daylight and moonlight, so you notice the turn change. **Spring and Autumn are day, Summer and Winter are
+night** (two days and two nights a year); the top bar says so ("Year 3, Autumn (day)"). It is looks only: sight, travel, raids and every
+other rule ignore it. The rules are in `scripts/daylight.gd`; `scripts/map_view.gd` draws them.
+- **The fade.** The light follows the season number, so saves hold nothing for it. When END SEASON plays, the light moves from the old
+  season's level to the new one over about 3 seconds (1.2 on the Fast walk setting, and Walk: Off uses that too): slowly, never a snap.
+  Skipping the walk does not cut it short. A new game or a loaded one goes straight to its light.
+- **The dark.** One moon-blue layer is multiplied over the ground and buildings (`Daylight.NIGHT`: dark, but the grounds stay apart). It is a
+  single rectangle whose strength is the light, so no tile is redrawn while it fades. The panels, hover label and selection marks stay as
+  they are. Every art look gets the dark; only the clean look (style 4) also redraws the glowing tiles.
+- **What glows.** Drawn again over the dark at full brightness, with a soft flickering halo: **craters**; **ruins that raiders hold** (once you
+  have found out: tile state `rogue_seen`); the **raider, trader and builder camps** while one of your units can see them (a camp you only
+  remember stays dark, so night shows you nothing you cannot see). **Fallout waste and fused glass** keep their bright speckles without a halo. A
+  crater you remember but cannot see glows a little (`Daylight.REMEMBERED_GLOW`).
+- **What is on the ground.** Your own parties keep their colours and carry a small, dim glow. Wild animals (deer, bears, the frog) never glow and go
+  dark with the ground, and so do enemy parties (`Daylight.THINGS_SHARE`: a band stays easy to see), except an enemy party standing in ruins, which
+  lights the ruins and is lit by them.
+- **Switch.** **Night: On / Off** in the legend, next to the art style buttons; it is saved in `settings.cfg` with the Walk speed. Off keeps it day.
+- **Tuning.** `NIGHT`, `THINGS_SHARE`, the `HALOS` (colour, radius, strength) and `REMEMBERED_GLOW` in `scripts/daylight.gd`; the fade length follows
+  `SeasonReplay.SECONDS`. The test setup (`tests/setup.gd`) keeps it day, so no snapshot depends on the season; `tests/unit/test_daylight.gd` and
+  `tests/render/test_night.gd` cover the night.
+
 ## Fog of war
 Every colony keeps its own memory of the map (`Game.memory`). Black tiles have never been seen.
 Dim tiles were explored but are out of sight, so they show what was there last time.
@@ -135,20 +157,36 @@ send them on, or press **Recall to camp**. How many parties you can have out gro
 
 ## Pixel art
 The map and the Legend (the Tile tab with nothing selected) are drawn with pixel art: `art/atlas.png` holds 23 sprites of 8 x 8
-pixels, three styles each, described by `art/atlas.json`. They cover the 11 kinds of ground, the two slopes, the 7 kinds of unit
+pixels, four styles each, described by `art/atlas.json`. They cover the 11 kinds of ground, the two slopes, the 7 kinds of unit
 (scavengers, scouts, caravans, war rigs, boats, recon planes, raider bands) and the three tribe camps.
-- **Switching.** The **Art:** button in the top bar cycles style 1, style 2, style 3 and the old **text glyphs** (the Dwarf Fortress
-  look), and the **Art style: 1 2 3 ASCII** buttons at the top of the legend do the same. It changes the map and the legend together.
-- **The map.** A tile is 16 pixels wide, so every sprite shows at exactly 2x, crisp, with no gaps between tiles (it used to be 18).
-  The ground sprite goes on every tile; a slope's mark goes on top of it at half strength so it doesn't drown the ground. Units and
-  tribe camps are drawn over the ground. Ownership colors, borders, fog, the dimming of remembered land and the radiation tint all work
-  as before (the tint goes over the sprites). **Buildings are still text**, because the atlas has no building art yet.
+- **Switching.** The **Art:** button in the top bar cycles style 1, 2, 3, 4 and the old **text glyphs** (the Dwarf Fortress look), and
+  the **Art style: 1 2 3 4 ASCII** buttons at the top of the legend do the same. It changes the map and the legend together. **Style 4,
+  the clean look, is the one the game starts on.**
+- **The clean look (style 4).** Made to be easy to read: every ground is one flat colour with one bold shape on it, and the colours are
+  far apart (sand pale tan, dunes orange-yellow, scrub olive, petrified wood dark brown, grove green, rock grey, ruins slate, river blue).
+  It is a dusk palette, darkened and warmed, and **only the hazards glow**: the crater's green ring, the fallout waste's and fused glass's
+  bright specks and the lit windows in ruins, so danger stands out from the matte ground. Height is three quiet shades (a third of the
+  land each, a touch darker or lighter, laid over the picture) and a slope is a dark **ledge** along the tile's lower edge (thin for a
+  gentle slope, with teeth for a steep incline) in place of the gold lines. Half the tiles are mirrored so a wide field is not wallpaper,
+  and a feature (rock, water, ruins, trees, grove, waste, glass, crater) gets a thin dark **rim** on the sides that meet plainer ground,
+  so a range or a lake reads as one shape (the rim never peeks at unexplored tiles). Your land keeps its border line and a faint tint.
+  **Buildings have pictures** (`art/building_atlas.png`, 20 of them), each with a dark outline so it stands out from any ground; the
+  other styles still show a building as its letter. The pictures are text rows in `tools/make_style4.gd` (the grounds and ledges) and
+  `tools/make_buildings.gd`: edit the rows and run the tool (the commands are in each file's header) to change them. Units, camps, animals
+  and the 2 x 2 sites are unchanged.
+- **The map.** A tile is 16 pixels wide, so every sprite shows at exactly 2x, crisp, with no gaps between tiles. In styles 1 to 3 the
+  ground sprite goes on every tile over a wash of sand (stronger on higher ground), and a slope's mark goes on top of it at half strength.
+  Units and tribe camps are drawn over the ground. Ownership colors, borders, fog, the dimming of remembered land and the radiation
+  tint all work as before (the tint goes over the sprites). In the other styles **buildings are still text**.
+- **Hover.** Move the mouse over a tile and a small label names it: what stands there, the ground and its height ("Farm on Ash sand, +5 m"),
+  or "Unexplored". It is drawn at one size whatever the zoom, stays inside the window and is hidden while the mouse is over a panel.
 - **Speed.** Every sprite is drawn from the one atlas texture, so they batch: an idle frame takes about 100 draw calls where the glyphs
   took about 380. See `docs/rendering_perf.md`.
 - **Tuning.** `scripts/sprites.gd` says which sprite draws which thing (`TERRAIN`, `SLOPES`, `UNITS`, `CAMPS`), sets the default style
   (`Sprites.style`) and can pin one sprite to a style whatever the buttons say (`PINNED`, e.g. `{"war_rig": 2}`). `SLOPE_TINT` in
-  `scripts/map_view.gd` sets how faint the slope marks are. If the atlas can't be read, everything falls back to the text glyphs. To change
-  the art, replace `art/atlas.png` and keep `art/atlas.json` describing it.
+  `scripts/map_view.gd` sets how faint the slope marks are in styles 1 to 3; `SHADE_*`, `OWN_TINT` and `RIM_*` tune the clean look. If the
+  atlas can't be read, everything falls back to the text glyphs. To change the art, replace `art/atlas.png` and keep `art/atlas.json`
+  describing it (or change the tool scripts above).
 
 ## What a party can carry
 Goods have weight (`WEIGHT` in `scripts/data.gd`: grain, veg and meat 1 each, wood, metal and fuel 2, stone 3, gold 0.5). A party
@@ -466,16 +504,18 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/d20_data.gd`, `d20.gd`, `d20_visit.gd`, `dice.gd` | The d20 roll system: its numbers, its rules, one ruin visit, and the dice. |
 | `d20_dice/` | The pixel-art d20 and its roll animations, used by the right panel. |
 | `scripts/game.gd` | Autoload `Game`. The whole simulation, plus save/load (JSON in `user://saves/`). |
-| `scripts/map_view.gd` | Draws the map: pixel-art sprites, or colored text glyphs. Units and camp fires are drawn by its own layer, and it plays the season replay. |
+| `scripts/map_view.gd` | Draws the map: pixel-art sprites, or colored text glyphs. Units and camp fires are drawn by its own layer, it plays the season replay, and it draws the night, the glows and the hover label. |
 | `art/animals.png` | The deer, black bear, brown bear and Giant Frog, four 16 x 16 pictures in a row (made from the SVGs in `Usable Art/ANIMALS`). |
 | `scripts/season_replay.gd` | The season replay: where a unit is on a given day, the replay's length, the troop march, and the Walk speed setting. |
+| `scripts/daylight.gd` | Day and night: which seasons are day, the light, what the ground and the things on it are multiplied by, the halos, and the Night switch. |
+| `tools/make_style4.gd`, `tools/make_buildings.gd` | Bake the clean look's ground pictures and the 20 building pictures (drawn as text rows in these files) into `art/atlas.png` and `art/building_atlas.png`. |
 | `scripts/hud.gd` | All the UI, built in code. |
 | `scripts/portrait.gd` | Draws the pixel-art survivor portraits. |
 | `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |
 | `scripts/icons.gd` | The small pixel icons for how a party travels. |
 | `scripts/geiger.gd` | The Geiger counter dial. |
 | `scripts/fuel_gauge.gd` | The three fuel gauges (war rig, plane, boat). |
-| `scripts/sprites.gd` | Looks up the pixel-art sprites in `art/atlas.png`, and the title screen and logo pictures. |
+| `scripts/sprites.gd` | Looks up the pixel-art sprites in `art/atlas.png` (and the building pictures), and the title screen and logo pictures. |
 | `scripts/selftest.gd` | The `--selftest` check for a built copy of the game. |
 | `tools/build_windows.ps1` | Exports the Windows version and zips it for sending. |
 | `scripts/music.gd` | Autoload `Music`: which track plays when, and the volume. |

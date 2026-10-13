@@ -21,6 +21,7 @@ static func run() -> Array:
 	_check(out, Sprites.names().size() == 23, "the atlas has all 23 sprites (has %d)" % Sprites.names().size())
 	_check(out, not Sprites.rects().is_empty() or Sprites.style == 0, "sprite rectangles are ready for the map")
 	_check(out, Sprites.animals_available() and Sprites.animals_texture().get_size() == Vector2(64, 16), "the animals' picture loads (art/animals.png, 4 pictures of 16 x 16)")
+	_check(out, Sprites.building_atlas_texture() != null and Sprites.building_ids().size() == 20, "the building pictures load (art/building_atlas.png and .json, 20 of them)")
 	_check(out, Sprites.poi_available(), "points-of-interest atlas loads (art/poi_atlas.png and .json)")
 	_check(out, Sprites.poi_kinds().size() == Data.POIS.size(), "a sprite for each of the %d kinds of site" % Data.POIS.size())
 	var frames = load("res://d20_dice/d20_sprite_frames.tres") if ResourceLoader.exists("res://d20_dice/d20_sprite_frames.tres") else null
