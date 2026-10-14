@@ -331,6 +331,10 @@ Old saves load without fords (their river stays a wall), as saved maps never had
   made by a building's sight or a flight is never "hot"). A click, Enter, Space or Escape closes it. If a picture is missing, a title card stands in for
   it. The pictures are 1152 x 768 and carry their own title. A save from before this counts it as found if you have already seen the highway, so it does
   not pop up on load.
+  The same three pictures also sit in **the bottom right corner** whenever you pick a tile of the highway or its bridge that your colony has seen (the corner picture,
+  below, under Points of interest), by the same rules: the grey one in a day season (always, with the night switched off), at night the dusk one, or the green one
+  when the tile's own reading is high radiation (45 R/h or more, and only once your scouts have measured it: an unmeasured tile gives nothing away). A stretch you
+  have repaired into a road is no longer the highway and shows nothing.
 - **Drawing.** In the clean look a road is a strip of rectangles that joins up with the next road, bridge or ford (pale packed earth for a road, cracked
   grey for the highway) with a dark one-pixel edge; the other looks show an `=`. The legend has a row for each.
 - Tune the numbers in `HIGHWAY`, `ROAD` and `AI_ROAD` in `scripts/data.gd`.
@@ -341,7 +345,10 @@ ruin fields stay hot, and the camps start clean. Most of the wastes are harmless
 
 - **Readings.** You only see a rough range for a tile (e.g. "roughly 30-80 R/h") until one of your scouting parties has stood on it.
   Scouts take a reading of every tile they walk across, and the exact figure is yours for the rest of the run, as is any land you own.
-  The **Radiation** button in the top bar tints the tiles you've measured by band: safe, low, moderate, high, extreme.
+  The **radiation meter** in the top bar (the yellow survey meter lying on its side, where the Rad button was) tints the tiles you've measured by band: safe,
+  low, moderate, high, extreme. Click it: the view flips at once and the meter plays its power-on animation (needle swinging, dial glowing green, then idling with
+  the needle wandering) or its power-off one; a click while it is still animating does nothing. Only the meter's own pixels are clickable. It follows the game, so
+  a new game or a load puts it back to off. (`scripts/rad_meter_button.gd`, art in `art/rad_meter_sheet.png`; the first button done this way, to try the idea.)
 - **Geiger counter.** Select a scouting party and a Geiger counter appears beside its panel: a needle on a log scale, a lamp that
   clicks faster the hotter it is, the reading, and how much poison a season there would cost.
 - **Poison.** Radiation works like poison. Each survivor builds up a dose (decaying 10% a season) and loses hp for every point of
@@ -441,6 +448,24 @@ by the river, bunkers and silos 6 to 16 tiles from a ruin field, towers on or be
 in deep desert), 12 tiles from any camp and 10 from the next site. A site is four tiles that carry one building id (`poi_<kind>`), so the
 fog, saves and the map treat it like a building: each tile draws its quarter of the sprite. You can't build on one or demolish it. Click any
 of its tiles and send one scavenger party; it works the whole site as one tile and all four read "picked clean" afterwards.
+
+**The corner picture.** While one of a site's four tiles is picked and your colony has seen it, its picture shows in the bottom right corner of the screen, under
+the Tile panel, with the site's name below it (`Data.POI_SCENES`, 1152 x 768 PNGs in `art/scenes/`, drawn at 288 x 192: the art at 4 times its size, so one art
+pixel is one screen pixel). The Tile panel gets that much shorter while it is up (a Scavenge button is still in view at 1600 x 900), and goes back to the whole
+side on the other tabs, on any other tile, and while a party is searching the site (that panel, with the die, needs all the room). The ten pictures are the first
+pass; most kinds have a second ("A" and "B", for other ground), which a later pass can pick by the land round the site:
+
+| Site | Picture |
+|---|---|
+| Crashed ship | `crashed_ship_A_1` (a salt flat; B is lava and ash) |
+| Weather station | `weather_station_A_1` (stony ground; B is dry grass) |
+| Chemical dump | `chemical_dump_A_1` (toxic marsh; B is a ruined factory city) |
+| Radio tower | `radio_tower_B_1` (red-rock desert; A is green hills) |
+| Bunker | `bunker_A_1` (open desert; B is a dead wood) |
+| Oil pumpjack | `oil_pumpjack_A_1` (orange desert; B is cracked earth with a railway) |
+| Water tower | `water_tower_A_1` (farmland; B is a wrecked town) |
+| Ruined gas station | `ruined_gas_station_A` (the road runs up to it; three more views of it were not used) |
+| Missile silo, Cargo yard | `missile_silo_A_1`, `cargo_yard_A` (the only ones) |
 
 **Searching a site** is one d20 "Site check" in the right-hand Scavenge panel (the party's scavenge modifiers and the situation, against the
 site's DC), and the tier of the roll picks that site's outcome. There is no search deeper, and "Leave without searching" keeps the site
@@ -665,6 +690,8 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |
 | `scripts/icons.gd` | The small pixel icons for how a party travels. |
 | `scripts/geiger.gd` | The Geiger counter dial. |
+| `scripts/rad_meter_button.gd` | The radiation view's switch in the top bar: the animated survey meter (`art/rad_meter_sheet.png`), turned to lie on its side. `tools/make_rad_meter.py` draws the sheet (needs Python with Pillow). |
+| `art/scenes/` | The pictures of the ten points of interest, shown in the bottom right corner when you pick one. |
 | `scripts/fuel_gauge.gd` | The three fuel gauges (war rig, plane, boat). |
 | `scripts/sprites.gd` | Looks up the pixel-art sprites in `art/atlas.png` (and the building pictures), and the title screen and logo pictures. |
 | `scripts/selftest.gd` | The `--selftest` check for a built copy of the game. |

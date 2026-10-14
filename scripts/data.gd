@@ -295,6 +295,18 @@ const POIS := {
 # The ruined gas station stands by the old highway (Game._pass_gas_station, after the highway is laid): within `reach` tiles of one of its tiles (1 is touching it, corners
 # included), never over it. If no such spot is free it stays where the first pass put it.
 const GAS_STATION := {"reach": 2}
+# Each point of interest has a picture (art/scenes/), shown in the bottom right corner of the screen, under the Tile panel, while one of its four tiles is picked and your
+# colony has seen it. The pictures are 1152 x 768: the 288 x 192 pixel art at 4 times its size, so it is drawn at `POI_SCENE_SIZE` and every art pixel is one screen pixel.
+# Most kinds have a second picture (an "A" and a "B", for another sort of ground); the first pass uses the one that suits where the kind is placed, and a later pass can
+# choose by the ground around the site.
+const POI_SCENES := {
+	"crashed_ship": "res://art/scenes/crashed_ship_A_1.png", "weather_station": "res://art/scenes/weather_station_A_1.png",
+	"chemical_dump": "res://art/scenes/chemical_dump_A_1.png", "radio_tower": "res://art/scenes/radio_tower_B_1.png",
+	"bunker": "res://art/scenes/bunker_A_1.png", "pumpjack": "res://art/scenes/oil_pumpjack_A_1.png",
+	"water_tower": "res://art/scenes/water_tower_A_1.png", "gas_station": "res://art/scenes/ruined_gas_station_A.png",
+	"missile_silo": "res://art/scenes/missile_silo_A_1.png", "cargo_yard": "res://art/scenes/cargo_yard_A.png",
+}
+const POI_SCENE_SIZE := Vector2(288, 192)
 const POI_BASE_GAP := 12     # tiles from any camp or town, so none starts on your doorstep
 const POI_GAP := 10          # tiles between two sites
 const POI_TRIES := 600       # random spots tried for each kind before a rule is dropped
@@ -596,9 +608,10 @@ const ENDING_SCREENS := {
 # The Hollow Mile is what the old highway is called. The first time your scouts see a tile of it a picture comes up and a click closes it: the grey overcast one
 # ("day") in a day season, high radiation or not; in a night season the orange dusk one ("night"), or the green moonlit one ("fallout") if the party that found it
 # is taking high radiation (its tile's R/h, after the shielding of how it travels, is `rad_high` or more: the bottom of the "High" band). The title card stands in
-# if a picture is missing.
+# if a picture is missing. The same pictures, by the same rules, sit in the bottom right corner whenever you pick a tile of the highway your colony has seen (`tiles`: the old
+# highway and its bridge; what the first sighting finds): the high radiation is then the tile's own measured reading.
 const HOLLOW_MILE := {
-	"name": "The Hollow Mile", "ratio": 1152.0 / 768.0, "rad_high": 45,
+	"name": "The Hollow Mile", "ratio": 1152.0 / 768.0, "rad_high": 45, "tiles": ["old_road", "old_bridge"],
 	"day": "res://art/hollow_mile_day.png", "night": "res://art/hollow_mile_night.png", "fallout": "res://art/hollow_mile_fallout.png",
 	"note": "A broken pre-war highway runs through the cities. Raiders lie in wait on it, but it is quicker than open ground.",
 	"day_color": Color("d8c890"), "night_color": Color("ffb060"), "fallout_color": Color("86f06a"),

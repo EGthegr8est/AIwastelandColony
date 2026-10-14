@@ -2763,7 +2763,7 @@ func _hollow_tiles() -> Array:
 	if _hollow_map != map_version:
 		_hollow_cells = []
 		for i in tiles.size():
-			if tiles[i]["b"] in ["old_road", "old_bridge"]:
+			if tiles[i]["b"] in Data.HOLLOW_MILE.tiles:
 				_hollow_cells.append(Vector2i(i % w, i / w))
 		_hollow_map = map_version
 	return _hollow_cells

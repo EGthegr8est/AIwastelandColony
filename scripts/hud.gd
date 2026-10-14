@@ -6,6 +6,7 @@ const Data = preload("res://scripts/data.gd")
 const Portrait = preload("res://scripts/portrait.gd")
 const Icons = preload("res://scripts/icons.gd")
 const Geiger = preload("res://scripts/geiger.gd")
+const RadMeter = preload("res://scripts/rad_meter_button.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
@@ -33,6 +34,7 @@ const GREEN := Color("a8d060")
 const BG := Color(0.07, 0.05, 0.03, 0.95)
 const SLOTS := ["slot1", "slot2", "slot3", "autosave"]
 const BOTTOM_HEIGHT := 190
+const RAD_METER_SHEET := "res://art/rad_meter_sheet.png"   # the radiation view's switch in the top bar: this meter, laid on its side, 64 x 40 at its own pixel size
 
 var root := Control.new()
 var top_text := RichTextLabel.new()
@@ -59,7 +61,7 @@ var title_art := TextureRect.new()
 var title_buttons := HBoxContainer.new()
 var music_sliders: Array = []            # [slider, reading] for each volume slider on screen
 var view_button: Button
-var rad_button: Button
+var rad_meter: Control   # the radiation view's switch (a RadMeter): the artist's survey meter, which plays its power-on and power-off animations when clicked
 var art_button: Button
 var walk_button: Button
 var end_button: Button
@@ -77,6 +79,10 @@ var hollow_fit := AspectRatioContainer.new()
 var hollow_art := TextureRect.new()
 var hollow_title := Label.new()          # a title card that stands in for the picture if it can't be read
 var hollow_note := Label.new()
+var side_panel: PanelContainer           # the panel of tabs down the right: shorter while a point of interest's picture sits under it
+var scene_panel := PanelContainer.new()  # the picture of the point of interest you have picked, in the bottom right corner (see _sync_scene)
+var scene_art := TextureRect.new()
+var scene_name := Label.new()
 var stats_screen := ColorRect.new()      # what you did, and the way back to the main menu
 var stats_box := VBoxContainer.new()
 
@@ -96,6 +102,7 @@ func _ready() -> void:
 	_build_top_bar()
 	_build_side_panel()
 	_build_log()
+	_build_scene_panel()
 	_build_menu()
 	_build_dice()
 	_build_ending()
@@ -141,8 +148,7 @@ func _build_top_bar() -> void:
 	_music_row(row, false)   # a fixed size: the resource text beside it needs the room
 	view_button = _button(row, "Map: you", Game.cycle_view)
 	view_button.tooltip_text = "Switch whose knowledge the map shows: what you know, what the Rust Kings know, or everything (no fog, for debugging)"
-	rad_button = _button(row, "Rad: off", Game.toggle_radiation_view)
-	rad_button.tooltip_text = "Radiation view: tint the tiles your scouts have measured by how hot they are"
+	_build_rad_meter(row)
 	art_button = _button(row, "Art: style 1", _cycle_art)
 	art_button.tooltip_text = "Switch the map and legend between the four pixel-art styles (4 is the clean look) and the old text glyphs"
 	walk_button = _button(row, "Walk: Normal", _cycle_walk)
@@ -153,8 +159,34 @@ func _build_top_bar() -> void:
 	_button(row, "Menu", show_main_menu)
 
 
+## The radiation view's switch: the survey meter lying on its side (a quarter turn clockwise, so its ground shadow still falls downward) to fit the bar. Clicking it flips
+## the view at once and plays the meter's power animation; the meter is clickable only on its own pixels.
+func _build_rad_meter(row: HBoxContainer) -> void:
+	rad_meter = RadMeter.new()
+	rad_meter.turn = 1
+	rad_meter.pixel_scale = 1
+	rad_meter.sheet = Sprites.picture(RAD_METER_SHEET)
+	rad_meter.tooltip_text = "Radiation view: tint the tiles your scouts have measured by how hot they are"
+	rad_meter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rad_meter.switched.connect(_on_rad_meter_switched)
+	rad_meter.settled.connect(func(_on): _sync_rad_meter())
+	row.add_child(rad_meter)
+
+
+func _on_rad_meter_switched(on: bool) -> void:
+	if Game.show_radiation != on:
+		Game.toggle_radiation_view()
+
+
+## The meter shows whether the radiation view is on: if something else changed it (a new game, a load) while no animation is playing, the meter jumps to match.
+func _sync_rad_meter() -> void:
+	if not rad_meter.is_busy() and rad_meter.is_on != Game.show_radiation:
+		rad_meter.set_on(Game.show_radiation, true)
+
+
 func _build_side_panel() -> void:
 	var p := _panel([1, 0, 1, 1], [-410, 64, -6, -6])
+	side_panel = p
 	p.add_child(tabs)
 	for tab_name in ["Tile", "Upgrades", "Colony", "Diplomacy"]:
 		var scroll := ScrollContainer.new()
@@ -197,6 +229,79 @@ func _build_log() -> void:
 	log_text.scroll_following = true
 	p.add_child(log_text)
 	bottom.add_child(p)
+
+
+## The corner picture: a point of interest's scene in an orange line, as the leader faces have, with the site's name under it. _sync_scene fills it and shows it.
+func _build_scene_panel() -> void:
+	scene_panel.anchor_left = 1.0
+	scene_panel.anchor_top = 1.0
+	scene_panel.anchor_right = 1.0
+	scene_panel.anchor_bottom = 1.0
+	scene_panel.offset_left = -410   # the width of the side panel above it
+	scene_panel.offset_right = -6
+	scene_panel.offset_top = -6
+	scene_panel.offset_bottom = -6
+	scene_panel.visible = false   # not in game_ui: _sync_scene says when it shows (and the menus cover it as they cover the rest)
+	root.add_child(scene_panel)
+	var col := VBoxContainer.new()
+	scene_panel.add_child(col)
+	var frame := PanelContainer.new()
+	frame.name = "SceneFrame"
+	var line := StyleBoxFlat.new()
+	line.bg_color = Color(0, 0, 0, 0)
+	line.border_color = AMBER
+	line.set_border_width_all(2)
+	line.set_content_margin_all(2)   # the picture sits inside the line, not under it
+	frame.add_theme_stylebox_override("panel", line)
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	col.add_child(frame)
+	scene_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	scene_art.stretch_mode = TextureRect.STRETCH_SCALE
+	scene_art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # crisp: the 1152 x 768 picture is 4 screen pixels to each art pixel, drawn at a quarter size
+	scene_art.custom_minimum_size = Data.POI_SCENE_SIZE
+	frame.add_child(scene_art)
+	scene_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(scene_name)
+
+
+## What the corner picture shows for the tile you have picked: {"art", "name", "color"}, or {} for nothing. A point of interest your colony has seen shows its own picture
+## (a party searching the site shows none: its panel, with the die and what the roll found, is longer than the side already and needs all the room). A seen tile of the old
+## highway shows the Hollow Mile picture by the same rules as the first sighting's: the grey one in a day season (always, with the night switched off), at night the orange dusk
+## one, or the green one when the tile's reading, once your scouts have measured it, is high radiation. No picture on file, no picture.
+func _picked_scene() -> Dictionary:
+	var c := Game.selected
+	if not Game.in_bounds(c) or not Game.knows_tile(Data.PLAYER, c):
+		return {}
+	var building: String = Game.memory[Data.PLAYER][Game.idx(c)][1]
+	if building in Data.HOLLOW_MILE.tiles:
+		var spec: Dictionary = Data.HOLLOW_MILE
+		var version := _hollow_version(Game.is_measured(c) and Game.radiation(c) >= spec.rad_high)
+		var mile := Sprites.picture(spec[version])
+		return {} if mile == null else {"art": mile, "name": spec.name, "color": spec[version + "_color"]}
+	if building == "" or not Data.BUILDINGS[building].has("poi"):
+		return {}
+	var kind: String = Data.BUILDINGS[building].poi
+	var anchor := Game.poi_anchor(c)
+	if Units.units.any(func(p): return p.job == "scav" and p.target == anchor and p.stage == "site"):
+		return {}
+	var art: Texture2D = Sprites.picture(Data.POI_SCENES[kind]) if Data.POI_SCENES.has(kind) else null
+	return {} if art == null else {"art": art, "name": Data.BUILDINGS[building].name, "color": Data.BUILDINGS[building].color}
+
+
+## The picture of the point of interest or old highway you have picked goes in the bottom right corner, under the Tile panel, and the Tile panel gets that much shorter.
+## Only while the Tile tab is showing: the other tabs keep the whole side.
+func _sync_scene() -> void:
+	var scene := _picked_scene() if Game.in_game and tabs.get_tab_title(tabs.current_tab) == "Tile" else {}
+	scene_panel.visible = not scene.is_empty()
+	if scene.is_empty():
+		side_panel.offset_bottom = -6
+		return
+	scene_art.texture = scene.art
+	scene_name.text = scene.name
+	scene_name.add_theme_color_override("font_color", scene.color)
+	var height := scene_panel.get_combined_minimum_size().y
+	scene_panel.offset_top = -6.0 - height
+	side_panel.offset_bottom = -6.0 - height - 6.0
 
 
 func _build_menu() -> void:
@@ -574,6 +679,7 @@ func refresh() -> void:
 	for tab_name in boxes:
 		stale_tabs[tab_name] = true
 	_refresh_tab(tabs.current_tab)
+	_sync_scene()
 	_refresh_party()
 	log_text.text = "\n".join(Game.log_lines)
 
@@ -599,6 +705,7 @@ func _refresh_tab(index: int) -> void:
 func _on_tab_changed(index: int) -> void:
 	if Game.in_game and stale_tabs.has(tabs.get_tab_title(index)):
 		_refresh_tab(index)
+	_sync_scene()
 
 
 ## The tiny picture after a resource's amount in the top bar, as BBCode: art/icons/res_<id>_bar.png, the 8 x 8 picture
@@ -624,7 +731,7 @@ func _refresh_top() -> void:
 	top_text.text = t
 	var views := {Data.PLAYER: "Map: you", Data.AI: "Map: Rust Kings", Data.NONE: "Map: no fog"}   # short: the top bar is full
 	view_button.text = views[Game.view]
-	rad_button.text = "Rad: " + ("on" if Game.show_radiation else "off")   # short: the top bar is full
+	_sync_rad_meter()
 	art_button.text = "Art: " + Sprites.choice_name(Sprites.state())
 	walk_button.text = "Walk: " + SeasonReplay.mode_text()
 
@@ -1308,11 +1415,8 @@ func _on_hollow_found(_cell: Vector2i, hot: bool) -> void:
 func show_hollow_mile(hot := false) -> void:
 	if not Game.in_game or ending_screen.visible or stats_screen.visible:
 		return
-	var night := Daylight.target_light(Game.season) < 0.5
 	var spec: Dictionary = Data.HOLLOW_MILE
-	var version := "day"
-	if night:
-		version = "fallout" if hot else "night"
+	var version := _hollow_version(hot)
 	var art := Sprites.picture(spec[version])
 	hollow_art.texture = art
 	if art != null:
@@ -1321,6 +1425,14 @@ func show_hollow_mile(hot := false) -> void:
 	hollow_title.add_theme_color_override("font_color", spec[version + "_color"])
 	hollow_note.text = "" if art != null else spec.note
 	hollow_screen.visible = true
+
+
+## Which Hollow Mile picture the light of the season on screen calls for: "day" in a day season (and always with the night switched off), in a night season "night",
+## or "fallout" when `hot` (high radiation).
+func _hollow_version(hot: bool) -> String:
+	if Daylight.target_light(Game.season) >= 0.5:
+		return "day"
+	return "fallout" if hot else "night"
 
 
 ## A click on the picture (or Enter, Space or Escape): back to the map.
