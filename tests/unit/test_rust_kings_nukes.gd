@@ -87,20 +87,37 @@ func test_the_airfield_comes_at_season_46_on_their_land_by_the_fort_away_from_yo
 		var d := Vector2(c).distance_to(Vector2(fort))
 		if d >= 3.0 and d <= 6.0 and c != spot and Game.tile(c)["b"] == "" and Game.tile(c)["t"] != "water" and Game.slopes[Game.idx(c)] != "steep":
 			assert_ge(Vector2(spot).distance_to(Vector2(hq)), Vector2(c).distance_to(Vector2(hq)), "no free tile of theirs in range is further from you")
-	assert_eq(before.stone - Game.ai.stone, 40)
-	assert_eq(before.gold - Game.ai.gold, 40)
-	assert_eq(before.metal, Game.ai.metal, "no metal: they have none to spare")
+	assert_eq(before.metal - Game.ai.metal, 30 - 0, "metal: 30 of it, with no cache falling in season 46")
+	assert_eq(before.stone - Game.ai.stone, 25)
+	assert_eq(before.gold - Game.ai.gold, 25)
 	Game.season = 47
 	Game._ai_nukes()
 	assert_eq(_airfields().size(), 1, "one is all they build")
 
 
+func test_their_scavengers_find_a_cache_of_metal_at_season_44_and_more_every_twelve_seasons() -> void:
+	var added := {}
+	for s in range(40, 90):
+		Game.season = s
+		Game.ai["metal"] = 0
+		Game.ai["airfield_wait"] = 99   # nothing to spend it on
+		Game._ai_nukes()
+		added[s] = Game.ai["metal"]
+	assert_eq(added[43], 0)
+	assert_eq(added[44], 80, "the first cache")
+	assert_eq(added[45], 0)
+	assert_eq(added[56], 60)
+	assert_eq(added[68], 60)
+	assert_eq(added[80], 60)
+	assert_eq(added[50], 0)
+
+
 func test_they_cannot_build_what_they_cannot_pay_for() -> void:
 	Game.season = 46
-	Game.ai["gold"] = 39
+	Game.ai["metal"] = 29
 	Game._ai_nukes()
 	assert_eq(_airfields().size(), 0)
-	Game.ai["gold"] = 40
+	Game.ai["metal"] = 30
 	Game._ai_nukes()
 	assert_eq(_airfields().size(), 1)
 
@@ -113,11 +130,11 @@ func test_one_bomber_at_season_50_and_only_with_an_airfield() -> void:
 	assert_eq(Game.ai["bomber"], 0)
 	Game.season = 50
 	var gold: int = Game.ai.gold
-	var stone: int = Game.ai.stone
+	var metal: int = Game.ai.metal
 	Game._ai_nukes()
 	assert_eq(Game.ai["bomber"], 1)
-	assert_eq(gold - Game.ai.gold, 60)
-	assert_eq(stone - Game.ai.stone, 25)
+	assert_eq(gold - Game.ai.gold, 30)
+	assert_eq(metal - Game.ai.metal, 40)
 	Game.season = 51
 	Game._ai_nukes()
 	assert_eq(Game.ai["bomber"], 1, "never more than one")
@@ -325,20 +342,20 @@ func test_destroying_the_last_airfield_calls_off_a_planned_strike_and_stops_laun
 func test_they_rebuild_after_eight_seasons_if_they_can_pay_and_not_before() -> void:
 	var spot := _ready_to_strike()
 	Game.destroy_building(spot)
-	for i in 7:
-		Game.season = 61 + i
+	for i in 7:   # seasons 105 to 111: no metal cache falls in them
+		Game.season = 105 + i
 		Game._ai_nukes()
 		assert_eq(_airfields().size(), 0, "season %d after it fell" % (i + 1))
-	Game.ai["gold"] = 0
-	Game.season = 68
+	Game.ai["metal"] = 0
+	Game.season = 112
 	Game._ai_nukes()
 	assert_eq(_airfields().size(), 0, "eight seasons, but they cannot pay")
-	Game.ai["gold"] = 500
-	Game.season = 69
+	Game.ai["metal"] = 100
+	Game.season = 113
 	Game._ai_nukes()
 	assert_eq(_airfields().size(), 1, "and now they can")
 	assert_eq(Game.ai["bomber"], 1, "the bomber was kept")
-	assert_ge(Game.ai["nukes"], 1, "and the warheads (a second came at season 64)")
+	assert_ge(Game.ai["nukes"], 1, "and the warheads")
 
 
 func test_a_nuke_of_yours_on_the_airfield_takes_it_down_too() -> void:

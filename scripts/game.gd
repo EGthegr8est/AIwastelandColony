@@ -3201,6 +3201,9 @@ func _ai_pay(cost: Dictionary) -> void:
 ## Once a season, in their turn (Data.AI_NUKES): the airfield, the bomber, the warheads, and the strike planned last season going in, or a new one being planned.
 func _ai_nukes() -> void:
 	var rules: Dictionary = Data.AI_NUKES
+	var cache: Dictionary = rules.metal_cache
+	if season >= int(cache.first) and (season - int(cache.first)) % int(cache.every) == 0:
+		ai["metal"] += int(cache.first_amount) if season == int(cache.first) else int(cache.amount)   # their scavengers turn up a cache of metal
 	if ai["airfield_wait"] > 0:
 		ai["airfield_wait"] -= 1
 	var fields := count_building(Data.AI, "ai_airfield")

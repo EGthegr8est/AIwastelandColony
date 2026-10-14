@@ -500,9 +500,10 @@ once, and the **missile silo** can hold up to three. A nuke is a very heavy item
   what you know is in it (your own things in red). The first press arms it and the second sends the bomber (the nuke leaves the stores then; there is no
   recall). It flies in a straight line, the nuke goes off over the tile on the day it gets there, and it flies home.
 - **The Rust Kings' nukes, late game only** (`Data.AI_NUKES`, `Game._ai_nukes`). They build an **airfield** at season 46 (a building on their land, 3 to 6 tiles from
-  the fort on the side away from you: 40 stone and 40 gold), one **bomber** at season 50 (25 stone, 60 gold), and get a **warhead** at season 52 and another every
-  12 seasons, holding 2 at most. (Their costs are in stone and gold because their metal never builds up: their war rigs and planes take it, about 0.3 a season on eight
-  maps, so a cost in metal put their nukes off until about season 90. Measured on those maps, the airfield stood at season 46 on seven and 50 on the stone-poor eighth.)
+  the fort on the side away from you: 30 metal, 25 stone, 25 gold), one **bomber** at season 50 (40 metal, 30 gold), and get a **warhead** at season 52 and another every
+  12 seasons, holding 2 at most. (Both cost metal, and their metal never builds up: their war rigs and planes take it as it comes, about 0.3 a season on eight maps. So
+  their scavengers turn up a **cache of metal**, 80 at season 44 and 60 more every 12 seasons: enough for the airfield and the bomber on pace, and to rebuild the airfield
+  now and then.)
   Each season they have an airfield, a bomber and a warhead and have not struck in the last 4 seasons, there is a 30% chance they plan a strike; it lands the next
   season on the 3 x 3 square holding most of your buildings (at least 2; the camera jumps to it and the stats count it as a nuke you suffered). **Watchtowers** warn
   you the season before, with the tile; **Flak towers** shoot the bomber down 7 times in 10 (the warhead and the bomber are lost). **Their airfield is a building you

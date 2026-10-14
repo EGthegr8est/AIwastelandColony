@@ -412,12 +412,14 @@ const AI_VEHICLES := {
 
 # The Rust Kings' nukes (Game._ai_nukes), the late game only. They build an airfield on their land (`airfield_season`, paid from their stores) about `fort_distance` tiles
 # from the fort on the side away from you, then one bomber (`bomber_season`, never more than one), and get a warhead at `warhead_season` and one more every `warhead_every`
-# seasons, holding `warheads_max` at most. (Their costs are in stone and gold because that is what they have: their metal never builds up, since their war rigs and planes
-# take it as it comes in, about 0.3 a season measured on eight maps, so a cost in metal would have put their nukes off until about season 90.) Each season they have an airfield, a bomber and a warhead and have not struck in the last `gap` seasons there is a `chance`
+# seasons, holding `warheads_max` at most. Airfield and bomber both cost metal, and their metal never builds up (their war rigs and planes take it as it comes in: about
+# 0.3 a season measured on eight maps), so they are given a cache of it, `metal_cache`: `first_amount` at season `first`, then `amount` every `every` seasons, enough to build
+# the airfield and the bomber on pace and to rebuild the airfield now and then. Each season they have an airfield, a bomber and a warhead and have not struck in the last `gap` seasons there is a `chance`
 # they plan a strike on the 3 x 3 square holding most of your buildings (`min_buildings` at least), and it lands the next season. Watchtowers warn you with the tile; Flak
 # towers shoot the bomber down with chance `flak` (the warhead and the bomber are lost). Destroy the airfield and nothing launches, a planned strike is called off, and they
 # rebuild it `rebuild` seasons later if they can pay again. Dustwell, the tribes and the raider bands never have a nuke.
-const AI_NUKES := {"airfield_season": 46, "airfield_cost": {"stone": 40, "gold": 40}, "bomber_season": 50, "bomber_cost": {"stone": 25, "gold": 60},
+const AI_NUKES := {"airfield_season": 46, "airfield_cost": {"metal": 30, "stone": 25, "gold": 25}, "bomber_season": 50, "bomber_cost": {"metal": 40, "gold": 30},
+	"metal_cache": {"first": 44, "first_amount": 80, "every": 12, "amount": 60},
 	"warhead_season": 52, "warhead_every": 12, "warheads_max": 2, "chance": 0.3, "gap": 4, "min_buildings": 2, "rebuild": 8, "flak": 0.7, "fort_distance": [3, 6]}
 
 # ---------------------------------------------------------------- things on the move
