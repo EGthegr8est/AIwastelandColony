@@ -43,7 +43,7 @@ func _labels() -> Array:
 
 func test_the_legend_has_a_sprite_for_every_ground_slope_unit_and_camp() -> void:
 	var expected: int = Data.TERRAIN.size() + 1 + 2 + 2 + Data.UNITS.size() + Data.TRIBE_CLASSES.size()   # the grounds, the ford, the two slopes, the road and the highway, units and camps
-	assert_eq(expected, 26)
+	assert_eq(expected, 28)
 	assert_eq(_sprites().size(), expected)
 
 
@@ -96,7 +96,7 @@ func test_the_style_buttons_flip_the_whole_legend() -> void:
 	await wait_frames(2)
 	assert_eq(Sprites.style, 4)
 	tile_box = hud.boxes["Tile"]
-	assert_eq(_sprites().size(), 28, "the clean look has a picture for everything too, and the two bridges")
+	assert_eq(_sprites().size(), 30, "the clean look has a picture for everything too, and the two bridges")
 	_press("1")
 	await wait_frames(2)
 	assert_eq(Sprites.style, 1)
@@ -133,7 +133,7 @@ func test_the_art_button_in_the_top_bar_cycles_the_map_and_legend() -> void:
 		seen.append(Sprites.state())
 	assert_eq(seen, [2, 3, 4, 0, 1])
 	tile_box = hud.boxes["Tile"]
-	assert_eq(_sprites().size(), 26, "back on style 1: the pictures are back")
+	assert_eq(_sprites().size(), 28, "back on style 1: the pictures are back")
 
 
 func test_without_the_art_the_legend_falls_back_to_the_old_glyphs() -> void:

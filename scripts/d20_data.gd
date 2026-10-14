@@ -123,6 +123,9 @@ const CACHE := {
 #   {"trust": n}                     Dustwell's relations rise by n
 #   {"colonists": n} {"troops": n}   join the colony when the party heads home (colonists up to the population cap)
 #   {"lose": share}                  that share of what was found at the site so far is lost
+#   {"nukes": n}                     n unfired nukes go in the party's packs
+#   {"nukes_roll": [[max, n], ...]}  a d20: the first row whose max it does not pass says how many nukes (the silo's great roll: 1 to 12 gives 2, 13 to 20 gives 3)
+#   {"blast": true}                  a crater's nuke goes off under the party: it is wiped out and the game does the blast (Game.detonate)
 const SITE_FORT_REVEAL := 6
 const SITES := {
 	"crashed_ship": {"dc": 14, "outcomes": {
@@ -174,8 +177,8 @@ const SITES := {
 		"CRITICAL_FAILURE": {"name": "Raiders' ambush", "do": [{"fight": 3}]},
 	}},
 	"missile_silo": {"dc": 17, "outcomes": {
-		"SUCCESS": {"name": "Fuel store", "do": [{"pkg": "large", "res": "fuel"}]},
-		"CRITICAL_SUCCESS": {"name": "Targeting data", "do": [{"reveal_fort": true}, {"pkg": "medium", "res": "metal"}]},
+		"SUCCESS": {"name": "Fuel store", "do": [{"pkg": "large", "res": "fuel"}, {"nukes": 1}]},
+		"CRITICAL_SUCCESS": {"name": "Targeting data", "do": [{"reveal_fort": true}, {"pkg": "medium", "res": "metal"}, {"nukes_roll": [[12, 2], [20, 3]]}]},
 		"FAILURE": {"name": "Locked down", "do": []},
 		"CRITICAL_FAILURE": {"name": "Automated defenses", "do": [{"fight": 5}]},
 	}},
@@ -187,6 +190,16 @@ const SITES := {
 	}},
 }
 
+# Searching a glowing crater (one scavenger party, once per crater tile): one "trap"-type check, so the scavenge and trap modifiers, the radiation penalty, Lucky's reroll and
+# Sharp-Eyed's tier shift (a blast becomes a plain failure) all count, against "dc". Only a natural 1 and a natural 20 are critical here ("crit_margin" is out of reach): with
+# the usual margin a bad roll would set a nuke off 40% of the time. So a blast and a disarmed nuke are 5% each before traits. The "do" effects are the SITES ones.
+const CRATER := {"dc": 11, "crit_margin": 99, "outcomes": {
+	"CRITICAL_FAILURE": {"name": "The nuke goes off", "do": [{"blast": true}]},
+	"FAILURE": {"name": "Nothing but slag", "do": []},
+	"SUCCESS": {"name": "Scrap", "do": [{"pkg": "small", "res": "metal"}]},
+	"CRITICAL_SUCCESS": {"name": "A disarmed nuke", "do": [{"nukes": 1}]},
+}}
+
 # Building raids. Destroying a building is one attack roll, d20 + a modifier against the building's DC here (a building
 # that isn't listed, such as an HQ, the Rust Kings' fort, the citadel, Dustwell or a point of interest, can't be
 # destroyed). A scouting party rolls like a fight, with its own traits. A raid or a raider band is a number: its
@@ -195,7 +208,7 @@ const SITES := {
 const BUILDING_DC := {
 	"farm": 8, "lodge": 8, "horse_farm": 8, "salvage": 8, "market": 8,
 	"mine": 10, "refinery": 10, "motor_pool": 10, "port": 10, "airfield": 10,
-	"outpost": 11, "wall": 12, "tower": 12, "keep": 15, "ai_wall": 12, "drug_factory": 10,
+	"outpost": 11, "wall": 12, "tower": 12, "keep": 15, "ai_wall": 12, "ai_airfield": 12, "drug_factory": 10,
 }
 const STONE_WALL_DC := 2
 const RAID_BONUS := [[2.0, 4], [1.5, 2], [1.0, 0]]

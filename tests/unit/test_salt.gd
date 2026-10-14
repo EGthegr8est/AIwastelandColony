@@ -109,7 +109,7 @@ func test_hides_and_salt_are_not_resources_and_have_no_line_in_the_top_bar() -> 
 	assert_false(Data.RESOURCES.has("hide"))
 	assert_false(Data.RESOURCES.has("salt"))
 	assert_true(Data.ITEMS.has("hide") and Data.ITEMS.has("salt"))
-	assert_eq(Game.items, {"hide": 0, "salt": 0})
+	assert_eq(Game.items, {"hide": 0, "salt": 0, "nuke": 0})
 
 
 func test_hides_and_salt_are_carried_and_weigh_something() -> void:
@@ -198,7 +198,7 @@ func test_salt_in_a_survivor_survives_saving() -> void:
 	Game.save_game("salt_test")
 	assert_true(Game.load_game("salt_test"))
 	assert_eq(Units.units[0].survivors[0].salted, 3)
-	assert_eq(Game.items, {"hide": 2, "salt": 4})
+	assert_eq(Game.items, {"hide": 2, "salt": 4, "nuke": 0})
 	assert_true(Game.salt_on)
 
 

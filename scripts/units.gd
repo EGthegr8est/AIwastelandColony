@@ -72,9 +72,9 @@ func _make_unit(job: String, owner: int, mover: String, pos: Vector2i, target: V
 func glyph_kind(u: Dictionary) -> String:
 	if u.job == "band":
 		return "band"
-	if u.mover in ["car", "boat", "plane"]:
+	if u.mover in ["car", "boat", "plane", "bomber"]:
 		return u.mover
-	return "soldier" if u.job == "hunters" else u.job
+	return "soldier" if u.job == "hunters" else ("caravan" if u.job == "deal" else u.job)   # a warhead run is a caravan
 
 
 ## What Data.UNITS says of a kind of unit (a hunting party's "soldier" is Data.SOLDIER: it has no atlas sprite).
@@ -131,7 +131,7 @@ func free_vehicles(v: String) -> int:
 
 
 func trade_runs() -> int:
-	return units.filter(func(u): return u.owner == Data.PLAYER and u.job in ["caravan", "boat"]).size()
+	return units.filter(func(u): return u.owner == Data.PLAYER and u.job in ["caravan", "boat", "deal"]).size()
 
 
 func party_strength(u: Dictionary) -> int:
@@ -172,7 +172,7 @@ func outbound_route(job: String, mover: String, from: Vector2i, target: Vector2i
 func tank_size(job: String, mover: String) -> int:
 	if not mover in Data.VEHICLE_FUEL:
 		return 0
-	if job == "scout" or job == "plane" or (job == "boat" and not Game.has("fv3")):
+	if job == "scout" or job == "plane" or job == "bomb" or (job == "boat" and not Game.has("fv3")):
 		return Data.VEHICLE_FUEL[mover].tank
 	return 0
 
@@ -190,10 +190,21 @@ func boat_trip_fuel(c: Vector2i) -> float:
 	return 2.0 * length * Data.VEHICLE_FUEL["boat"].burn * fuel_mult()
 
 
+## The fuel a bomber from `from` burns on a strike on `target`: out and back, the way it flies. Send refuses a strike that is more than its tank holds, so it never runs dry.
+func bomb_trip_fuel(from: Vector2i, target: Vector2i) -> float:
+	var path := outbound_route("bomb", "bomber", from, target)
+	var length := 0.0
+	for i in range(1, path.size()):
+		length += Vector2(path[i] - path[i - 1]).length()
+	return 2.0 * length * Data.VEHICLE_FUEL["bomber"].burn * fuel_mult()
+
+
 ## What an expedition costs to send: the ones with a tank also fill it.
 ## (Scouts' food pack comes on top of this, from any of your food: see send_cost_text().)
 func send_cost(job: String, mover: String) -> Dictionary:
 	var cost: Dictionary = Data.EXPEDITIONS[job].cost.duplicate()
+	if job == "deal":
+		cost["gold"] = Game.warhead_price()   # paid now, and lost with the caravan if it never gets there
 	var tank := tank_size(job, mover)
 	if tank > 0:
 		cost["fuel"] = cost.get("fuel", 0) + tank
@@ -230,6 +241,12 @@ func send_status(job: String, mover: String, target: Vector2i, dest := -1, from 
 		from = Game.home(Data.PLAYER)
 	if mover in Data.VEHICLES and free_vehicles(mover) <= 0:
 		return "No free %s" % Data.VEHICLES[mover].name.to_lower()
+	if job == "bomb":
+		if int(Game.items.get("nuke", 0)) <= 0:
+			return "No nukes in the stores"
+		var trip := bomb_trip_fuel(from, target)
+		if trip > float(tank_size(job, mover)):
+			return "Too far: the round trip burns %.1f fuel and the tank holds %d" % [trip, tank_size(job, mover)]
 	if job == "scout" and scouts_out() >= Game.scout_parties():
 		return "All %d scouting parties are out" % Game.scout_parties()
 	if job == "hunters":
@@ -237,13 +254,21 @@ func send_status(job: String, mover: String, target: Vector2i, dest := -1, from 
 			return "Need %d troops to spare" % e.crew
 	elif Game.pop <= e.crew + 1:
 		return "Need %d colonists to spare" % e.crew
-	if job in ["caravan", "boat"] and trade_runs() >= Game.caravan_slots():
+	if job in ["caravan", "boat", "deal"] and trade_runs() >= Game.caravan_slots():
 		return "All %d caravan slots in use" % Game.caravan_slots()
 	if job == "caravan" and dest == -1:
 		if not Game.knows(Data.PLAYER, Data.AI):
 			return "You haven't found them yet"
 		if Game.ai["relations"] <= -50:
 			return "They won't trade with you"
+	if job == "deal":
+		var camp := tribe_by_id(dest)
+		if camp.is_empty() or camp.class != "trader" or not camp.get("warhead", false) or not camp.get("warhead_known", false):
+			return "They have no warhead for sale"
+		if not mover in ["horse", "car"]:
+			return "A warhead is too heavy for a caravan on foot"
+		if units.any(func(u): return u.job == "deal" and u.dest == dest):
+			return "A caravan is already on its way for it"
 	# One party to a ruin or an animal (the Giant Frog is for as many as you can send)
 	if job in ["scav", "hunters"] and dest != FROG_ID and units.any(func(u): return u.job in ["scav", "hunters"] and u.target == target and u.stage in ["out", "site"]):
 		return "A party is already heading there"
@@ -266,6 +291,8 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 		from = launch_tile(from)
 	var e: Dictionary = Data.EXPEDITIONS[job]
 	Game.pay(send_cost(job, mover))
+	if job == "bomb":
+		Game.items["nuke"] = int(Game.items["nuke"]) - 1   # it is loaded: it leaves the stores now
 	Game.note_sent(job)
 	if job == "hunters":
 		Game.troops -= e.crew
@@ -281,6 +308,8 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 		for s in u.survivors:
 			s["salted"] = Data.SALT_SEASONS
 	u.dest = dest
+	if job == "deal":
+		u["paid"] = Game.warhead_price()
 	u.path = path.slice(1)
 	if tank_size(job, mover) > 0:
 		u.fuel = float(tank_size(job, mover))
@@ -377,7 +406,7 @@ func _casualty(u: Dictionary, who := {}) -> String:
 func stage_text(u: Dictionary) -> String:
 	match u.stage:
 		"out":
-			return "heading out"
+			return "flying to the target" if u.job == "bomb" else "heading out"
 		"station":
 			return "keeping watch"
 		"site":
@@ -608,7 +637,12 @@ func leg_slowdown(u: Dictionary) -> float:
 
 ## load_slowdown() and leg_slowdown() together: how many times longer than usual every step of this party takes.
 func party_slowdown(u: Dictionary) -> float:
-	return load_slowdown(u) * leg_slowdown(u)
+	return load_slowdown(u) * leg_slowdown(u) * crate_slowdown(u)
+
+
+## A warhead bought from the traders comes crated: Data.TRADERS.crate_slowdown times as long on top of the weight (1.0 for anything else).
+func crate_slowdown(u: Dictionary) -> float:
+	return float(Data.TRADERS.crate_slowdown) if u.get("crated", false) and int(u.get("carry", {}).get("nuke", 0)) > 0 else 1.0
 
 
 ## A foot or horseback party that has just entered tile `c` and it is rock or a steep incline: maybe someone breaks a leg (Data.LEG). One
@@ -672,15 +706,32 @@ func fit_load(u: Dictionary, goods: Dictionary) -> Dictionary:
 	var weight := goods_weight(goods)
 	if weight <= room:
 		return goods
-	var share := room / weight
 	var kept := {}
 	var left := {}
-	for k in goods:
-		var n := int(goods[k] * share)
+	var rest := goods
+	var nukes := int(goods.get("nuke", 0))
+	if nukes > 0:   # nukes are loaded first, and the rest is trimmed to the room that is left (or a big package of fuel would crowd out the warhead)
+		var lift := clampi(int(room / float(Data.ITEM_WEIGHT.nuke)), 0, nukes)
+		if lift > 0:
+			kept["nuke"] = lift
+		if nukes > lift:
+			left["nuke"] = nukes - lift
+		room = maxf(room - lift * float(Data.ITEM_WEIGHT.nuke), 0.0)
+		rest = goods.duplicate()
+		rest.erase("nuke")
+		weight = goods_weight(rest)
+		if weight <= room:
+			kept.merge(rest)
+			if not left.is_empty():
+				Game.add_log("%s can't carry it all: %s stays behind." % [names_text(u), Game.cost_text(left)])
+			return kept
+	var share := room / weight if weight > 0.0 else 0.0
+	for k in rest:
+		var n := int(rest[k] * share)
 		if n > 0:
 			kept[k] = n
-		if goods[k] - n > 0:
-			left[k] = goods[k] - n
+		if rest[k] - n > 0:
+			left[k] = rest[k] - n
 	Game.add_log("%s can't carry it all: %s stays behind." % [names_text(u), Game.cost_text(left)])
 	return kept
 
@@ -772,7 +823,7 @@ func _strand(u: Dictionary) -> void:
 	u.mover = "foot"
 	u.erase("fuel")
 	match v:
-		"plane":
+		"plane", "bomber":
 			_crash(u, where)
 		"boat":
 			Game.add_log("OUT OF FUEL: the boat ran dry at %s and was abandoned. %s wade ashore and head home on foot." % [where, names_text(u)])
@@ -845,6 +896,8 @@ func season_turn() -> void:
 	_spawn_wild()
 	_record_start()
 	for u in units.duplicate():
+		if u.get("gone", false):
+			continue   # a blast earlier in this very season took it
 		u.age += 1
 		if u.job == "band":
 			_band_turn(u)
@@ -913,6 +966,51 @@ func _mark_gone(u: Dictionary, at_end := false) -> void:
 		_actors[u.id].gone_day = SeasonReplay.AT_END if at_end else _walk_day(u)
 
 
+func is_recording() -> bool:
+	return _recording
+
+
+## A nuke went off at `cell`, `day` days into the season's walk: the replay plays the explosion then.
+func note_blast(cell: Vector2i, day: float) -> void:
+	_note_event("blast", cell, day)
+
+
+## A blast takes every party on `cells`: yours (their crew are lost for good, and a vehicle with them), raider bands, and every wild animal and camp. `spare` holds the
+## ids of units that live (the party whose crater roll set it off, which its visit finishes off itself, and the bomber that dropped it). `day` is when in the walk it
+## happened, for the replay (-1: now). The Giant Frog is not hurt. Returns {"parties", "yours", "people", "animals", "camps"}.
+func blast_kills(cells: Array, spare: Array, day := -1.0) -> Dictionary:
+	var out := {"parties": 0, "yours": 0, "people": 0, "animals": 0, "camps": 0}
+	for u in units.duplicate():
+		if u.get("gone", false) or u.id in spare or not u.pos in cells:
+			continue
+		out.parties += 1
+		if u.owner == Data.PLAYER:
+			out.yours += 1
+			out.people += u.crew
+			Game.note("survivors_lost", u.crew)
+			u.crew = 0
+			u.survivors = []
+			u.erase("visit")
+			_lost(u)
+		else:
+			_mark_gone(u)
+		if day >= 0.0 and _recording and _actors.has(u.id):
+			_actors[u.id].gone_day = day
+		if not _recording:
+			units.erase(u)   # not mid-season: it leaves the map now
+	for a in animals.duplicate():
+		if a.pos in cells:
+			animals.erase(a)
+			out.animals += 1
+			if day >= 0.0 and _recording and _actors.has(a.id):
+				_actors[a.id].gone_day = day
+	for t in tribes.duplicate():
+		if t.pos in cells:
+			tribes.erase(t)
+			out.camps += 1
+	return out
+
+
 ## Something to flash or puff where it happened: "clash", "ruin", "home" or "smoke". day: AT_END for when the walking is done.
 func _note_event(kind: String, cell: Vector2i, day: float) -> void:
 	if _recording:
@@ -972,6 +1070,8 @@ func _arrive(u: Dictionary) -> void:
 	match u.job:
 		"caravan":
 			_trade(u)
+		"deal":
+			_deal(u)
 		"boat":
 			var goods := {"gold": Game.trade_gold(10 + Game.vehicle_trade("boat") + (Data.CONTRACT_GOLD if Game.has("c2") else 0))}
 			_haul(u, goods)
@@ -979,6 +1079,8 @@ func _arrive(u: Dictionary) -> void:
 			Game.add_log("Your boat traded with river folk downstream: %s. Heading home." % Game.cost_text(u.carry))
 		"plane":
 			Game.add_log("Recon plane reached %d,%d and turned for home." % [u.pos.x, u.pos.y])
+		"bomb":
+			_drop_nuke(u)
 	if u.crew <= 0:
 		_lost(u)
 		return
@@ -986,6 +1088,13 @@ func _arrive(u: Dictionary) -> void:
 	u.path = Game.route(u.mover, u.pos, u.home).slice(1)
 	if u.path.is_empty():
 		_come_home(u)
+
+
+## The bomber is over its tile: the nuke goes down and goes off (on the day of the season's walk it got there), and the bomber turns for home.
+func _drop_nuke(u: Dictionary) -> void:
+	Game.add_log("Your bomber released its nuke over %d,%d." % [u.pos.x, u.pos.y])
+	Game.note("nukes_dropped")
+	Game.detonate(u.pos, "bomber", [u.id], _walk_day(u))
 
 
 func _come_home(u: Dictionary) -> void:
@@ -1041,12 +1150,16 @@ func _begin_visit(u: Dictionary) -> void:
 	var anchor: Vector2i = Game.poi_anchor(u.target) if poi != "" else u.target
 	var t: Dictionary = Game.tile(anchor)
 	var where := "%d,%d" % [u.target.x, u.target.y]
+	var is_crater: bool = poi == "" and t["t"] == "crater"
 	if t["r"] == "picked":
-		Game.add_log("Scavengers found the %s at %s already picked clean." % ["site" if poi != "" else "ruins", where])
+		Game.add_log("Scavengers found the %s at %s already picked clean." % ["site" if poi != "" else ("crater" if is_crater else "ruins"), where])
 		_turn_back(u)
 		return
+	if poi == "missile_silo" and Game.silo_stock(anchor) > 0:
+		_collect_warheads(u, anchor)
+		return
 	Game.measure(u.pos)
-	var ruin: String = "poi" if poi != "" else {"trap": "trapped", "rogue": "rogue", "rogue_seen": "rogue"}.get(t["r"], "safe")
+	var ruin: String = "poi" if poi != "" else ("crater" if is_crater else {"trap": "trapped", "rogue": "rogue", "rogue_seen": "rogue"}.get(t["r"], "safe"))
 	var scale: float = D20.loot_scale * (Data.SCAV_CAR_MULT if u.mover == "car" else 1.0)   # a war rig hauls more
 	if poi != "":
 		scale *= Data.POI_LOOT_MULT
@@ -1054,8 +1167,23 @@ func _begin_visit(u: Dictionary) -> void:
 	_note_event("ruin", u.pos, _walk_day(u))
 	u.stage = "site"
 	u.path = []
-	Game.add_log("%s reached the %s at %s." % [names_text(u), Data.BUILDINGS["poi_" + poi].name.to_lower() if poi != "" else "ruins", where])
+	Game.add_log("%s reached the %s at %s." % [names_text(u), Data.BUILDINGS["poi_" + poi].name.to_lower() if poi != "" else ("crater" if is_crater else "ruins"), where])
 	_sync_visit(u)
+
+
+## A party reaching a silo that still holds the warheads an earlier party could not carry: there is nothing to roll, they load what they can lift.
+func _collect_warheads(u: Dictionary, anchor: Vector2i) -> void:
+	var stock := Game.silo_stock(anchor)
+	Game.measure(u.pos)
+	_haul(u, {"nuke": stock})   # fit_load: as many as the party can lift
+	var took := int(u.carry.get("nuke", 0))
+	Game.set_silo_stock(anchor, stock - took)
+	if took > 0:
+		Game.add_log("%s loaded %d unfired %s from the silo at %d,%d.%s Heading home." % [names_text(u), took, "nuke" if took == 1 else "nukes", u.target.x, u.target.y,
+			" %d stay behind." % (stock - took) if stock > took else ""])
+	else:
+		Game.add_log("%s could not lift a nuke. It stays in the silo at %d,%d. Heading home." % [names_text(u), u.target.x, u.target.y])
+	_turn_back(u)
 
 
 ## What the site does to a roll: its radiation after the vehicle's shield, and how strong the party is.
@@ -1108,6 +1236,9 @@ func visit_do(uid: int, choice := "roll") -> int:
 	if u.visit.stage.begins_with("frog_"):
 		return _frog_do(u, choice)
 	D20Visit.step(u.visit, dice, u.survivors, choice)
+	if bool(u.visit.get("blast", false)) and not bool(u.visit.get("blast_done", false)):
+		u.visit["blast_done"] = true
+		Game.detonate(u.pos, "crater", [u.id], -1.0, true)   # the party itself is finished off when its visit ends; the explosion plays once the die has landed
 	var shown := int(u.visit.shown)
 	if shown == 1:
 		_frog_wakes(u)   # a natural 1 near the city's ruins may wake the Giant Frog (it adds to u.visit.last)
@@ -1129,6 +1260,7 @@ func visit_finish(uid: int) -> void:
 	if u.is_empty() or u.get("stage", "") != "site" or not u.has("visit") or u.visit.stage != "done":
 		return
 	var v: Dictionary = u.visit
+	Game.release_blasts()
 	if v.ruin == "hunt":
 		_finish_hunt(u, v)
 		return
@@ -1141,7 +1273,7 @@ func visit_finish(uid: int) -> void:
 	var poi: String = v.get("poi", "")
 	var t: Dictionary = Game.tile(Game.poi_anchor(u.target) if poi != "" else u.target)
 	var where := "%d,%d" % [u.target.x, u.target.y]
-	var place := "site" if poi != "" else "ruins"
+	var place := "site" if poi != "" else ("crater" if v.ruin == "crater" else "ruins")
 	u.erase("visit")
 	if v.wiped:
 		Game.note("survivors_lost", u.crew)
@@ -1164,11 +1296,20 @@ func visit_finish(uid: int) -> void:
 	if poi != "" and v.outcome != "left":
 		_site_rewards(v, Game.poi_anchor(u.target))
 	if v.outcome != "left" and v.outcome != "slipped" and v.outcome != "lost_fight":
-		Game.note("sites_scavenged" if poi != "" else "ruins_scavenged")
+		Game.note("sites_scavenged" if poi != "" else ("craters_searched" if v.ruin == "crater" else "ruins_scavenged"))
 	if v.loot.is_empty():
 		u.carry = {}
 	else:
 		_haul(u, v.loot.duplicate())
+	var found := int(v.loot.get("nuke", 0))
+	if found > 0:
+		Game.note("nukes_found", found)
+		var left := found - int(u.carry.get("nuke", 0))
+		if left > 0 and poi == "missile_silo":
+			Game.set_silo_stock(Game.poi_anchor(u.target), left)
+			Game.add_log("%d unfired %s stay in the silo. A party that can carry them can fetch them: there is nothing left to roll." % [left, "nuke" if left == 1 else "nukes"])
+		elif left > 0:
+			Game.add_log("The party could not lift %d of the %d nukes. They are lost." % [left, found])
 	if v.outcome == "left":
 		Game.add_log("The scavengers left the %s at %s untouched. Heading home." % [place, where])
 	elif u.carry.is_empty():
@@ -1334,6 +1475,23 @@ func _turn_back(u: Dictionary) -> void:
 		_come_home(u)
 
 
+## A warhead run reaches its trader camp: the gold changes hands and the warhead is crated for the long way home. If the camp is gone, or someone else bought it, the gold
+## comes back.
+func _deal(u: Dictionary) -> void:
+	var camp := tribe_by_id(u.dest)
+	var price := int(u.get("paid", 0))
+	if camp.is_empty() or not camp.get("warhead", false):
+		Game.res["gold"] += price
+		Game.add_log("Your caravan reached the traders, but there was no warhead for sale. The %d gold came back with it. Heading home." % price)
+		return
+	camp["warhead"] = false
+	_haul(u, {"nuke": 1})
+	u["crated"] = true
+	Game.note("trade_runs")
+	Game.note("nukes_bought")
+	Game.add_log("Your caravan bought a warhead from the %s for %d gold. It is crated: a slow, heavy way home." % [camp.name, price])
+
+
 func _trade(u: Dictionary) -> void:
 	if u.dest == -1:   # the Rust Kings
 		var armored: bool = Game.has("cv2") and u.mover == "car"
@@ -1351,6 +1509,9 @@ func _trade(u: Dictionary) -> void:
 	if tribe.is_empty():
 		Game.add_log("Your caravan found the trader camp abandoned.")
 		return
+	if tribe.get("warhead", false) and not tribe.get("warhead_known", false):
+		tribe["warhead_known"] = true   # a first trade there: the traders let it be known
+		Game.add_log("The %s let slip that they have a warhead for sale: %d gold. Buy it with a caravan on horseback or in a war rig." % [tribe.name, Game.warhead_price()])
 	var good: String = Data.TRIBE_GOODS.pick_random()
 	if randf() < Data.SALT_CARAVAN_CHANCE:   # now and then the traders have a dose of Salt to spare
 		_haul(u, {"gold": Game.trade_gold(5), "salt": 1})
@@ -1411,7 +1572,7 @@ func _band_target(band: Dictionary) -> Vector2i:
 	var best := Vector2i(-1, -1)
 	var best_d := 1e9
 	for u in units:
-		if u.owner == Data.PLAYER and not u.mover in ["plane", "boat"]:
+		if u.owner == Data.PLAYER and not u.mover in ["plane", "bomber", "boat"]:
 			var d := Vector2(u.pos - band.pos).length()
 			if d < 15 and d < best_d:
 				best = u.pos
@@ -1464,7 +1625,7 @@ func _ambushes() -> void:
 		if band.job != "band" or band.get("gone", false):
 			continue
 		for u in units:
-			if u.owner != Data.PLAYER or u.get("gone", false) or u.mover in ["plane", "boat"]:
+			if u.owner != Data.PLAYER or u.get("gone", false) or u.mover in ["plane", "bomber", "boat"]:
 				continue
 			if Vector2(u.pos - band.pos).length() <= 1.5:
 				_fight(band, u)
@@ -1650,7 +1811,7 @@ func _bear_attacks() -> void:
 		if int(D20Data.HUNT[bear.kind].strength) <= 0:
 			continue
 		for u in units:
-			if u.owner != Data.PLAYER or u.get("gone", false) or u.mover in ["plane", "boat"] or u.survivors.is_empty():
+			if u.owner != Data.PLAYER or u.get("gone", false) or u.mover in ["plane", "bomber", "boat"] or u.survivors.is_empty():
 				continue
 			if u.get("stage", "") == "site" and u.get("visit", {}).get("ruin", "") == "hunt" and int(u.visit.get("animal_id", -1)) == bear.id:
 				continue   # the hunt is the fight
@@ -1697,7 +1858,7 @@ func _bear_fight(bear: Dictionary, u: Dictionary) -> void:
 ## The animals a stationed scouting party can hunt: the one on its own tile and the ones next to it. Not from a plane or a boat.
 func hunt_targets(u: Dictionary) -> Array:
 	var out := []
-	if u.get("job", "") != "scout" or u.get("stage", "") != "station" or u.mover in ["plane", "boat"]:
+	if u.get("job", "") != "scout" or u.get("stage", "") != "station" or u.mover in ["plane", "bomber", "boat"]:
 		return out
 	for a in animals:
 		if Vector2(a.pos - u.pos).length() <= 1.5:
@@ -2180,6 +2341,12 @@ func _walk_day_of(id: int) -> float:
 
 # ---------------------------------------------------------------- tribes
 
+## Does a new trader camp hold a warhead for sale? About Data.TRADERS.warhead_chance of them do. It is worked out from the camp's number and place, not drawn from the random
+## numbers, so everything made after it (the animals, the frog) is as it was.
+func holds_warhead(id: int, pos: Vector2i) -> bool:
+	return absi(hash([id, pos.x, pos.y])) % 1000 < int(float(Data.TRADERS.warhead_chance) * 1000.0)
+
+
 func _spawn_tribe() -> Dictionary:
 	for attempt in 80:
 		var c := Vector2i(randi_range(3, Game.w - 4), randi_range(3, Game.h - 4))
@@ -2194,6 +2361,8 @@ func _spawn_tribe() -> Dictionary:
 		var tribe := {"id": next_id, "class": Data.TRIBE_CLASSES.keys().pick_random(),
 			"name": "%s %s" % [Data.TRIBE_NAMES[0].pick_random(), Data.TRIBE_NAMES[1].pick_random()],
 			"pos": c, "strength": randi_range(5, 10), "relations": 0, "found": false}
+		tribe["warhead"] = tribe["class"] == "trader" and holds_warhead(next_id, c)
+		tribe["warhead_known"] = false
 		tribes.append(tribe)
 		return tribe
 	return {}
@@ -2202,6 +2371,7 @@ func _spawn_tribe() -> Dictionary:
 ## Called after the fog updates: log tribes your colony sees for the first time, and the Hollow Mile.
 func check_discoveries() -> void:
 	Game.check_hollow_mile()
+	Game.check_airfield()
 	for t in tribes:
 		if not t.found and Game.knows_tile(Data.PLAYER, t.pos):
 			t["found"] = true

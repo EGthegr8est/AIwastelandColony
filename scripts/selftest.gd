@@ -18,7 +18,7 @@ static func requested() -> bool:
 static func run() -> Array:
 	var out := []
 	_check(out, Sprites.available(), "pixel-art atlas loads (art/atlas.png and atlas.json)")
-	_check(out, Sprites.names().size() == 24, "the atlas has all 24 sprites (has %d)" % Sprites.names().size())
+	_check(out, Sprites.names().size() == 26, "the atlas has all 26 sprites (has %d)" % Sprites.names().size())
 	_check(out, not Sprites.rects().is_empty() or Sprites.style == 0, "sprite rectangles are ready for the map")
 	_check(out, Sprites.animals_available() and Sprites.animals_texture().get_size() == Vector2(64, 16), "the animals' picture loads (art/animals.png, 4 pictures of 16 x 16)")
 	_check(out, Sprites.building_atlas_texture() != null and Sprites.building_ids().size() == 22, "the building pictures load (art/building_atlas.png and .json, 22 of them)")
@@ -46,7 +46,7 @@ static func run() -> Array:
 		_check(out, mile != null and mile.get_size() == Vector2(1152, 768), "Hollow Mile picture loads (1152 x 768): %s" % version)
 	var menu := Music.stream_for(Music.MENU)
 	_check(out, menu != null and menu.loop_mode == AudioStreamWAV.LOOP_FORWARD, "the menu track loops")
-	_check(out, Data.LEADERS.size() == 3 and Data.TERRAIN.size() == 11, "game data is there")
+	_check(out, Data.LEADERS.size() == 3 and Data.TERRAIN.size() == 12, "game data is there")
 	_check(out, _can_write_settings(), "can write to the user folder (saves and settings go there)")
 	out.append("info: Godot %s, %s, %s, %s" % [Engine.get_version_info().string, OS.get_name(),
 		RenderingServer.get_video_adapter_name(), "exported build" if OS.has_feature("template") else "run from the editor"])

@@ -14,6 +14,7 @@ extends Node
 ## Going between them crossfades. Everything goes through the "Music" audio bus, so the volume slider
 ## only affects music. Volume 0 mutes the bus: completely off, not just very quiet. It's remembered in
 ## user://settings.cfg between runs.
+## The one sound effect is the boom of a nuke going off (boom()): a rumble made in code, on the same bus, so the slider mutes it too.
 ## Tests set `audible` to false (nothing is played, but what would be playing is still tracked) and point
 ## `settings_path` at their own file.
 
@@ -46,7 +47,11 @@ var mode := ""                  # "menu", "game", "win" or "lose": which kind of
 var track := ""                 # the file that's playing (or would be, when not audible)
 var starts := 0                 # how many times a track has been started (tests watch it)
 
+var booms := 0                  # how many explosions have sounded (tests watch it)
+
 var _player := AudioStreamPlayer.new()
+var _boom_player := AudioStreamPlayer.new()
+var _boom_stream: AudioStreamWAV
 var _queue: Array = []          # the game tracks still to come in this shuffle (saved with the settings)
 var _last_game := ""            # the last game track chosen (saved too): a fresh shuffle never opens with it
 var _playing := ""              # the file the player is playing right now
@@ -64,6 +69,49 @@ func _ready() -> void:
 	_player.bus = BUS
 	_player.finished.connect(_on_finished)
 	add_child(_player)
+
+
+# ---------------------------------------------------------------- the boom
+
+const BOOM_RATE := 22050
+const BOOM_SECONDS := 1.6
+
+
+## The sound of a nuke going off. It is counted even when nothing is audible.
+func boom() -> void:
+	booms += 1
+	if not audible:
+		return
+	if _boom_stream == null:
+		_boom_stream = make_boom()
+	if _boom_player.get_parent() == null:
+		_boom_player.bus = BUS
+		add_child(_boom_player)
+	_boom_player.stream = _boom_stream
+	_boom_player.play()
+
+
+## A low rumble: a sine that falls from about 70 to 22 Hz under low-passed noise, with a quick attack and a long fall. 16-bit, mono, made from nothing.
+static func make_boom() -> AudioStreamWAV:
+	var n := int(BOOM_RATE * BOOM_SECONDS)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1945
+	var low := 0.0
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / BOOM_RATE
+		var env := exp(-t * 3.0) * (1.0 - exp(-t * 120.0))
+		phase += TAU * (22.0 + 48.0 * exp(-t * 1.6)) / BOOM_RATE
+		low += (rng.randf_range(-1.0, 1.0) - low) * 0.07
+		data.encode_s16(i * 2, int(clampf((sin(phase) * 0.75 + low * 1.8) * env, -1.0, 1.0) * 32767.0))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = BOOM_RATE
+	stream.stereo = false
+	stream.data = data
+	return stream
 
 
 # ---------------------------------------------------------------- what plays

@@ -18,12 +18,12 @@ const CLEAN := 4
 
 # Which sprite in the atlas draws each thing in the game
 const TERRAIN := {"sand": "ash_sand", "dunes": "dunes", "scrub": "dead_scrub", "trees": "petrified_wood", "grove": "green_grove",
-	"rock": "rock", "ruins": "ruins", "crater": "crater", "glass": "fused_glass", "waste": "fallout_waste", "water": "river"}
+	"rock": "rock", "ruins": "ruins", "crater": "crater", "glass": "fused_glass", "waste": "fallout_waste", "ash": "scorched_ash", "water": "river"}
 const SLOPES := {"gentle": "gentle_slope", "steep": "steep_incline"}
 ## A river tile that can be waded has a picture of its own (it is still terrain "water", with a flag: see Game.is_ford).
 const FORD := "ford"
 const UNITS := {"scav": "scavenger", "scout": "scout", "caravan": "caravan", "car": "war_rig", "boat": "boat",
-	"plane": "recon_plane", "band": "raider_band"}
+	"plane": "recon_plane", "bomber": "bomber", "band": "raider_band"}
 const CAMPS := {"raider": "raider_camp", "trader": "trader_camp", "builder": "builder_camp"}
 # A sprite that should always use one particular style, whatever `style` says: {"war_rig": 2}
 const PINNED := {}
@@ -341,6 +341,8 @@ static func building(id: String) -> Texture2D:
 
 ## Where a building's 8 x 8 picture is in that texture, or an empty rectangle if it has none (it is then drawn as its letter).
 static func building_rect(id: String) -> Rect2:
+	if id == "ai_airfield":
+		id = "airfield"   # the Rust Kings' airfield is drawn like yours (the map tints it their colour)
 	_load_buildings()
 	var sprites: Dictionary = _building_meta.get("sprites", {})
 	if not sprites.has(id) or building_atlas_texture() == null:

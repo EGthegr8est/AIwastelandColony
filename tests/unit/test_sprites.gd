@@ -11,7 +11,7 @@ func after_each() -> void:
 
 func test_the_atlas_loads_with_every_sprite() -> void:
 	assert_true(Sprites.available())
-	assert_eq(Sprites.names().size(), 24, "23 and the ford")
+	assert_eq(Sprites.names().size(), 26, "23 and the ford, the scorched ash and the bomber")
 
 
 func test_everything_in_the_game_that_the_legend_lists_has_a_sprite() -> void:
@@ -128,9 +128,9 @@ func test_with_the_text_glyphs_chosen_there_are_no_pictures_to_draw() -> void:
 func test_every_sprite_has_a_rectangle_inside_the_atlas() -> void:
 	Sprites.choose(1)
 	var atlas := Sprites.atlas_texture()
-	assert_eq(atlas.get_size(), Vector2(32, 192))
+	assert_eq(atlas.get_size(), Vector2(32, 208))
 	var rects := Sprites.rects()
-	assert_eq(rects.size(), 24)
+	assert_eq(rects.size(), 26)
 	for sprite in rects:
 		var r: Rect2 = rects[sprite]
 		assert_eq(r.size, Vector2(Sprites.SIZE, Sprites.SIZE), sprite)
@@ -251,7 +251,7 @@ func test_the_clean_grounds_are_told_apart_by_colour() -> void:
 
 
 func test_only_the_hazards_glow_in_the_clean_look() -> void:
-	var glows := ["crater", "glass", "waste", "ruins"]
+	var glows := ["crater", "glass", "waste", "ruins", "ash"]   # the ash keeps its green-yellow flecks lit
 	for id in Sprites.TERRAIN:
 		var img := Sprites.image(Sprites.TERRAIN[id], Sprites.CLEAN)
 		var brightest := 0.0

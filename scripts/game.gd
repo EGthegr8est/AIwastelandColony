@@ -11,6 +11,8 @@ signal season_played(replay: Dictionary)   # END SEASON is done: here is how the
 signal troops_marched(path: Array, count: int)   # a raid is under way: a column of troops walks `path` (cells, HQ to target) and back
 signal replay_skip     # finish the replay or march that is playing at once
 signal replay_done     # the map has finished playing (or skipped) a replay or march
+signal blasted(cell: Vector2i)   # a nuke went off here: the map plays the explosion (a crater's once the die has landed, a bomber's in the season replay instead)
+signal strike_preview_changed    # the red square over the tile a Nuclear strike would hit (strike_preview) has moved
 signal hollow_mile_found(cell: Vector2i, hot: bool)   # your scouts saw the first tile of the old highway (once a game): the HUD shows its picture; `hot` is whether the party that found it is taking high radiation
 
 const Data = preload("res://scripts/data.gd")
@@ -25,7 +27,7 @@ var w := Data.MAP_W
 var h := Data.MAP_H
 var tiles: Array = []          # each tile: {"t": terrain, "o": owner, "b": building, "z": height in m,
                                #             "r": ruins state: "safe", "rogue", "rogue_seen", "trap", "picked"}
-var map_version := 0           # goes up whenever the tiles are replaced (new game, load)
+var map_version := 0           # goes up whenever the tiles are replaced (new game, load) or the ground changes (a blast)
 var bases := {}                # owner -> the cell of their HQ (or Dustwell's center)
 var contours: Array = []       # per tile: contour pipe glyph, or "" if no contour runs through it
 var slopes: Array = []         # per tile: "", "gentle" or "steep"
@@ -70,6 +72,8 @@ var hollow_found := false      # your scouts have seen a tile of the old highway
 var view := Data.PLAYER        # whose knowledge the map shows (Data.NONE = everything)
 var measured := PackedByteArray()   # 1 where one of your parties has measured the radiation
 var show_radiation := false    # tint the tiles you have measured by how hot they are
+var strike_preview := Vector2i(-1, -1)   # the tile whose 3 x 3 blast square the map outlines in red (the Nuclear strike button is being hovered)
+var held_blasts: Array = []    # blasts whose explosion waits for the die to land (release_blasts)
 
 
 func _ready() -> void:
@@ -114,7 +118,8 @@ func new_game(leader_id: String, info := {}) -> void:
 		vehicles[v] = 0
 	ai = {"name": "The Rust Kings", "troops": 6, "walls": 0, "food": 20, "wood": 20, "stone": 10,
 		"metal": 5, "gold": 10, "relations": 0, "truce": 0, "raid_planned": false,
-		"horse": 0, "car": 0, "boat": 0, "plane": 0, "salt_stock": 0}
+		"horse": 0, "car": 0, "boat": 0, "plane": 0, "salt_stock": 0,
+		"bomber": 0, "nukes": 0, "airfield_wait": 0, "airfield_x": -1, "airfield_y": -1, "airfield_seen": 0, "nuke_x": -1, "nuke_y": -1, "last_strike": -99}
 	town = {"name": "Dustwell", "status": "neutral", "relations": 20}
 	_apply_start_quirks()
 	w = Data.MAP_W
@@ -188,6 +193,7 @@ func _generate_map() -> void:
 	_pass_highway()     # the old highway, which needs the old bridge
 	_pass_spurs()       # and the stretches of it that fray out into the wastes from the cities (own random numbers again)
 	_pass_crater_wear() # and the craters, which destroyed the road around them (and a third set of random numbers)
+	_pass_gas_station() # and last, the gas station moves to the roadside (a fourth set)
 
 
 ## Pass 1: dunes, sand, scrub and rock from slow noise.
@@ -235,6 +241,8 @@ func _pass_smooth(passes: int) -> void:
 ## the chemical dump) and all carry the same "poi_<kind>" building id, so fog, saves and the map's drawing treat it
 ## like a building. Scavenged as one tile: its state ("" or "picked") lives on all four.
 func _pass_pois() -> void:
+	poi_sites = {}
+	_gas_ground = {}
 	var placed: Array = []
 	var kinds: Array = Data.POIS.keys()
 	kinds.shuffle()
@@ -245,12 +253,72 @@ func _pass_pois() -> void:
 		if spot.x < 0:
 			continue
 		placed.append(spot)
+		poi_sites[kind] = spot
 		for p in poi_footprint(spot):
 			var t := tile(p)
+			if kind == "gas_station":
+				_gas_ground[p] = t["t"]
 			if t["t"] != "waste":
 				t["t"] = "sand"   # bare ground under the sprite (fallout waste stays: only the dump may stand on it)
 			t["b"] = "poi_" + kind
 			t["r"] = ""
+
+
+## After the highway: a ruined gas station stands by the old road, as one would (Data.GAS_STATION). It was placed with the other sites, before the highway existed, so if it is not
+## within `reach` tiles of a highway tile it moves to free ground that is (touching one, if there is any), drawn with random numbers of its own so no other pass changes. It never
+## stands on the highway: a site needs free ground, and the highway goes round the sites anyway. If nothing suits, it stays where it was.
+func _pass_gas_station() -> void:
+	var from: Vector2i = poi_sites.get("gas_station", Vector2i(-1, -1))
+	var reach: int = Data.GAS_STATION.reach
+	if from.x < 0 or highway_gap(from) <= reach:
+		return
+	var others := []
+	for kind in poi_sites:
+		if kind != "gas_station":
+			others.append(poi_sites[kind])
+	var touching := []
+	var near := []
+	for y in range(3, h - 4):
+		for x in range(3, w - 5):
+			var c := Vector2i(x, y)
+			if not _poi_fits("gas_station", c, others):
+				continue
+			var gap := highway_gap(c)
+			if gap == 1:
+				touching.append(c)
+			elif gap <= reach:
+				near.append(c)
+	var pool: Array = touching if not touching.is_empty() else near
+	if pool.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _crossing_seed() + 15485863
+	var spot: Vector2i = pool[rng.randi_range(0, pool.size() - 1)]
+	for p in poi_footprint(from):   # the old site comes down and its ground comes back
+		tile(p)["b"] = ""
+		tile(p)["t"] = _gas_ground.get(p, "sand")
+	for p in poi_footprint(spot):
+		var t := tile(p)
+		t["t"] = "sand"
+		t["b"] = "poi_gas_station"
+		t["r"] = ""
+	poi_sites["gas_station"] = spot
+
+
+## How many tiles from the 2 x 2 site at `anchor` the nearest old highway tile is: 1 when one touches it (corners too), 2 with one tile between, and so on up to 4
+## (99 when there is none that close).
+func highway_gap(anchor: Vector2i) -> int:
+	for gap in range(1, 5):
+		for dx in range(-gap, 2 + gap):
+			for dy in range(-gap, 2 + gap):
+				var off_x := -dx if dx < 0 else (dx - 1 if dx > 1 else 0)
+				var off_y := -dy if dy < 0 else (dy - 1 if dy > 1 else 0)
+				if maxi(off_x, off_y) != gap:
+					continue
+				var p := anchor + Vector2i(dx, dy)
+				if in_bounds(p) and tile(p)["b"] == "old_road":
+					return gap
+	return 99
 
 
 ## The four tiles of a site whose top-left tile is `anchor`.
@@ -486,6 +554,8 @@ func _pass_highway() -> void:
 	_update_paths_at(laid)
 
 
+var poi_sites := {}    # kind -> the top-left tile of its site, as the map was made (not saved: the tiles are)
+var _gas_ground := {}  # the ground under the gas station's first spot, to put back if it moves
 var worn := []    # the old road tiles the craters took (_pass_crater_wear), for tests: not saved either
 var spurs := []   # what _pass_spurs laid, for tests and the curious: {"city": cell, "heading": direction, "laid": [cells]} (not saved: the tiles are)
 
@@ -1542,7 +1612,7 @@ func cost_text(cost: Dictionary) -> String:
 	var parts := []
 	for k in cost:
 		if cost[k] != 0:
-			parts.append("%d %s" % [cost[k], k])
+			parts.append("%d %s" % [cost[k], k if k != "nuke" or cost[k] == 1 else "nukes"])
 	return ", ".join(parts) if parts.size() > 0 else "free"
 
 
@@ -1887,6 +1957,7 @@ func destroy_building(c: Vector2i) -> void:
 		if b == "ai_wall":
 			ai["walls"] = maxi(ai["walls"] - Data.WALLS_PER_TILE, 0)
 			_sync_ai_walls()
+		_after_ai_loss(b)
 	changed.emit()
 
 
@@ -1960,6 +2031,146 @@ func _sync_ai_walls() -> void:
 		free.sort_custom(nearer)
 		for c in free.slice(0, want - standing.size()):
 			tile(c)["b"] = "ai_wall"
+
+
+# ---------------------------------------------------------------- nukes
+
+## The tiles a blast at `c` wipes: the square within Data.NUKE.reach of it, as far as the map goes.
+func blast_square(c: Vector2i) -> Array:
+	var out := []
+	var reach: int = Data.NUKE.reach
+	for dy in range(-reach, reach + 1):
+		for dx in range(-reach, reach + 1):
+			var p := c + Vector2i(dx, dy)
+			if in_bounds(p):
+				out.append(p)
+	return out
+
+
+## Does a blast bring this kind of building down? Not an HQ, the Raider fort, Dustwell, the old bridge or a point of interest.
+func blast_takes_building(b: String) -> bool:
+	return b != "" and not b in Data.NUKE.spares and not Data.BUILDINGS[b].has("poi")
+
+
+## A nuke goes off at `center`. The square round it becomes scorched ash (water and glowing craters stay as they are) and reads Data.NUKE.rad R/h at least,
+## the buildings in it fall (but not Data.NUKE.spares or a point of interest), every party and wild animal in it dies and every camp is wiped out (Units.blast_kills).
+## `source` is "crater" (a search went wrong: the crater is spent) or "bomber" (your strike: each Rust Kings building that falls costs relations, as in a raid). `spare`
+## holds ids of units that live. `day` is when in the season's walk it went off (a bomber's drop), so the replay plays it then; `hold` waits for the die to land
+## (release_blasts). Returns what it did.
+func detonate(center: Vector2i, source: String, spare := [], day := -1.0, hold := false) -> Dictionary:
+	var cells := blast_square(center)
+	var report := {"cells": cells, "buildings": 0, "theirs": 0, "kills": {}}
+	var walls_gone := false
+	var airfield_gone := false
+	for c in cells:
+		var t := tile(c)
+		t["rad"] = maxi(int(t["rad"]), int(Data.NUKE.rad))
+		if measured.size() == w * h:
+			measured[idx(c)] = 1   # everyone saw it: the reading is known
+		if t["t"] != "water" and t["t"] != "crater":
+			t["t"] = "ash"
+			if poi_kind(c) == "":
+				t["r"] = ""
+		if blast_takes_building(t["b"]):
+			var b: String = t["b"]
+			t["b"] = ""
+			refinery_on.erase(idx(c))
+			report.buildings += 1
+			if t["o"] == Data.PLAYER:
+				note("buildings_lost")
+			elif t["o"] == Data.AI:
+				report.theirs += 1
+				note("enemy_buildings_destroyed")
+				if source == "bomber":
+					ai["relations"] = maxi(ai["relations"] - Data.RAID_RELATIONS, -100)
+				if b == "ai_wall":
+					ai["walls"] = maxi(ai["walls"] - Data.WALLS_PER_TILE, 0)
+					walls_gone = true
+				elif b == "ai_airfield":
+					airfield_gone = true
+	if source == "crater":
+		tile(center)["r"] = "picked"   # its nuke is gone
+	if walls_gone:
+		_sync_ai_walls()
+	if airfield_gone:
+		_after_ai_loss("ai_airfield")
+	_update_paths_at(cells)   # the ground is quicker or slower now, and a bridge or a road may be gone
+	map_version += 1          # the map redraws its ground
+	report["kills"] = Units.blast_kills(cells, spare, day)
+	note("blasts")
+	var bits := []
+	if report.buildings > 0:
+		bits.append("%d building%s fell" % [report.buildings, "" if report.buildings == 1 else "s"])
+	var k: Dictionary = report.kills
+	if k.parties > 0:
+		bits.append("%d part%s died" % [k.parties, "y" if k.parties == 1 else "ies"])
+	if k.animals > 0:
+		bits.append("%d animal%s died" % [k.animals, "" if k.animals == 1 else "s"])
+	if k.camps > 0:
+		bits.append("%d camp%s wiped out" % [k.camps, "" if k.camps == 1 else "s"])
+	add_log("A NUKE WENT OFF %s. The ground round it is scorched ash, %d R/h.%s" % [
+		{"crater": "under your scavengers at %d,%d", "bomber": "at %d,%d, dropped by your bomber", "rust_kings": "at %d,%d, dropped by the Rust Kings' bomber"}[source] % [center.x, center.y],
+		int(Data.NUKE.rad), " " + ", ".join(bits) + "." if not bits.is_empty() else ""])
+	if day >= 0.0 and Units.is_recording():
+		Units.note_blast(center, day)
+	elif hold:
+		held_blasts.append(center)
+	else:
+		blasted.emit(center)
+	changed.emit()
+	return report
+
+
+## The explosions that were waiting for the die to land play now.
+func release_blasts() -> void:
+	var list := held_blasts
+	held_blasts = []
+	for c in list:
+		blasted.emit(c)
+
+
+## The ash cools a little every season, down to Data.NUKE.floor.
+func _cool_ash() -> void:
+	for t in tiles:
+		if t["t"] == "ash" and int(t["rad"]) > int(Data.NUKE.floor):
+			t["rad"] = maxi(int(t["rad"]) - int(Data.NUKE.cool), int(Data.NUKE.floor))
+
+
+## What a blast at `c` would take, as far as you know it: {"yours": building names, "theirs": building names, "parties": text, "camps": names}.
+func blast_report(c: Vector2i) -> Dictionary:
+	var out := {"yours": [], "theirs": [], "parties": [], "camps": []}
+	var mine: Array = memory[Data.PLAYER] if memory.has(Data.PLAYER) else []
+	for p in blast_square(c):
+		var known = mine[idx(p)] if mine.size() == w * h else null
+		if known != null and blast_takes_building(known[1]):
+			(out.yours if known[0] == Data.PLAYER else out.theirs).append(Data.BUILDINGS[known[1]].name.to_lower())
+		for u in Units.units_at(p):
+			if u.owner == Data.PLAYER:
+				out.parties.append("your %s at %d,%d" % [Data.EXPEDITIONS[u.job].name.to_lower(), p.x, p.y])
+			elif in_sight(Data.PLAYER, p):
+				out.parties.append("a raider band at %d,%d" % [p.x, p.y])
+		var tribe := Units.tribe_at(p)
+		if not tribe.is_empty() and knows_tile(Data.PLAYER, p):
+			out.camps.append(tribe.name)
+	return out
+
+
+func set_strike_preview(c: Vector2i) -> void:
+	if strike_preview != c:
+		strike_preview = c
+		strike_preview_changed.emit()
+
+
+## How many unfired nukes a missile silo still holds for a later party to fetch (an earlier one found more than it could carry): its tiles read "stock3".
+func silo_stock(anchor: Vector2i) -> int:
+	var r: String = tile(anchor)["r"]
+	return int(r.substr(5)) if r.begins_with("stock") else 0
+
+
+## Leaves `n` nukes in the silo (none: it is picked clean).
+func set_silo_stock(anchor: Vector2i, n: int) -> void:
+	for p in poi_footprint(anchor):
+		tile(p)["r"] = "stock%d" % n if n > 0 else "picked"
 
 
 # ---------------------------------------------------------------- upgrade tree
@@ -2216,6 +2427,14 @@ func _ai_raid() -> void:
 
 # ---------------------------------------------------------------- trade & diplomacy
 
+## What a trader camp asks for its warhead: Data.TRADERS.warhead_price gold, and a Trader leader gets it for the discount.
+func warhead_price() -> int:
+	var price: int = Data.TRADERS.warhead_price
+	if leader == "trader":
+		price = int(ceil(price * float(Data.TRADERS.trader_discount)))
+	return price
+
+
 func caravan_slots() -> int:
 	var water_route := 1 if has("cv4") and count_building(Data.PLAYER, "port") > 0 else 0
 	return Data.LEADERS[leader].caravans + (1 if has("c1") else 0) + count_building(Data.PLAYER, "market") + water_route
@@ -2402,6 +2621,8 @@ func vehicle_status(v: String) -> String:
 	var d: Dictionary = Data.VEHICLES[v]
 	if count_building(Data.PLAYER, d.building) == 0:
 		return "Needs a " + Data.BUILDINGS[d.building].name
+	if d.has("req") and not has(d.req):
+		return "Needs " + Data.UPGRADES[d.req].name
 	if highest_tier() < d.tier:
 		return "Needs a tier %d upgrade" % d.tier
 	if d.has("max") and vehicles[v] >= d.max:
@@ -2659,6 +2880,7 @@ func end_season() -> void:
 	_gather()
 	_upkeep()
 	_ai_turn()
+	_cool_ash()
 	_restock_salt()
 	var sight_before: PackedByteArray = sight[Data.PLAYER].duplicate() if sight.has(Data.PLAYER) else PackedByteArray()
 	Units.season_turn()
@@ -2945,6 +3167,7 @@ func _ai_turn() -> void:
 	ai["relations"] = maxi(ai["relations"] - 2, -100)
 	_sync_ai_walls()
 	_ai_roads()
+	_ai_nukes()
 	for i in 2 + mini(ai["horse"], 2):
 		var at := _ai_scout()
 		if in_bounds(at):
@@ -2963,13 +3186,152 @@ func _ai_turn() -> void:
 				add_log("WATCHTOWER: Rust Kings war party massing. Raid coming next season!")
 
 
+# ---------------------------------------------------------------- the Rust Kings' nukes
+
+## Can the Rust Kings pay this out of their stores?
+func _ai_can_pay(cost: Dictionary) -> bool:
+	return cost.keys().all(func(k): return ai[k] >= cost[k])
+
+
+func _ai_pay(cost: Dictionary) -> void:
+	for k in cost:
+		ai[k] -= cost[k]
+
+
+## Once a season, in their turn (Data.AI_NUKES): the airfield, the bomber, the warheads, and the strike planned last season going in, or a new one being planned.
+func _ai_nukes() -> void:
+	var rules: Dictionary = Data.AI_NUKES
+	if ai["airfield_wait"] > 0:
+		ai["airfield_wait"] -= 1
+	var fields := count_building(Data.AI, "ai_airfield")
+	if fields == 0 and season >= rules.airfield_season and ai["airfield_wait"] == 0 and _ai_can_pay(rules.airfield_cost):
+		var spot := _ai_airfield_spot()
+		if in_bounds(spot):
+			_ai_pay(rules.airfield_cost)
+			tile(spot)["b"] = "ai_airfield"
+			ai["airfield_x"] = spot.x
+			ai["airfield_y"] = spot.y
+			ai["airfield_seen"] = 0
+			fields = 1
+	if fields > 0 and season >= rules.bomber_season and ai["bomber"] < 1 and _ai_can_pay(rules.bomber_cost):
+		_ai_pay(rules.bomber_cost)
+		ai["bomber"] += 1
+	if season >= rules.warhead_season and (season - int(rules.warhead_season)) % int(rules.warhead_every) == 0:
+		ai["nukes"] = mini(ai["nukes"] + 1, int(rules.warheads_max))
+	var ready: bool = fields > 0 and ai["bomber"] > 0 and ai["nukes"] > 0
+	if ai["nuke_x"] >= 0:   # planned last season: it goes now, if it still can
+		var target := Vector2i(ai["nuke_x"], ai["nuke_y"])
+		ai["nuke_x"] = -1
+		ai["nuke_y"] = -1
+		if ready:
+			_ai_launch(target)
+		return
+	if ready and season - ai["last_strike"] >= int(rules.gap) and randf() < float(rules.chance):
+		var target := _ai_nuke_target()
+		if in_bounds(target):
+			ai["nuke_x"] = target.x
+			ai["nuke_y"] = target.y
+			if has("f3"):
+				add_log("WATCHTOWER: a Rust Kings bomber is on its way to %d,%d. Nukes next season: move your parties." % [target.x, target.y])
+
+
+## The tile for a new airfield: free Rust Kings land a few tiles from their fort, as far from your HQ as there is. (-1, -1) if there is none.
+func _ai_airfield_spot() -> Vector2i:
+	var fort := home(Data.AI)
+	var mine := home(Data.PLAYER)
+	var span: Array = Data.AI_NUKES.fort_distance
+	var best := Vector2i(-1, -1)
+	var best_d := -1.0
+	for c in owned(Data.AI):
+		var d := Vector2(c).distance_to(Vector2(fort))
+		if d < float(span[0]) or d > float(span[1]) or tile(c)["b"] != "" or tile(c)["t"] == "water" or slopes[idx(c)] == "steep":
+			continue
+		var away := Vector2(c).distance_to(Vector2(mine))
+		if away > best_d or (away == best_d and (c.y < best.y or (c.y == best.y and c.x < best.x))):
+			best = c
+			best_d = away
+	return best
+
+
+## The centre of the 3 x 3 square that holds the most of your buildings a blast can take (at least Data.AI_NUKES.min_buildings; a tie goes to the one nearest their fort).
+## (-1, -1) if no square holds enough.
+func _ai_nuke_target() -> Vector2i:
+	var fort := home(Data.AI)
+	var best := Vector2i(-1, -1)
+	var best_n := 0
+	var seen := {}
+	for c in owned(Data.PLAYER):
+		if not blast_takes_building(tile(c)["b"]):
+			continue
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				var centre: Vector2i = c + Vector2i(dx, dy)
+				if seen.has(centre) or not in_bounds(centre):
+					continue
+				seen[centre] = true
+				var n := 0
+				for p in blast_square(centre):
+					if tile(p)["o"] == Data.PLAYER and blast_takes_building(tile(p)["b"]):
+						n += 1
+				if n > best_n or (n == best_n and n > 0 and Vector2(centre).distance_to(Vector2(fort)) < Vector2(best).distance_to(Vector2(fort))):
+					best = centre
+					best_n = n
+	return best if best_n >= int(Data.AI_NUKES.min_buildings) else Vector2i(-1, -1)
+
+
+## Their bomber takes off with a warhead for `target`. Flak towers may shoot it down first; otherwise the nuke goes off.
+func _ai_launch(target: Vector2i) -> void:
+	ai["last_strike"] = season
+	ai["nukes"] -= 1
+	if has("fv4") and randf() < float(Data.AI_NUKES.flak):
+		ai["bomber"] -= 1
+		add_log("FLAK: your flak towers shot down a Rust Kings bomber over %d,%d. It was carrying a nuke." % [target.x, target.y])
+		return
+	note("nukes_suffered")
+	detonate(target, "rust_kings")
+	focus.emit(target)
+
+
+## A Rust Kings building was destroyed (by your scouts, a raid or a blast). With the last airfield gone nothing launches: a planned strike is called off, and they wait
+## Data.AI_NUKES.rebuild seasons before they build another.
+func _after_ai_loss(b: String) -> void:
+	if b != "ai_airfield" or count_building(Data.AI, "ai_airfield") > 0:
+		return
+	ai["airfield_wait"] = int(Data.AI_NUKES.rebuild)
+	ai["nuke_x"] = -1
+	ai["nuke_y"] = -1
+	note("airfields_destroyed")
+	add_log("The Rust Kings' airfield is destroyed. Nothing of theirs can launch a nuke until they rebuild it (about %d seasons)." % int(Data.AI_NUKES.rebuild))
+
+
+## Has your colony seen their airfield yet? (The Diplomacy tab says so.)
+func check_airfield() -> void:
+	if int(ai.get("airfield_seen", 0)) > 0 or int(ai.get("airfield_x", -1)) < 0 or not memory.has(Data.PLAYER):
+		return
+	var at := Vector2i(int(ai["airfield_x"]), int(ai["airfield_y"]))
+	var known = memory[Data.PLAYER][idx(at)] if memory[Data.PLAYER].size() == w * h else null
+	if known != null and known[1] == "ai_airfield":
+		ai["airfield_seen"] = 1
+		add_log("Your people found the Rust Kings' airfield at %d,%d. While it stands they can launch nukes: destroy it." % [at.x, at.y])
+
+
+## What the Diplomacy tab says of their airfield.
+func airfield_text() -> String:
+	if int(ai.get("airfield_wait", 0)) > 0:
+		return "Their airfield is destroyed: they rebuild it in %d seasons." % int(ai["airfield_wait"]) if int(ai.get("airfield_seen", 0)) > 0 else "Their airfield: not found."
+	if int(ai.get("airfield_seen", 0)) > 0 and count_building(Data.AI, "ai_airfield") > 0:
+		return "Their airfield stands at %d,%d (DC %d: a scouting party beside it, a raid, or a nuke)." % [int(ai["airfield_x"]), int(ai["airfield_y"]), D20Data.BUILDING_DC["ai_airfield"]]
+	return "Their airfield: not found."
+
+
 # ---------------------------------------------------------------- how the game ends
 
 ## What the stats screen shows, all counted from the start of the colony.
 func new_stats() -> Dictionary:
 	return {"raids_won": 0, "raids_lost": 0, "raids_beaten_back": 0, "raids_suffered": 0, "bands_driven_off": 0,
 		"tribes_scattered": 0, "tribes_joined": 0, "prisoners_taken": 0, "troops_trained": 0, "survivors_lost": 0,
-		"colonists_starved": 0, "buildings_lost": 0, "enemy_buildings_destroyed": 0, "ruins_scavenged": 0, "sites_scavenged": 0, "rolls": 0, "natural_20s": 0, "natural_1s": 0,
+		"colonists_starved": 0, "buildings_lost": 0, "enemy_buildings_destroyed": 0, "ruins_scavenged": 0, "sites_scavenged": 0,
+		"craters_searched": 0, "nukes_found": 0, "nukes_dropped": 0, "blasts": 0, "nukes_suffered": 0, "airfields_destroyed": 0, "nukes_bought": 0, "rolls": 0, "natural_20s": 0, "natural_1s": 0,
 		"buildings_built": 0, "tiles_claimed": 0, "upgrades": 0, "vehicles_built": 0, "trade_runs": 0,
 		"peak_pop": pop, "peak_land": 0, "peak_troops": troops,
 		"sent": {"scav": 0, "scout": 0, "caravan": 0, "boat": 0, "plane": 0}, "gathered": {}}
@@ -3112,8 +3474,12 @@ func load_game(slot: String) -> bool:
 		if not k in Data.RESOURCES:
 			res.erase(k)   # scrap and silver are gone: a save from before that just loses them
 	vehicles = _ints(data["vehicles"])
+	for v in Data.VEHICLES:   # a save from before bombers has none
+		if not vehicles.has(v):
+			vehicles[v] = 0
 	ai = _ints(data["ai"])
 	ai.merge({"horse": 0, "car": 0, "boat": 0, "plane": 0})   # saves from before enemy vehicles
+	ai.merge({"bomber": 0, "nukes": 0, "airfield_wait": 0, "airfield_x": -1, "airfield_y": -1, "airfield_seen": 0, "nuke_x": -1, "nuke_y": -1, "last_strike": -99})   # and before nukes
 	town = _ints(data["town"])
 	upgrades = data["upgrades"]
 	log_lines = data["log"]

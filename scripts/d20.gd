@@ -82,17 +82,18 @@ static func clamp_mod(mod: int) -> int:
 # ---------------------------------------------------------------- the check
 
 ## The tier for a d20 and a total modifier against a DC. A natural 1 or 20 settles it whatever the modifiers.
-static func tier_from_roll(d20: int, mod: int, dc: int) -> String:
+static func tier_from_roll(d20: int, mod: int, dc: int, crit_margin := -1) -> String:
 	if d20 <= Data.NAT_FAIL:
 		return Data.CRITICAL_FAILURE
 	if d20 >= Data.NAT_CRIT:
 		return Data.CRITICAL_SUCCESS
+	var crit: int = crit_margin if crit_margin >= 0 else Data.CRIT_MARGIN   # a check can set its own (a crater's is out of reach: only the naturals count)
 	var margin := d20 + mod - dc
-	if margin <= -Data.CRIT_MARGIN:
+	if margin <= -crit:
 		return Data.CRITICAL_FAILURE
 	if margin < 0:
 		return Data.FAILURE
-	if margin < Data.CRIT_MARGIN:
+	if margin < crit:
 		return Data.SUCCESS
 	return Data.CRITICAL_SUCCESS
 
@@ -120,16 +121,16 @@ static func flags_for(scout: Dictionary, check: String, tier: String) -> Array:
 ## with a reroll charge (Lucky) rerolls a FAILURE or worse once and keeps the new roll, spending it automatically
 ## unless `auto_reroll` is false. The result has the d20, the clamped modifier, the total, the raw tier (before any
 ## shift), the final tier, any outcome flags, and a one-line log.
-static func roll_check(dice, scout: Dictionary, check: String, dc: int, situational := 0, auto_reroll := true, parts := []) -> Dictionary:
+static func roll_check(dice, scout: Dictionary, check: String, dc: int, situational := 0, auto_reroll := true, parts := [], crit_margin := -1) -> Dictionary:
 	var mod := clamp_mod(mod_for(scout, check) + situational)
 	var first: int = dice.d20()
 	var d20 := first
-	var raw := tier_from_roll(d20, mod, dc)
+	var raw := tier_from_roll(d20, mod, dc, crit_margin)
 	var rerolled := false
 	if auto_reroll and (raw == Data.CRITICAL_FAILURE or raw == Data.FAILURE) and int(scout.get("rerolls", 0)) > 0:
 		scout["rerolls"] = int(scout["rerolls"]) - 1
 		d20 = dice.d20()
-		raw = tier_from_roll(d20, mod, dc)
+		raw = tier_from_roll(d20, mod, dc, crit_margin)
 		rerolled = true
 	var shift := apply_tier_shifts(scout, check, raw)
 	var tier: String = shift.tier

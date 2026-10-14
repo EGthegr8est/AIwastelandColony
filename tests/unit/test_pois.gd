@@ -198,9 +198,9 @@ func _known_tiles() -> int:
 
 ## A party at the site of `kind` whose check rolls a natural 20 (a CRITICAL_SUCCESS), with these package totals,
 ## already through its roll and ready to head home.
-func _crit_at(kind: String, totals := []) -> Dictionary:
+func _crit_at(kind: String, totals := [], more := []) -> Dictionary:
 	var a: Vector2i = _sites()[kind][0]
-	var u := _party_at(a, ForcedDice.new([20], totals))
+	var u := _party_at(a, ForcedDice.new([20] + more, totals))
 	Units.visit_do(u.id)
 	assert_eq(u.visit.stage, "done", kind)
 	return u
@@ -216,7 +216,7 @@ func test_a_site_charts_the_map_only_when_the_party_heads_home() -> void:
 
 
 func test_the_missile_silos_targeting_data_charts_the_rust_kings_fort() -> void:
-	var u := _crit_at("missile_silo", [4])
+	var u := _crit_at("missile_silo", [4], [12])   # the second d20 is how many warheads: 12 or less is two
 	assert_false(Game.knows(Data.PLAYER, Data.AI))
 	Units.visit_finish(u.id)
 	assert_true(Game.knows_tile(Data.PLAYER, Game.home(Data.AI)))

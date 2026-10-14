@@ -268,10 +268,11 @@ func test_gas_station() -> void:
 
 
 func test_missile_silo_is_the_deadly_one() -> void:
-	assert_eq(_run("missile_silo", "SUCCESS", [9]).visit.loot, {"fuel": 9})
-	var crit := _run("missile_silo", "CRITICAL_SUCCESS", [8])
+	assert_eq(_run("missile_silo", "SUCCESS", [9]).visit.loot, {"fuel": 9, "nuke": 1}, "and one unfired nuke")
+	var crit := _run("missile_silo", "CRITICAL_SUCCESS", [8], [12])   # the second d20 of 12 or less: two warheads
 	assert_true(crit.visit.reveal_fort)
-	assert_eq(crit.visit.loot, {"metal": 8})
+	assert_eq(crit.visit.loot, {"metal": 8, "nuke": 2})
+	assert_eq(_run("missile_silo", "CRITICAL_SUCCESS", [8], [13]).visit.loot, {"metal": 8, "nuke": 3}, "13 or more: three")
 	assert_eq(_run("missile_silo", "FAILURE").visit.outcome, "empty")
 	var defenses := _run("missile_silo", "CRITICAL_FAILURE")
 	assert_eq(defenses.visit.stage, "fight")

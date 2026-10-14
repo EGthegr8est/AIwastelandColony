@@ -18,8 +18,8 @@ const SEASONS := ["Spring", "Summer", "Autumn", "Winter"]
 
 const RESOURCES := ["wood", "stone", "metal", "fuel", "grain", "veg", "meat", "gold"]
 # Things a party can carry home and the colony keeps in its stores (Game.res) that are not resources: they have no line in the top bar,
-# no price at the market's usual table and no use in a building's cost. The frog's raw hide, and the Salt made from it.
-const ITEMS := ["hide", "salt"]
+# no price at the market's usual table and no use in a building's cost. The frog's raw hide, and the Salt made from it, and the nukes (see NUKE below).
+const ITEMS := ["hide", "salt", "nuke"]
 
 # Fog of war: these colonies each keep their own memory of the map.
 const FOG_VIEWERS := [PLAYER, AI]
@@ -46,6 +46,7 @@ const MOVERS := {
 	"car":   {"name": "War rig",   "by": "by war rig",   "color": Color("ff5a3c"), "days": 0.25, "land": 1.0, "gentle": 1.5, "steep": 0.0, "water": 0.0, "ford": 0.0, "bridge": 1.0, "shield": 0.5},
 	"boat":  {"name": "Boat",      "by": "by boat",      "color": Color("8fd0ff"), "days": 0.4,  "land": 0.0, "gentle": 0.0, "steep": 0.0, "water": 1.0, "ford": 2.0, "bridge": 1.0, "shield": 0.8},
 	"plane": {"name": "Plane",     "by": "by plane",     "color": Color("ffffff"), "days": 0.25, "land": 1.0, "gentle": 1.0, "steep": 1.0, "water": 1.0, "ford": 1.0, "bridge": 1.0, "shield": 0.2},
+	"bomber": {"name": "Bomber",    "by": "by bomber",    "color": Color("d8442c"), "days": 0.30, "land": 1.0, "gentle": 1.0, "steep": 1.0, "water": 1.0, "ford": 1.0, "bridge": 1.0, "shield": 0.2},
 }
 # "shield" is the share of the radiation that gets through to the people riding (see RAD_* below).
 # How much longer a tile takes to cross because of its ground, on top of the slope (1.0 = like sand; a missing mover, such as a boat or
@@ -56,6 +57,7 @@ const TERRAIN_SPEED := {
 	"waste":  {"foot": 1.1, "horse": 1.1, "car": 1.2},
 	"dunes":  {"foot": 1.2, "horse": 1.3, "car": 1.5},
 	"glass":  {"foot": 1.2, "horse": 1.4, "car": 1.2},
+	"ash":    {"foot": 1.0, "horse": 1.0, "car": 1.0},   # what a blast leaves: no slower than sand
 	"trees":  {"foot": 1.3, "horse": 1.5, "car": 1.8},
 	"grove":  {"foot": 1.3, "horse": 1.4, "car": 1.6},
 	"ruins":  {"foot": 1.3, "horse": 1.5, "car": 1.8},
@@ -211,6 +213,7 @@ const TERRAIN := {
 	"crater": {"name": "Glowing crater", "glyph": "○o",    "color": Color("7cfc00"), "yield": {}},
 	"glass":  {"name": "Fused glass",    "glyph": "▒░",    "color": Color("b8a0f0"), "yield": {}, "bg": Color("2c2050")},
 	"waste":  {"name": "Fallout waste",  "glyph": ":;'",   "color": Color("d8c850"), "yield": {}, "bg": Color("4c4412")},
+	"ash":    {"name": "Scorched ash sand", "glyph": ":.'",  "color": Color("9a958c"), "yield": {}, "bg": Color("34322e")},
 	"water":  {"name": "Murky river",    "glyph": "≈~",    "color": Color("5a9a8a"), "yield": {}, "bg": Color("1a3a3c")},
 }
 
@@ -227,6 +230,8 @@ const BUILDINGS := {
 	"hq":       {"name": "Colony HQ",     "glyph": "Ω", "color": Color("ffd27a"), "buildable": false, "sight": 5, "desc": "Your colony's heart. Sees 5 tiles."},
 	"ai_hq":    {"name": "Raider fort",   "glyph": "¥", "color": Color("ff5a3c"), "buildable": false, "sight": 5, "desc": "Rust Kings stronghold."},
 	"town":     {"name": "Settlement",    "glyph": "Π", "color": Color("8fc4ff"), "buildable": false, "sight": 4, "desc": "The local settlement."},
+	"ai_airfield": {"name": "Raider airfield", "glyph": "Æ", "color": Color("ff5a3c"), "buildable": false,
+		"desc": "Where the Rust Kings keep their bomber. A scouting party next to it can attack it, and while none stands nothing of theirs can launch a nuke."},
 	"ai_wall":  {"name": "Raider wall",   "glyph": "▓", "color": Color("d0603c"), "buildable": false, "desc": "A stretch of Rust Kings wall, standing for 4 of their walls. A scouting party next to it can attack it."},
 	"farm":     {"name": "Farm",          "glyph": "≡", "color": Color("b8d060"), "cost": {"wood": 5}, "on": ["sand", "scrub"], "yield": {"grain": 3, "veg": 2}, "desc": "Grows grain and vegetables."},
 	"lodge":    {"name": "Hunting lodge", "glyph": "h", "color": Color("d08050"), "cost": {"wood": 8}, "on": ["sand", "scrub", "trees", "dunes", "grove"], "yield": {"meat": 3}, "desc": "Hunts in the wastes for meat (+2 in a green grove). Hunters sometimes don't come back."},
@@ -279,13 +284,17 @@ const BUILDINGS := {
 #   waste   within 4 tiles of fallout waste (the footprint becomes waste too)
 #   crater  6 to 16 tiles from the centre of a ruin field
 #   open    deep desert: 8+ tiles from ruins, craters, waste and water
+#   highway beside the old highway: placed with the others like "any", then moved next to the highway once that is laid (GAS_STATION below)
 # If no spot meets the rule after POI_TRIES tries, the rule is dropped so every kind still gets placed.
 const POIS := {
 	"crashed_ship": {"near": "any"}, "weather_station": {"near": "rock"}, "chemical_dump": {"near": "waste"},
 	"radio_tower": {"near": "rock"}, "bunker": {"near": "crater"}, "pumpjack": {"near": "open"},
-	"water_tower": {"near": "river"}, "gas_station": {"near": "any"}, "missile_silo": {"near": "crater"},
+	"water_tower": {"near": "river"}, "gas_station": {"near": "highway"}, "missile_silo": {"near": "crater"},
 	"cargo_yard": {"near": "river"},
 }
+# The ruined gas station stands by the old highway (Game._pass_gas_station, after the highway is laid): within `reach` tiles of one of its tiles (1 is touching it, corners
+# included), never over it. If no such spot is free it stays where the first pass put it.
+const GAS_STATION := {"reach": 2}
 const POI_BASE_GAP := 12     # tiles from any camp or town, so none starts on your doorstep
 const POI_GAP := 10          # tiles between two sites
 const POI_TRIES := 600       # random spots tried for each kind before a rule is dropped
@@ -346,6 +355,7 @@ const UPGRADES := {
 	"wv2": {"name": "War rig workshops",     "branch": "warfare", "vehicle": true, "tier": 2, "cost": {"metal": 20}, "needs": ["w2"], "desc": "War rigs cost 25% less and get +1 attack from armor."},
 	"wv3": {"name": "Naval raiders",         "branch": "warfare", "vehicle": true, "tier": 3, "cost": {"metal": 20, "wood": 20}, "needs": ["w3"], "desc": "Boats +2 attack."},
 	"wv4": {"name": "Bombing runs",          "branch": "warfare", "vehicle": true, "tier": 4, "cost": {"metal": 30, "fuel": 15, "gold": 20}, "needs": ["w4"], "desc": "Planes +2 attack. If you have a plane, enemy walls count for nothing."},
+	"wv5": {"name": "Strategic bombers",     "branch": "warfare", "vehicle": true, "tier": 5, "cost": {"metal": 60, "fuel": 30, "gold": 60}, "needs": ["wv4"], "desc": "Unlocks the bomber: a plane that carries one nuke and drops it on any tile you pick."},
 
 	"f1": {"name": "Palisades",              "branch": "fortification", "tier": 1, "cost": {"wood": 20}, "desc": "Unlocks walls."},
 	"f2": {"name": "Stone walls",            "branch": "fortification", "tier": 2, "cost": {"stone": 25, "wood": 10}, "needs": ["f1"], "desc": "Walls give +2 more defense."},
@@ -388,6 +398,8 @@ const VEHICLES := {
 	"car":   {"name": "War rigs", "building": "motor_pool", "tier": 2, "cost": {"metal": 11, "wood": 4}, "upkeep": {"fuel": 1}, "attack": 3, "trade": 2},
 	"boat":  {"name": "Boats",    "building": "port",       "tier": 3, "cost": {"wood": 10, "metal": 6, "gold": 5}, "upkeep": {"fuel": 1}, "attack": 2, "trade": 4},
 	"plane": {"name": "Airplanes","building": "airfield",   "tier": 4, "cost": {"metal": 20, "fuel": 10, "gold": 28}, "upkeep": {"fuel": 2, "gold": 1}, "attack": 5, "trade": 0, "max": 3, "desc": "Each plane widens your HQ's sight by 4 and lets scouts fly anywhere."},
+	# The bomber does one thing: carries a nuke (Data.NUKE) and drops it on a tile. No sight, no raid attack, no air freight, and the Bombing runs upgrade does nothing for it.
+	"bomber": {"name": "Bombers", "building": "airfield",   "tier": 5, "req": "wv5", "cost": {"metal": 60, "fuel": 25, "gold": 70}, "upkeep": {"fuel": 4, "gold": 3}, "attack": 0, "trade": 0, "max": 2, "desc": "Carries one nuke and drops it on any tile you pick. Does nothing else."},
 }
 
 # The Rust Kings build vehicles too, once enough seasons have passed.
@@ -397,6 +409,16 @@ const AI_VEHICLES := {
 	"boat":  {"season": 16, "max": 2, "cost": {"gold": 10}},
 	"plane": {"season": 28, "max": 2, "cost": {"metal": 20, "gold": 15}},
 }
+
+# The Rust Kings' nukes (Game._ai_nukes), the late game only. They build an airfield on their land (`airfield_season`, paid from their stores) about `fort_distance` tiles
+# from the fort on the side away from you, then one bomber (`bomber_season`, never more than one), and get a warhead at `warhead_season` and one more every `warhead_every`
+# seasons, holding `warheads_max` at most. (Their costs are in stone and gold because that is what they have: their metal never builds up, since their war rigs and planes
+# take it as it comes in, about 0.3 a season measured on eight maps, so a cost in metal would have put their nukes off until about season 90.) Each season they have an airfield, a bomber and a warhead and have not struck in the last `gap` seasons there is a `chance`
+# they plan a strike on the 3 x 3 square holding most of your buildings (`min_buildings` at least), and it lands the next season. Watchtowers warn you with the tile; Flak
+# towers shoot the bomber down with chance `flak` (the warhead and the bomber are lost). Destroy the airfield and nothing launches, a planned strike is called off, and they
+# rebuild it `rebuild` seasons later if they can pay again. Dustwell, the tribes and the raider bands never have a nuke.
+const AI_NUKES := {"airfield_season": 46, "airfield_cost": {"stone": 40, "gold": 40}, "bomber_season": 50, "bomber_cost": {"stone": 25, "gold": 60},
+	"warhead_season": 52, "warhead_every": 12, "warheads_max": 2, "chance": 0.3, "gap": 4, "min_buildings": 2, "rebuild": 8, "flak": 0.7, "fort_distance": [3, 6]}
 
 # ---------------------------------------------------------------- things on the move
 
@@ -414,6 +436,7 @@ const UNITS := {
 	"car":     {"name": "War rig",         "glyph": "Θ", "color": Color("ff8a4a"), "sight": 3},
 	"boat":    {"name": "Boat",            "glyph": "◊", "color": Color("8fd0ff"), "sight": 3},
 	"plane":   {"name": "Recon plane",     "glyph": "Ж", "color": Color("ffffff"), "sight": 5},
+	"bomber":  {"name": "Bomber",          "glyph": "Ж", "color": Color("d8442c"), "sight": 3},
 	"band":    {"name": "Raider band",     "glyph": "☻", "color": Color("ff4a3a"), "sight": 0},
 }
 
@@ -423,10 +446,13 @@ const EXPEDITIONS := {
 	"caravan": {"name": "Trade caravan",   "verb": "Send caravan", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 	"boat":    {"name": "River trader",    "verb": "Send boat downriver", "crew": 2, "cost": {"grain": 3}},
 	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {}},   # the tank it fills is its cost
+	"bomb":    {"name": "Bombing run",     "verb": "Drop a nuke here", "crew": 2, "cost": {}},   # the same: the tank is its cost, and the nuke leaves the stores
 	"scout":   {"name": "Scouting party",  "verb": "Send scouts", "crew": 2, "cost": {}},
 	# A hunting party is troops, not colonists: its crew leave your troops (not your people) and come back to them, and a death is a troop
 	# lost for good. They are trained: every one has the Veteran trait (see Units._make_crew). They only go hunting.
 	"hunters": {"name": "Hunting party", "verb": "Send hunting party", "crew": 3, "cost": {"grain": 3}},
+	# A caravan sent to buy a trader camp's warhead (Data.TRADERS): the usual caravan's cost, and the price in gold on top (Game.warhead_price).
+	"deal":    {"name": "Warhead run",     "verb": "Buy the warhead", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 }
 # What a hunting party on foot or horseback is drawn as (it has no sprite in the atlas: the troop marker's own picture).
 const SOLDIER := {"name": "Hunting party", "glyph": "♠", "color": Color("c9e07a"), "sight": 3}
@@ -454,6 +480,7 @@ const SCOUT_MOVERS := ["foot", "horse", "car", "plane"]
 const VEHICLE_FUEL := {
 	"car":   {"tank": 8,  "burn": 0.1,  "idle": 1.0},
 	"plane": {"tank": 10, "burn": 0.05, "idle": 2.0},
+	"bomber": {"tank": 14, "burn": 0.06, "idle": 0.0},   # reaches 116 tiles and flies home; Units.send_status refuses a strike beyond that, so it never runs dry
 	"boat":  {"tank": 3,  "burn": 0.04, "idle": 0.0},
 }
 # A gauge counts as low (its warning light blinks) under this share of the tank, or under two
@@ -463,6 +490,13 @@ const FUEL_LOW := 0.2
 # survivors lose CRASH_INJURY hp (of SURVIVOR_HP) and are injured until they heal.
 const CRASH_SURVIVAL := 0.6
 const CRASH_INJURY := Vector2(10.0, 45.0)
+
+# Nukes. A glowing crater can be searched once for a live one (D20Data.CRATER has the roll; the missile silo's outcomes can add some, see D20Data.SITES) and a
+# nuke is then an item in the stores (ITEMS) that weighs ITEM_WEIGHT.nuke, loaded before any other loot. A Bomber (VEHICLES) drops one on a tile (Units, job "bomb").
+# A blast (Game.detonate) wipes the square of tiles within `reach` of its centre: they become "ash" (water and craters stay as they are) reading `rad` R/h, every
+# party and wild animal on them dies and so does every camp, and every building falls but the `spares` and the points of interest. The ash cools `cool` R/h a season
+# down to `floor`. The Giant Frog is not hurt. A strike by you on the Rust Kings' buildings costs RAID_RELATIONS relations for each one that falls.
+const NUKE := {"reach": 1, "rad": 120, "cool": 2, "floor": 60, "spares": ["hq", "ai_hq", "town", "old_bridge"]}
 
 # What a party can carry. Goods have a weight (WEIGHT per unit). Each survivor carries
 # CARRY_PER_PERSON, and the way the party travels adds CARRY_BY_MOVER on top: a pack horse is worth
@@ -478,9 +512,9 @@ const WEIGHT := {
 	"wood": 2.0, "stone": 3.0, "metal": 2.0, "fuel": 2.0,
 	"grain": 1.0, "veg": 1.0, "meat": 1.0, "gold": 0.5,
 }
-const ITEM_WEIGHT := {"hide": 6.0, "salt": 0.5}   # the same for Data.ITEMS: a raw frog hide is heavy
+const ITEM_WEIGHT := {"hide": 6.0, "salt": 0.5, "nuke": 50.0}   # the same for Data.ITEMS: a raw frog hide is heavy, a nuke is a whole foot party's load and more
 const CARRY_PER_PERSON := 10.0
-const CARRY_BY_MOVER := {"foot": 0.0, "horse": 20.0, "car": 50.0, "boat": 80.0, "plane": 30.0}
+const CARRY_BY_MOVER := {"foot": 0.0, "horse": 20.0, "car": 50.0, "boat": 80.0, "plane": 30.0, "bomber": 0.0}
 const OVERLOAD_SLOWDOWN := 1.0
 const OVERLOAD_MAX := 3.0
 const LOAD_CEILING := 2.0
@@ -499,6 +533,10 @@ const SCAV_CAR_MULT := 1.5
 const SCAV_CAR_FUEL := 2
 # Gold the Trade contracts upgrade (c2) adds to every caravan and river trader boat.
 const CONTRACT_GOLD := 4
+# Buying a nuke from a trader camp: `warhead_chance` of them hold one warhead for sale (worked out from the camp's number and place, so the rest of the map is as it was);
+# a caravan's first trade there tells you. The price is `warhead_price` gold, `trader_discount` of it for a Trader leader, paid when the caravan sets out (it is lost with
+# the caravan). Only a caravan on horseback or in a war rig can lift it, and the crate slows the trip home `crate_slowdown` times on top of the weight. Tribes never launch nukes.
+const TRADERS := {"warhead_chance": 0.15, "warhead_price": 500, "trader_discount": 0.5, "crate_slowdown": 1.5}
 # Goods a trader tribe may pay with, on top of 5 gold.
 const TRIBE_GOODS := ["grain", "veg", "meat", "metal", "fuel"]
 

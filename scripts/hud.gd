@@ -42,6 +42,7 @@ var _icon_tags := {}      # resource id -> the BBCode image tag for it (or "" if
 var stale_tabs := {}      # tab names whose contents are out of date: only the tab being looked at is rebuilt on a change
 var legend_cache: VBoxContainer   # the legend (what the Tile tab shows with nothing picked), kept between rebuilds: it took about 22 ms to make
 var legend_key := ""              # what it was made for: the art style and the Night switch are all that change it
+var strike_armed := Vector2i(-1, -1)   # the tile whose Nuclear strike button has been pressed once: the next press sends the bomber
 var log_text := RichTextLabel.new()
 var bottom := HBoxContainer.new()        # the strip along the bottom: selected party, then the log
 var party_panel := PanelContainer.new()  # who you have selected, StarCraft style: a portrait each
@@ -743,7 +744,7 @@ func _gauge_box(u: Dictionary) -> VBoxContainer:
 	col.tooltip_text = "%s fuel: %.1f of %d. Run dry and the %s is lost, and the crew go on foot." % [
 		Data.MOVERS[u.mover].name, u.fuel, tank, Data.MOVERS[u.mover].name.to_lower()]
 	var gauge := FuelGauge.new()
-	gauge.setup(u.mover, u.fuel / float(tank), low)
+	gauge.setup("plane" if u.mover == "bomber" else u.mover, u.fuel / float(tank), low)   # a bomber has the cockpit dial too
 	col.add_child(gauge)
 	var reading := _label(col, "Fuel %.1f / %d" % [u.fuel, tank], RED if low else DIM)
 	reading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1009,6 +1010,9 @@ func _refresh_tile() -> void:
 		box.remove_child(legend_cache)   # and so does the legend
 	_clear(box)
 	var c := Game.selected
+	Game.set_strike_preview(Vector2i(-1, -1))   # the red square goes with the button that showed it
+	if strike_armed != c:
+		strike_armed = Vector2i(-1, -1)
 	if not Game.in_bounds(c):
 		_label(box, "Click a tile on the map.\n\nWASD / arrows: pan\nMouse wheel: zoom\nRight-drag: pan\nF11: fullscreen")
 		_header(box, "Legend")
@@ -1094,6 +1098,8 @@ func _refresh_tile() -> void:
 			else:
 				_label(box, "Unsearched. Pre-war ruins can hide booby traps or rogue raiders.", DIM)
 			_expedition_buttons(box, "scav", c)
+	if Game.tile(c)["t"] == "crater" and not party_here:   # a party at the crater has its own panel above
+		_crater_block(box, c)
 	if known[0] == Data.PLAYER and known[1] == "port":
 		_header(box, "River trade")
 		var e: Dictionary = Data.EXPEDITIONS["boat"]
@@ -1151,6 +1157,12 @@ func _poi_block(box: VBoxContainer, c: Vector2i) -> void:
 		return
 	if Units.units.any(func(p): return p.job == "scav" and p.target == anchor and p.stage == "site"):
 		return   # the party standing here has its own panel above
+	var stock := Game.silo_stock(anchor)
+	if stock > 0:   # an earlier party found more warheads than it could carry
+		_label(box, "Searched. %d unfired %s still in the silo: send a party that can carry %s (a nuke weighs %d). There is nothing to roll." % [
+			stock, "nuke is" if stock == 1 else "nukes are", "it" if stock == 1 else "them", int(Data.ITEM_WEIGHT.nuke)], AMBER)
+		_expedition_buttons(box, "scav", anchor)
+		return
 	_label(box, "Unsearched. Takes one party.", DIM)
 	_expedition_buttons(box, "scav", anchor)
 
@@ -1389,6 +1401,7 @@ func _fill_stats() -> void:
 			["Parties sent", "%d scavenging, %d scouting, %d caravans, %d boats, %d flights" % [
 				sent.get("scav", 0), sent.get("scout", 0), sent.get("caravan", 0), sent.get("boat", 0), sent.get("plane", 0)]],
 			["Ruins and sites stripped", "%d ruins, %d sites" % [s.ruins_scavenged, s.sites_scavenged]],
+			["Craters and nukes", "%d craters searched, %d nukes found, %d bought, %d dropped, %d blasts, %d suffered, %d airfields destroyed" % [s.craters_searched, s.nukes_found, s.nukes_bought, s.nukes_dropped, s.blasts, s.nukes_suffered, s.airfields_destroyed]],
 			["d20 rolls", "%d (%d natural 20s, %d natural 1s)" % [s.rolls, s.natural_20s, s.natural_1s]],
 			["Trade runs", str(s.trade_runs)]]],
 	]
@@ -1442,7 +1455,7 @@ func _visit_panel(box: VBoxContainer, u: Dictionary) -> void:
 		dice_phase = "idle"   # the die was busy for another party: its result is already in the game
 		dice_lines = []
 	dice_uid = uid
-	_header(box, "Hunt" if view.ruin in ["hunt", "frog"] else ("Attack" if view.ruin in ["building", "camp"] else "Scavenge"))
+	_header(box, "Hunt" if view.ruin in ["hunt", "frog"] else ("Attack" if view.ruin in ["building", "camp"] else ("Search the crater" if view.ruin == "crater" else "Scavenge")))
 	var wants_roll: bool = view.buttons.any(func(b): return b.id == "roll")
 	if dice_phase == "landed" or dice_phase == "rolling":
 		box.add_child(dice_holder)
@@ -1504,6 +1517,7 @@ func _on_dice_clicked() -> void:
 
 
 func _on_dice_finished(_result: int) -> void:
+	Game.release_blasts()   # a nuke that went off with this roll goes off on the map now
 	dice_phase = "landed"
 	dice_hold_until = Time.get_ticks_msec() + DICE_HOLD_MSEC
 	refresh()
@@ -1598,11 +1612,57 @@ func _food_warning(box: VBoxContainer, u: Dictionary, c: Vector2i) -> void:
 
 
 func _recon_button(box: VBoxContainer, c: Vector2i) -> void:
-	if Game.vehicles["plane"] == 0:
+	if Game.vehicles["plane"] > 0:
+		var e: Dictionary = Data.EXPEDITIONS["plane"]
+		_button(box, "%s over this tile (%s in the tank)" % [e.verb, Game.cost_text(Units.send_cost("plane", "plane"))],
+			func(): Units.send("plane", "plane", c), Units.send_status("plane", "plane", c))
+	_strike_block(box, c)
+
+
+## A glowing crater: one search for a live nuke, by one scavenger party.
+func _crater_block(box: VBoxContainer, c: Vector2i) -> void:
+	_header(box, "Search the crater")
+	if Game.tile(c)["r"] == "picked":
+		_label(box, "Picked clean.", DIM)
 		return
-	var e: Dictionary = Data.EXPEDITIONS["plane"]
-	_button(box, "%s over this tile (%s in the tank)" % [e.verb, Game.cost_text(Units.send_cost("plane", "plane"))],
-		func(): Units.send("plane", "plane", c), Units.send_status("plane", "plane", c))
+	_label(box, "Unsearched. A glowing crater can hide a live nuke. One roll: a natural 1 sets it off (the whole party dies and the 3 by 3 square turns to hot ash), a natural 20 disarms it. A nuke weighs %d: a party on foot can lift one, slowly." % int(Data.ITEM_WEIGHT.nuke), DIM)
+	_expedition_buttons(box, "scav", c)
+
+
+## The Nuclear strike block, once you own a bomber: any tile can be bombed. Hovering the button outlines the 3 x 3 square in red on the map and lists what you know is in it;
+## the first press arms it and the second sends the bomber (there is no recall).
+func _strike_block(box: VBoxContainer, c: Vector2i) -> void:
+	if int(Game.vehicles.get("bomber", 0)) <= 0:
+		return
+	_header(box, "Nuclear strike")
+	var why := Units.send_status("bomb", "bomber", c)
+	var armed := strike_armed == c and why == ""
+	var label := "Confirm: drop the nuke on %d,%d" % [c.x, c.y] if armed else "Drop a nuke here (bomber, %s in the tank)" % Game.cost_text(Units.send_cost("bomb", "bomber"))
+	var press := func():
+		if strike_armed == c:
+			strike_armed = Vector2i(-1, -1)
+			Units.send("bomb", "bomber", c)
+		else:
+			strike_armed = c
+			refresh()
+	var b := _button(box, label, press, why)
+	b.mouse_entered.connect(func(): Game.set_strike_preview(c))
+	b.mouse_exited.connect(func(): Game.set_strike_preview(Vector2i(-1, -1)))
+	if why != "":
+		_label(box, "   " + why, DIM)
+		return
+	_label(box, "   You hold %d. The blast wipes the 3 by 3 square round %d,%d: it turns to scorched ash (%d R/h), every party in it dies, and every building falls but an HQ, a fort, Dustwell and the old bridge. There is no recall." % [
+		int(Game.items.get("nuke", 0)), c.x, c.y, int(Data.NUKE.rad)], DIM)
+	var report := Game.blast_report(c)
+	if not report.yours.is_empty() or not report.parties.is_empty():
+		var mine: Array = report.parties.duplicate()
+		if not report.yours.is_empty():
+			mine.append("%d of your buildings (%s)" % [report.yours.size(), ", ".join(report.yours)])
+		_label(box, "   WARNING, in the square: " + "; ".join(mine) + ".", RED)
+	if not report.theirs.is_empty():
+		_label(box, "   Rust Kings buildings in the square: %s. Each one costs %d relations." % [", ".join(report.theirs), Data.RAID_RELATIONS], AMBER)
+	if not report.camps.is_empty():
+		_label(box, "   Camps in the square: %s." % ", ".join(report.camps), AMBER)
 
 
 ## One button per way of travel you own, with how long the trip out takes.
@@ -1616,7 +1676,7 @@ func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest
 		var trip := ""
 		if why == "":
 			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), target)))
-		var cost_text := Game.cost_text(e.cost)
+		var cost_text := Game.cost_text(Units.send_cost(job, mover) if job == "deal" else e.cost)
 		if Units.salt_doses(job) > 0:
 			cost_text = ("%d Salt" if cost_text == "free" else cost_text + ", %d Salt") % Units.salt_doses(job)
 		_button(box, "%s %s (%d crew, %s%s)" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by, e.crew, cost_text, trip],
@@ -1679,6 +1739,10 @@ func _tribe_info(box: VBoxContainer, t: Dictionary) -> void:
 				func(): Units.attack_tribe(t.id), Units.attack_tribe_status(t))
 		"trader":
 			_expedition_buttons(box, "caravan", t.pos, t.id)
+			if t.get("warhead_known", false) and t.get("warhead", false):
+				_label(box, "WARHEAD FOR SALE: %d gold%s. It needs a caravan on horseback or in a war rig, the crate slows the way home, and it only counts once it reaches your HQ." % [
+					Game.warhead_price(), " (the Trader leader's price)" if Game.leader == "trader" else ""], RED)
+				_expedition_buttons(box, "deal", t.pos, t.id)
 		"builder":
 			_button(box, "Gift food (%s), trust %d/50" % [Game.cost_text(Units.GIFT), t.relations], func(): Units.gift_tribe(t.id),
 				"" if Game.can_afford(Units.GIFT) else "Need " + Game.cost_text(Units.GIFT))
@@ -1836,6 +1900,7 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void
 	_label(box, "Relations: %d   Troops: ~%d   Walls: %d" % [ai["relations"], ai["troops"], ai["walls"]],
 		RED if ai["relations"] < 0 else AMBER)
 	_label(box, "Vehicles: %d horses, %d war rigs, %d boats, %d planes" % [ai["horse"], ai["car"], ai["boat"], ai["plane"]])
+	_label(box, "Bombers: %d. %s" % [int(ai.get("bomber", 0)), Game.airfield_text()], RED if int(ai.get("bomber", 0)) > 0 else DIM)
 	_label(box, "March to their fort (long marches tire troops; war rigs need a way around steep inclines):", DIM)
 	_travel_lines(box, _routes_between(Game.home(Data.PLAYER), Game.home(Data.AI)))
 	_label(box, "Their raid strength ~%.1f vs your defense %.1f" % [Game.ai_attack(),

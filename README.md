@@ -374,7 +374,8 @@ per tile, and a hunting lodge in one gets +2 meat.
 ## Vehicle upgrades
 Each leader branch (Warfare, Fortification, Commerce) has its own vehicle line on the Upgrades tab:
 cheaper or stronger war rigs, sail-powered boats, counters to enemy vehicles, ethanol fuel, air freight
-and more. The Rust Kings build horses, war rigs, boats and planes as the years pass.
+and more, and at the top of Warfare the Strategic bombers that unlock the bomber (see "Nukes, craters and the bomber"). The Rust Kings build horses, war
+rigs, boats and planes as the years pass.
 
 **Refineries** turn 4 **veg** into 3 fuel each season (4 with Ethanol synthesis), but only once you switch them on: a new refinery
 starts **off**. Click it on the map and press **Start refinery** (or **Stop refinery**); the Colony tab shows how many are running.
@@ -435,7 +436,7 @@ Combat" and the integration plan.
 
 ## Points of interest
 Each map has one of ten 2 x 2 sites (`Data.POIS`, art in `art/poi_atlas.png`): a crashed ship, weather station, chemical dump, radio tower,
-bunker, oil pumpjack, water tower, ruined gas station, missile silo and cargo yard. Each stands where it fits (water towers and cargo yards
+bunker, oil pumpjack, water tower, ruined gas station, missile silo and cargo yard. Each stands where it fits (the gas station beside the old highway, water towers and cargo yards
 by the river, bunkers and silos 6 to 16 tiles from a ruin field, towers on or beside rock, the chemical dump on fallout waste, the pumpjack
 in deep desert), 12 tiles from any camp and 10 from the next site. A site is four tiles that carry one building id (`poi_<kind>`), so the
 fog, saves and the map treat it like a building: each tile draws its quarter of the sprite. You can't build on one or demolish it. Click any
@@ -458,7 +459,7 @@ the doc "Points of Interest: Dice Outcome Options":
 | Oil pumpjack | medium fuel | large fuel, medium gold | light injury | severe injury |
 | Water tower | medium veg | large veg, 2 colonists settle | nothing | severe injury |
 | Ruined gas station | medium fuel | large fuel, medium metal | nothing | fight at strength 3 |
-| Missile silo | large fuel | the Rust Kings' fort charted, medium metal | nothing | fight at strength 5 |
+| Missile silo | large fuel, 1 unfired nuke | the Rust Kings' fort charted, medium metal, 2 or 3 unfired nukes | nothing | fight at strength 5 |
 | Cargo yard | a small package of each resource | large and medium packages of two rolled resources | light injury | severe injury |
 
 A dose poisons every survivor in the party (the existing radiation sickness, so it shows in the panel and costs hp each season). A site's
@@ -467,6 +468,55 @@ enemy's package, losing drives the party off, and either way the site is spent. 
 more, then a d20 of 5 or less kills the whole party) therefore applies to the strength 4 and 5 fights and never to strength 3. Charting the map,
 Dustwell's trust, troops and colonists are recorded by the visit and handed over when the party heads home (colonists only up to the
 population cap; trust only while Dustwell is still neutral).
+
+## Nukes, craters and the bomber
+The wastes still hold live nukes. A **glowing crater** (the green circles at the heart of each ruin field: 40 to 73 tiles a map, 82 to 150 R/h) can be searched
+once, and the **missile silo** can hold up to three. A nuke is a very heavy item you bring home and spend from a Bomber.
+- **Searching a crater.** Click one and send a scavenger party (one party a tile, each tile once; the panel is "Search the crater"). The roll is one d20 against
+  DC 11 (`D20Data.CRATER`) with the party's scavenge and trap modifiers, and the crater's radiation counts (a party on foot starts at -3). **Only a natural 1
+  and a natural 20 are critical** (the usual margin would make a bad roll a blast 40% of the time): a natural 1 sets the nuke off, a natural 20 disarms it,
+  and anything else is scrap (a small package of metal) or nothing. So about 5% of searches are a blast and 5% a nuke, whatever the modifier; about 2.8 of
+  each on an average map if every crater tile were searched. Lucky's reroll works, and a **Sharp-Eyed** survivor turns the blast into a plain failure, as on
+  any trap roll (so about half your parties cannot set one off). **Leave without searching** is always offered.
+- **The silo.** Still one roll against DC 17 and one chance. A Success adds 1 unfired nuke to the fuel store, a Critical success adds 2 or 3 to the targeting
+  data (a second d20: 1 to 12 gives 2, 13 to 20 gives 3). At modifier 0 that is 15% for one, 3% for two and 2% for three. Warheads a party cannot carry stay in
+  the silo (its tiles read `stockN`, see `Game.silo_stock`): a later party that reaches it loads them with nothing to roll.
+- **Weight.** A nuke is an item (`Data.ITEMS`, like frog hides and Salt) that weighs 50 (`ITEM_WEIGHT`), loaded before any other loot (`Units.fit_load`). A
+  party of three lifts 1 on foot (the trip home takes 1.7 times as long), 2 on horseback, 3 in a war rig. In the stores it has no top-bar line, raids do
+  not take it, and it is saved with the game.
+- **The blast** (`Game.detonate`, the same for a crater that goes wrong and a bomber's drop): the 3 x 3 square becomes **Scorched ash sand** (terrain `ash`:
+  moves like sand, yields nothing, no farms) at 120 R/h, cooling 2 R/h a season down to 60 (`Data.NUKE`). Water and glowing craters stay what they were.
+  Every party in the square dies (yours too, with its vehicle), and so do wild animals; any camp is wiped out; the Giant Frog is not hurt. Buildings fall,
+  roads and the old highway with them, except an HQ, the Raider fort, Dustwell, the old bridge and the sites. A strike that destroys Rust Kings buildings
+  costs 10 relations each (a crater accident does not). The new ground and its radiation are in the save already; the map redraws its ground.
+- **The explosion.** A small, bright fireball with a shock ring, smoke and a green glow, drawn as added light over the units and the night
+  (`MapView.BlastLayer`), so it glows by day and by night, for 2.8 seconds. At a crater it plays when the die lands; a bomber's plays in the season replay on the
+  day the bomber got there. The ash keeps its speckles lit at night, like fallout waste and fused glass.
+- **The bomber.** The Warfare upgrade **Strategic bombers** (tier 5, needs Bombing runs; 60 metal, 30 fuel, 60 gold) lets the Airfield build **Bombers**: 60 metal,
+  25 fuel and 70 gold each, upkeep 4 fuel and 3 gold a season whether it flies or not, at most 2, a crew of 2, a 14-fuel tank (it reaches 116 tiles and flies
+  home; a strike further than that is refused, so it never runs dry). It does nothing but carry one nuke: no sight, raid attack or air freight, and Bombing runs
+  does nothing for it.
+- **A strike.** With a bomber, every tile's panel has a **Nuclear strike** block. Hover its button and the map outlines the 3 x 3 square in red and the panel lists
+  what you know is in it (your own things in red). The first press arms it and the second sends the bomber (the nuke leaves the stores then; there is no
+  recall). It flies in a straight line, the nuke goes off over the tile on the day it gets there, and it flies home.
+- **The Rust Kings' nukes, late game only** (`Data.AI_NUKES`, `Game._ai_nukes`). They build an **airfield** at season 46 (a building on their land, 3 to 6 tiles from
+  the fort on the side away from you: 40 stone and 40 gold), one **bomber** at season 50 (25 stone, 60 gold), and get a **warhead** at season 52 and another every
+  12 seasons, holding 2 at most. (Their costs are in stone and gold because their metal never builds up: their war rigs and planes take it, about 0.3 a season on eight
+  maps, so a cost in metal put their nukes off until about season 90. Measured on those maps, the airfield stood at season 46 on seven and 50 on the stone-poor eighth.)
+  Each season they have an airfield, a bomber and a warhead and have not struck in the last 4 seasons, there is a 30% chance they plan a strike; it lands the next
+  season on the 3 x 3 square holding most of your buildings (at least 2; the camera jumps to it and the stats count it as a nuke you suffered). **Watchtowers** warn
+  you the season before, with the tile; **Flak towers** shoot the bomber down 7 times in 10 (the warhead and the bomber are lost). **Their airfield is a building you
+  can destroy**: DC 12, by a scouting party beside it, a raid's strike roll, or a nuke of yours. While none stands nothing launches and a planned strike is called
+  off; the bomber and the warheads wait, and after 8 seasons they rebuild if they can pay again. The Diplomacy tab shows their bombers and whether you have found the
+  airfield. Nuking them does not change their schedule.
+- **Buying a warhead from the traders** (`Data.TRADERS`). About 15% of trader camps hold one for sale (worked out from the camp's number and place, not the random
+  numbers, so about 1 game in 5 meets one). A caravan's first trade there tells you ("Warhead for sale"). Then a **Buy the warhead** caravan (crew 2, one of your
+  caravan slots) can fetch it: **500 gold**, 250 for a Trader leader, paid when it sets out and lost with it if it never arrives (a camp that has vanished sends the
+  gold back). Only a caravan on horseback or in a war rig can lift 50. The crate slows the trip home 1.5 times on top of the weight (about 1.9 times as long on
+  horseback, 1.5 in a war rig), and the warhead is yours only when the caravan reaches your HQ: a wiped-out caravan loses it and the gold.
+- **Only you and the Rust Kings** have nukes. Dustwell, the raider bands and the tribes never launch one.
+- **Tuning.** `D20Data.CRATER`, the silo rows of `SITES`, `Data.NUKE`, `ITEM_WEIGHT.nuke`, `VEHICLES.bomber`, `VEHICLE_FUEL.bomber`, `UPGRADES.wv5` and
+  `SeasonReplay.BLAST_SECONDS`. `tools/make_nuke_sprites.gd` adds the ash and bomber pictures to the end of the atlas.
 
 ## Prison breaks
 A season whose upkeep finds more than 4 prisoners and fewer than 2 of your outposts within 6 tiles of the HQ (your circle of control; the
@@ -593,7 +643,7 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 - **Defeat:** a raid of theirs that wins with attack at least 3 times your defense overruns the colony (a Citadel stops that), your land falls
   to 6 tiles or fewer, or the colony starves down to 2 people.
 - **Stats** (`Game.stats`, saved with the game) cover seasons survived, peak colonists and land, buildings, upgrades, vehicles, raids won and
-  lost both ways, bands and tribes beaten, prisoners, survivors lost, buildings lost and Rust Kings buildings destroyed, parties sent, ruins and sites stripped, d20 rolls with natural 20s and
+  lost both ways, bands and tribes beaten, prisoners, survivors lost, buildings lost and Rust Kings buildings destroyed, parties sent, ruins and sites stripped, craters searched, nukes found and dropped and blasts, d20 rolls with natural 20s and
   1s, trade runs and resources gathered.
 
 ## Files
@@ -607,6 +657,7 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `art/animals.png` | The deer, black bear, brown bear and Giant Frog, four 16 x 16 pictures in a row (made from the SVGs in `Usable Art/ANIMALS`). |
 | `scripts/season_replay.gd` | The season replay: where a unit is on a given day, the replay's length, the troop march, and the Walk speed setting. |
 | `scripts/daylight.gd` | Day and night: which seasons are day, the light, what the ground and the things on it are multiplied by, the halos, and the Night switch. |
+| `tools/make_nuke_sprites.gd` | Adds the scorched ash and bomber pictures to the end of `art/atlas.png` and `art/atlas.json` (run it again and it rewrites those two rows). |
 | `tools/make_style4.gd`, `tools/make_buildings.gd` | Bake the clean look's ground pictures (and the ford) and the 22 building pictures (drawn as text rows in these files) into `art/atlas.png` and `art/building_atlas.png`. |
 | `scripts/hud.gd` | All the UI, built in code. |
 | `scripts/portrait.gd` | Draws the pixel-art survivor portraits. |

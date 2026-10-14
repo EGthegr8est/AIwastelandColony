@@ -9,6 +9,8 @@ extends RefCounted
 ## The stages, in the order a visit can reach them:
 ##   track    a hunt's first roll: finding the animal (a "track" check). Then "kill", the kill shot (a combat check), and done
 ##   strike   a scouting party's attack on a building: one combat check against the building's DC, repeatable until it falls
+##   crater   a glowing crater: one trap-type check against D20Data.CRATER's DC. A natural 1 sets a nuke off ("blast": the party is wiped out and the game does
+##            the blast), a natural 20 disarms it (the nuke goes in the loot), anything else is scrap or nothing
 ##   site     a point of interest: one check against the site's DC, whose tier picks that site's outcome (see SITES in
 ##            d20_data.gd); an outcome may hurt someone, poison the party, force a fight, or hand the colony a reward
 ##   event    a plain d20 for what the ruin holds (a safe ruin never rolls a hazard: those rows are rerolled)
@@ -28,7 +30,7 @@ const D20 = preload("res://scripts/d20.gd")
 
 const EVENT_NAMES := {"nothing": "nothing of note", "minor_find": "a small find", "cache": "a pre-war cache"}
 const CHECK_NAMES := {"cache": "Cache check", "trap": "Trap check", "ambush": "Ambush check", "combat": "Fight", "site": "Site check",
-	"track": "Track", "kill": "Kill shot"}
+	"track": "Track", "kill": "Kill shot", "crater": "Crater search"}
 
 
 # ---------------------------------------------------------------- the situation
@@ -143,14 +145,14 @@ static func begin(ruin: String, ctx: Dictionary, scale: float, dice, party := []
 	var is_site := ruin == "poi" and Data.SITES.has(poi)
 	var lead: Dictionary = ctx.get("leader", {})
 	var visit := {
-		"ruin": ruin, "stage": "site" if is_site else {"safe": "event", "poi": "event", "trapped": "trap", "rogue": "ambush"}[ruin],
+		"ruin": ruin, "stage": "site" if is_site else {"safe": "event", "poi": "event", "trapped": "trap", "rogue": "ambush", "crater": "crater"}[ruin],
 		"poi": poi,
 		"ctx": {"radiation": float(ctx.get("radiation", 0.0)), "party_strength": int(ctx.get("party_strength", 0)), "leader": lead},
 		"scale": scale, "site_dc": int(Data.SITES[poi].dc) if is_site else Data.DC.standard, "hazard_dc": Data.DC.hard,
 		"depth": 0, "resource": "", "enemy": 0, "ambush_dc": Data.DC.hard, "ambush_sit": 0, "ambush_kind": "rogue",
 		"fight_sit": 0, "fight_bonus": "", "after": "loot",
 		"loot": {}, "site_loot": {}, "packages": [], "prisoners": 0, "camp_revealed": false, "wiped": false,
-		"reveal": 0, "reveal_fort": false, "trust": 0, "colonists": 0, "troops": 0,
+		"reveal": 0, "reveal_fort": false, "trust": 0, "colonists": 0, "troops": 0, "blast": false, "blast_done": false,
 		"strike_dc": 0, "building": "", "cell": [-1, -1], "camp": -1, "destroyed": false, "carried_loss": 0.0,
 		"injuries": {}, "outcome": "", "log": [], "last": [], "shown": 0,
 		"rerolls": maxi(D20.party_rerolls(party), int(lead.get("min_rerolls", 0))),
@@ -238,11 +240,20 @@ static func _dc_for(visit: Dictionary) -> int:
 			return visit.track_dc
 		"kill":
 			return visit.kill_dc
+		"crater":
+			return Data.CRATER.dc
 	return 0
 
 
 static func _check_for(visit: Dictionary) -> String:
+	if visit.stage == "crater":
+		return "trap"   # a crater search is rolled and shifted like a trap
 	return "combat" if visit.stage in ["fight", "strike", "kill"] else str(visit.stage)
+
+
+## The crit margin a check is rolled with (-1: the usual one).
+static func _crit_for(visit: Dictionary) -> int:
+	return int(Data.CRATER.crit_margin) if visit.stage == "crater" else -1
 
 
 static func _extra_for(visit: Dictionary) -> Array:
@@ -274,7 +285,7 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 		"event":
 			out["text"] = "Search the ruins: a plain d20, no modifiers."
 			out["buttons"] = [{"id": "roll", "label": "Search the ruins (d20)"}, {"id": "home", "label": "Leave without searching"}]
-		"site", "cache", "trap", "ambush", "fight", "strike", "track", "kill":
+		"site", "cache", "trap", "ambush", "fight", "strike", "track", "kill", "crater":
 			var check := _check_for(visit)
 			var extra := _extra_for(visit)
 			var ctx := _ctx(visit, check)
@@ -285,16 +296,18 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 			var mod := D20.clamp_mod(parts_total(parts))
 			out["who"] = scout.name
 			out["traits"] = D20.trait_names(scout)
-			var check_name: String = "Attack" if visit.stage == "strike" else (CHECK_NAMES["kill"] if visit.stage == "kill" else CHECK_NAMES[check])
+			var check_name: String = "Attack" if visit.stage == "strike" else (CHECK_NAMES["kill"] if visit.stage == "kill" else (CHECK_NAMES["crater"] if visit.stage == "crater" else CHECK_NAMES[check]))
 			out["check"] = check_name
 			out["dc"] = dc
 			out["mod"] = mod
 			out["parts"] = parts
 			out["text"] = "%s rolls. %s, DC %d, %+d" % [scout.name, check_name, dc, mod]
+			if visit.stage == "crater":
+				out["text"] += ". A natural 1 sets the nuke off, a natural 20 disarms it"
 			if visit.stage == "fight" or visit.ruin == "camp" or (visit.stage == "kill" and int(visit.enemy) > 0):
 				out["text"] += " (enemy strength %d)" % visit.enemy
 			out["buttons"] = [{"id": "roll", "label": "Roll d20 (%+d vs DC %d)" % [mod, dc]}]
-			if visit.stage == "site":
+			if visit.stage == "site" or visit.stage == "crater":
 				out["buttons"].append({"id": "home", "label": "Leave without searching"})
 			elif visit.stage == "strike":
 				out["buttons"].append({"id": "home", "label": "Back off"})
@@ -344,6 +357,12 @@ static func _outcome_text(visit: Dictionary) -> String:
 		if visit.outcome == "left":
 			return "You backed off."
 		return "The camp is scattered." if visit.destroyed else "The camp held."
+	if visit.ruin == "crater":
+		if visit.outcome == "wiped":
+			return "The nuke went off. Nobody in the party survived."
+		if visit.outcome == "left":
+			return "You left the crater untouched."
+		return ("The crater is picked clean. %s" % _carrying_text(visit)).strip_edges() if not visit.loot.is_empty() else "Nothing but slag: the crater is picked clean."
 	if visit.ruin == "poi" and visit.outcome in ["looted", "empty", ""]:
 		return "There was nothing here." if visit.outcome == "empty" else "The site is picked clean."
 	match visit.outcome:
@@ -367,7 +386,7 @@ static func _carrying_text(visit: Dictionary) -> String:
 	var bits := []
 	for r in visit.loot:
 		if int(visit.loot[r]) > 0:
-			bits.append("%d %s" % [int(visit.loot[r]), r])
+			bits.append("%d %s" % [int(visit.loot[r]), r if r != "nuke" or int(visit.loot[r]) == 1 else "nukes"])
 	return "The party carries %s." % ", ".join(bits) if not bits.is_empty() else ""
 
 
@@ -395,6 +414,8 @@ static func step(visit: Dictionary, dice, party: Array, choice := "roll") -> voi
 			_fight(visit, dice, party)
 		"strike":
 			_strike(visit, dice, party, choice)
+		"crater":
+			_crater(visit, dice, party, choice)
 		"track":
 			_track(visit, dice, party, choice)
 		"kill":
@@ -421,7 +442,7 @@ static func _roll(visit: Dictionary, dice, party: Array) -> Dictionary:
 	var scout := D20.party_scout(party, roller, int(visit.rerolls))
 	var parts := check_parts(scout, check, ctx, extra[0], extra[1])
 	var situational := parts_total(parts) - D20.mod_for(scout, check)
-	var result := D20.roll_check(dice, scout, check, _dc_for(visit), situational, true, parts)
+	var result := D20.roll_check(dice, scout, check, _dc_for(visit), situational, true, parts, _crit_for(visit))
 	visit["rerolls"] = scout.rerolls   # a Lucky reroll, once spent, is spent for the whole party
 	visit["shown"] = result.d20
 	visit["rolled"] = {"tier": result.tier, "d20": result.d20, "roller": roller.name}
@@ -542,6 +563,22 @@ static func _site(visit: Dictionary, dice, party: Array, choice: String) -> void
 		_site_effect(visit, dice, party, rolled, effect)
 
 
+## A crater search: one roll. A natural 1 sets the nuke off (the party is wiped out and the game does the blast), a natural 20 disarms it, anything else is
+## scrap or nothing. A crater is searched once, whatever came of it.
+static func _crater(visit: Dictionary, dice, party: Array, choice: String) -> void:
+	if choice == "home":
+		visit["stage"] = "done"
+		visit["outcome"] = "left"
+		visit.last.append("The party leaves the crater untouched.")
+		return
+	var rolled := _roll(visit, dice, party)
+	var outcome: Dictionary = Data.CRATER.outcomes[rolled.result.tier]
+	visit.last.append("%s." % outcome.name)
+	visit["stage"] = "done"
+	for effect in outcome["do"]:
+		_site_effect(visit, dice, party, rolled, effect)
+
+
 static func _site_effect(visit: Dictionary, dice, party: Array, rolled: Dictionary, effect: Dictionary) -> void:
 	if effect.has("pkg"):
 		var resource: String = effect.get("res", "")
@@ -585,6 +622,22 @@ static func _site_effect(visit: Dictionary, dice, party: Array, rolled: Dictiona
 		var lost := _lose_site_loot(visit, float(effect.lose))
 		if not lost.is_empty():
 			visit.last.append("The find is lost: %d." % _sum(lost))
+	elif effect.has("nukes") or effect.has("nukes_roll"):
+		var n := int(effect.nukes) if effect.has("nukes") else 0
+		if effect.has("nukes_roll"):
+			var d: int = dice.d20()
+			for row in effect.nukes_roll:
+				if d <= int(row[0]):
+					n = int(row[1])
+					break
+			visit.last.append("A second roll for the warheads: d20 %d." % d)
+		visit.loot["nuke"] = int(visit.loot.get("nuke", 0)) + n
+		visit.last.append("Found %d unfired %s." % [n, "nuke" if n == 1 else "nukes"])
+	elif effect.has("blast"):
+		visit["blast"] = true
+		visit["wiped"] = true
+		visit["outcome"] = "wiped"
+		visit.last.append("The nuke goes off under the party. Everyone in it is dead.")
 
 
 static func _sum(d: Dictionary) -> int:
@@ -833,6 +886,8 @@ static func normalize(visit: Dictionary) -> Dictionary:
 	visit["strike_dc"] = int(visit.get("strike_dc", 0))   # and these, before scouting parties could attack
 	visit["cell"] = (visit.get("cell", [-1, -1]) as Array).map(func(n): return int(n))
 	visit["destroyed"] = bool(visit.get("destroyed", false))
+	visit["blast"] = bool(visit.get("blast", false))   # a crater's nuke went off
+	visit["blast_done"] = bool(visit.get("blast_done", false))   # and the game has done the blast
 	visit["carried_loss"] = float(visit.get("carried_loss", 0.0))
 	visit["building"] = str(visit.get("building", ""))
 	visit["camp"] = int(visit.get("camp", -1))

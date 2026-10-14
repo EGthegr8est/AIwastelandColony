@@ -9,7 +9,7 @@ extends RefCounted
 ##                 "wild" (a wandering animal: it never decides how long the replay is, and a season where only animals moved plays nothing),
 ##                 "trail" ([[cell, day], ...] from day 0, one entry per tile reached), "gone_day" (the day it left
 ##                 the map, or -2.0 if it is still there)}
-##   events     things that happen once the walking is done: {"kind": "clash"|"ruin"|"home"|"smoke"|"snap", "cell", "day"}
+##   events     things that happen once the walking is done: {"kind": "clash"|"ruin"|"home"|"smoke"|"snap"|"blast", "cell", "day"} (a blast is a bomber's nuke going off)
 ##   reveals    ground your parties uncovered, [[cell, day], ...]: it stays dark until the party gets there
 ##   sight_before   what the player could see when the season began (a band is shown while it was in sight then or is now)
 ##   end_day    the day the last unit stopped (settle() works it out)
@@ -22,6 +22,7 @@ const NAMES := {"normal": "Normal", "fast": "Fast", "off": "Off"}
 ## Real seconds a whole season (Data.SEASON_DAYS) takes to play. A walk of half a season takes half as long.
 const SECONDS := {"normal": 3.0, "fast": 1.2}
 const POP_SECONDS := 0.7       # a flash or a puff of smoke lasts this long, whatever the speed
+const BLAST_SECONDS := 2.8     # a nuke going off lasts this long, whatever the speed
 const DUST_DAYS := 5.0         # how far behind a walking unit its dust trail reaches
 const FADE_DAYS := 2.0         # a unit that leaves the map (home, wiped out) fades over this many days
 const STILL := -2.0            # gone_day of a unit that stayed on the map
@@ -150,7 +151,15 @@ static func has_motion(r: Dictionary) -> bool:
 ## How many real seconds the replay takes at `secs` for a whole season: the walking, then the last flash.
 static func length(r: Dictionary, secs: float) -> float:
 	var rate: float = Data.SEASON_DAYS / secs
-	return r.end_day / rate + (POP_SECONDS if not r.events.is_empty() else 0.0)
+	var tail := 0.0
+	for e in r.events:
+		tail = maxf(tail, BLAST_SECONDS if e.kind == "blast" else POP_SECONDS)
+	return r.end_day / rate + tail
+
+
+## How long a flash of this kind lasts, in real seconds.
+static func pop_seconds(kind: String) -> float:
+	return BLAST_SECONDS if kind == "blast" else POP_SECONDS
 
 
 ## The replay of a column of troops going down `path` (cells from your HQ to the target) and back: the

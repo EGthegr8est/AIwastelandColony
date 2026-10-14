@@ -89,6 +89,11 @@ var night_layer := NightLayer.new()     # day and night (daylight.gd): between t
 var glow_layer := GlowLayer.new()
 var halo_layer := HaloLayer.new()
 var unit_layer := UnitLayer.new()       # units and camp fires, above the chunks: they move every frame while a season replays
+var blast_layer := BlastLayer.new()     # a nuke going off: added light over the units and the night, so it glows by day and by night
+var live_blasts: Array = []             # explosions playing now that are not part of a season replay: {"cell", "born" (seconds)}
+var _blasts_drawn := false              # the blast layer had something on it last frame
+var _boomed := {}                       # the explosions showing whose boom has sounded: cell -> true
+var _fire_tex: GradientTexture2D
 var overlay_layer := OverlayLayer.new()
 var light := 1.0                        # 1 = full day, 0 = full night: fades over the turn change
 var _light_from := 1.0
@@ -262,6 +267,20 @@ class GlowLayer:
 		map.draw_glow_tiles(self)
 
 
+## The explosions' added light (a nuke going off), drawn over the units and the night.
+class BlastLayer:
+	extends Node2D
+	var map: Node2D
+
+	func _ready() -> void:
+		var add := CanvasItemMaterial.new()
+		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		material = add
+
+	func _draw() -> void:
+		map.draw_blasts(self)
+
+
 ## The soft light round glowing things and your own parties. A layer of its own, smooth-filtered: the map's layers are pixel art.
 class HaloLayer:
 	extends Node2D
@@ -286,10 +305,14 @@ func _ready() -> void:
 	add_child(halo_layer)
 	unit_layer.map = self
 	add_child(unit_layer)
+	blast_layer.map = self
+	add_child(blast_layer)
 	overlay_layer.map = self
 	add_child(overlay_layer)
 	Game.changed.connect(overlay_layer.queue_redraw)
 	Game.changed.connect(unit_layer.queue_redraw)
+	Game.blasted.connect(_on_blasted)
+	Game.strike_preview_changed.connect(overlay_layer.queue_redraw)
 	Game.season_played.connect(_on_season_played)
 	Game.troops_marched.connect(_on_troops_marched)
 	Game.replay_skip.connect(finish_replay)
@@ -315,6 +338,7 @@ func _process(delta: float) -> void:
 		return
 	_tick_replay(delta)
 	_tick_light(delta)
+	_tick_blasts()
 	# Text is drawn for the scale the window has (a bigger window draws sharper glyphs), so a chunk with any redraws when that changes. The pictures
 	# and rectangles do not care, and the chunks leave them alone (the engine used to redraw them all: about 80 ms going fullscreen).
 	var window_scale := get_viewport().get_final_transform().get_scale().x
@@ -528,6 +552,11 @@ func draw_overlay(layer: CanvasItem) -> void:
 		layer.draw_rect(Rect2(Vector2(hover) * CELL, CELL), Color(1, 0.8, 0.4, 0.35), false, 1.0)
 	if Game.in_bounds(Game.selected):
 		layer.draw_rect(Rect2(Vector2(Game.selected) * CELL, CELL), SELECT, false, 2.0)
+	if Game.in_bounds(Game.strike_preview):   # the 3 x 3 square a nuke dropped here would wipe
+		var reach: int = Data.NUKE.reach
+		var square := Rect2(Vector2(Game.strike_preview - Vector2i(reach, reach)) * CELL, CELL * float(2 * reach + 1))
+		layer.draw_rect(square, Color(1.0, 0.2, 0.15, 0.2))
+		layer.draw_rect(square, Color(1.0, 0.25, 0.2, 0.95), false, 2.0)
 	if not over_panel:
 		_draw_hover_label(layer)
 	stats.overlay_draws += 1
@@ -723,6 +752,7 @@ func draw_units(layer: CanvasItem) -> void:
 		_draw_pops(layer)
 	else:
 		_draw_standing(layer, rects, art, {})
+	_draw_blast_smoke(layer)
 	stats.unit_draws += 1
 	stats.usec += Time.get_ticks_usec() - t0
 
@@ -967,7 +997,7 @@ func _find_glow_ground() -> void:
 		match Game.tiles[i]["t"]:
 			"crater":
 				_glow_ground.append([c, "crater"])
-			"glass", "waste":
+			"glass", "waste", "ash":
 				_glow_ground.append([c, ""])
 			"ruins":
 				_ruin_cells.append(c)
@@ -1099,8 +1129,9 @@ func active_pops() -> Array:
 	var per_day := replay_secs / Data.SEASON_DAYS
 	for e in replay.events:
 		var age: float = clock - e.day * per_day
-		if age >= 0.0 and age < SeasonReplay.POP_SECONDS:
-			out.append([e, age / SeasonReplay.POP_SECONDS])
+		var span := SeasonReplay.pop_seconds(e.kind)
+		if age >= 0.0 and age < span:
+			out.append([e, age / span])
 	return out
 
 
@@ -1132,6 +1163,90 @@ func _draw_pops(layer: CanvasItem) -> void:
 			"smoke":
 				for i in 3:
 					layer.draw_circle(o + Vector2(5 + i * 3, 6.0 - 10.0 * t - i * 3), 2.0 + 3.0 * t + i * 0.6, Color(0.62, 0.6, 0.58, 0.7 * fade))
+
+
+## A nuke has gone off at `cell` (not in a season replay: a crater's, once the die has landed): the explosion plays from now.
+func _on_blasted(cell: Vector2i) -> void:
+	live_blasts.append({"cell": cell, "born": Time.get_ticks_msec() / 1000.0})
+	blast_layer.queue_redraw()
+	unit_layer.queue_redraw()
+
+
+## Every frame an explosion lasts the layers redraw it, and once more when it is over. Each one sounds its boom the first frame it shows.
+func _tick_blasts() -> void:
+	var now := blasts_now()
+	if now.is_empty():
+		_boomed.clear()
+	for b in now:
+		if not _boomed.has(b[0]):
+			_boomed[b[0]] = true
+			Music.boom()
+	var showing: bool = not live_blasts.is_empty() or (playing and replay.get("events", []).any(func(e): return e.kind == "blast"))
+	if showing or _blasts_drawn:
+		blast_layer.queue_redraw()
+		unit_layer.queue_redraw()
+	_blasts_drawn = showing
+
+
+## The explosions showing now, as [cell, how far through (0 to 1)]: a bomber's, from the season replay, and a crater's, which went off when its die landed.
+func blasts_now() -> Array:
+	var out := []
+	for p in active_pops():
+		if p[0].kind == "blast":
+			out.append([p[0].cell, p[1]])
+	var now := Time.get_ticks_msec() / 1000.0
+	for b in live_blasts.duplicate():
+		var t: float = (now - float(b.born)) / SeasonReplay.BLAST_SECONDS
+		if t >= 1.0:
+			live_blasts.erase(b)
+		elif t >= 0.0:
+			out.append([b.cell, t])
+	return out
+
+
+## A soft fireball: white in the middle, then yellow, orange and a red edge that fades out. Made once.
+func _fire_texture() -> GradientTexture2D:
+	if _fire_tex == null:
+		var g := Gradient.new()
+		g.offsets = PackedFloat32Array([0.0, 0.22, 0.5, 0.78, 1.0])
+		g.colors = PackedColorArray([Color(1, 1, 0.9, 1), Color(1, 0.88, 0.35, 0.95), Color(1, 0.5, 0.1, 0.75), Color(0.8, 0.2, 0.05, 0.3), Color(0.6, 0.1, 0.0, 0.0)])
+		_fire_tex = GradientTexture2D.new()
+		_fire_tex.gradient = g
+		_fire_tex.fill = GradientTexture2D.FILL_RADIAL
+		_fire_tex.fill_from = Vector2(0.5, 0.5)
+		_fire_tex.fill_to = Vector2(1.0, 0.5)
+		_fire_tex.width = 256
+		_fire_tex.height = 256
+	return _fire_tex
+
+
+## An explosion's light, added over everything: the green of the crater, the fireball, the white flash and the shock ring. It is small (about 3 tiles across at its widest)
+## and bright, and it is drawn over the night, so it glows by day and by night alike.
+func draw_blasts(layer: CanvasItem) -> void:
+	var tex := _fire_texture()
+	for b in blasts_now():
+		var o := (Vector2(b[0]) + Vector2(0.5, 0.5)) * CELL
+		var t: float = b[1]
+		var s := CELL.x
+		var ease_out := 1.0 - pow(1.0 - t, 2.0)
+		var radius := s * (2.6 + 1.2 * t)
+		layer.draw_texture_rect(tex, Rect2(o - Vector2(radius, radius), Vector2(radius, radius) * 2.0), false, Color(0.6, 1.0, 0.2, 0.35 * (1.0 - t * 0.5)))
+		radius = s * (0.8 + 1.5 * ease_out)
+		layer.draw_texture_rect(tex, Rect2(o - Vector2(radius, radius), Vector2(radius, radius) * 2.0), false, Color(1, 1, 1, clampf((1.0 - t) * 1.6, 0.0, 1.0)))
+		if t < 0.3:
+			layer.draw_circle(o, s * (0.5 + 1.2 * t), Color(1, 1, 1, 1.0 - t / 0.3))
+		layer.draw_arc(o, s * (0.6 + 2.2 * t), 0.0, TAU, 48, Color(1, 0.95, 0.8, 0.9 * (1.0 - t)), 3.0)
+
+
+## The dark part of an explosion, in the unit layer: smoke puffs rising.
+func _draw_blast_smoke(layer: CanvasItem) -> void:
+	for b in blasts_now():
+		var o := (Vector2(b[0]) + Vector2(0.5, 0.5)) * CELL
+		var t: float = b[1]
+		var a := 0.52 * (1.0 - t * 0.6) * clampf((1.0 - t) * 2.0, 0.0, 1.0)
+		for i in 5:
+			var off := Vector2((i - 2) * CELL.x * 0.45, -CELL.y * (0.2 + 1.4 * t) - (i % 2) * CELL.y * 0.5)
+			layer.draw_circle(o + off, CELL.x * (0.55 + 0.5 * t), Color(0.16, 0.14, 0.13, a))
 
 
 ## Throw away anything cached and redraw the whole map.

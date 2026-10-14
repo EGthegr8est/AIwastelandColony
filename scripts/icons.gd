@@ -1,6 +1,6 @@
 extends RefCounted
 ## Small pixel-art icons (16 x 16) for the ways a party travels: a boot, a horse, a war rig, a
-## boat and a plane. Each is drawn from rows of letters, one per pixel, and turned into a texture
+## boat, a plane and a bomber. Each is drawn from rows of letters, one per pixel, and turned into a texture
 ## on first use. Show them with nearest-neighbour filtering to keep the pixels crisp.
 
 const SIZE := 16
@@ -89,6 +89,24 @@ const ART := {
 		"CcCcCcCcCcCcCcCc",
 		"................",
 	],
+	"bomber": [
+		"......oooo......",
+		"......oRRo......",
+		"......oRRo......",
+		".....oRrrRo.....",
+		".....oRrrRo.....",
+		"oo...oRrrRo...oo",
+		"oRRooooRRooooRRo",
+		"oRRRRRRrrRRRRRRo",
+		".ooooooRRoooooo.",
+		"......oRRo......",
+		"......oRRo......",
+		".....oRrrRo.....",
+		"....oRRRRRRo....",
+		"....oooRRooo....",
+		".......oo.......",
+		"................",
+	],
 	"plane": [
 		".......ww.......",
 		"......owwo......",
@@ -112,7 +130,7 @@ const ART := {
 static var _cache := {}
 
 
-## The icon for a way of travel ("foot", "horse", "car", "boat" or "plane").
+## The icon for a way of travel ("foot", "horse", "car", "boat", "plane" or "bomber").
 static func texture(mover: String) -> ImageTexture:
 	if not _cache.has(mover):
 		_cache[mover] = ImageTexture.create_from_image(image(mover))
