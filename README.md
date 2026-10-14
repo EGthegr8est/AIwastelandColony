@@ -452,19 +452,23 @@ of its tiles and send one scavenger party; it works the whole site as one tile a
 **The corner picture.** While one of a site's four tiles is picked and your colony has seen it, its picture shows in the bottom right corner of the screen, under
 the Tile panel, with the site's name below it (`Data.POI_SCENES`, 1152 x 768 PNGs in `art/scenes/`, drawn at 288 x 192: the art at 4 times its size, so one art
 pixel is one screen pixel). The Tile panel gets that much shorter while it is up (a Scavenge button is still in view at 1600 x 900), and goes back to the whole
-side on the other tabs, on any other tile, and while a party is searching the site (that panel, with the die, needs all the room). The ten pictures are the first
-pass; most kinds have a second ("A" and "B", for other ground), which a later pass can pick by the land round the site:
+side on the other tabs, on any other tile, and while a party is searching the site (that panel, with the die, needs all the room).
 
-| Site | Picture |
+**Which picture a site shows is chance, for now.** Most kinds have two ("A" and "B", set on other sorts of ground) and the gas station has four; `Game.poi_scene(c)` picks
+one from the site's kind and place (a hash, not the game's random numbers, so nothing else moves). A site therefore always shows the same picture: click after click,
+through a save, after a blast. Across sites each picture comes up about equally often. A later pass can pick by the ground around the site instead (it is the one
+function to change).
+
+| Site | Pictures in `art/scenes/` |
 |---|---|
-| Crashed ship | `crashed_ship_A_1` (a salt flat; B is lava and ash) |
-| Weather station | `weather_station_A_1` (stony ground; B is dry grass) |
-| Chemical dump | `chemical_dump_A_1` (toxic marsh; B is a ruined factory city) |
-| Radio tower | `radio_tower_B_1` (red-rock desert; A is green hills) |
-| Bunker | `bunker_A_1` (open desert; B is a dead wood) |
-| Oil pumpjack | `oil_pumpjack_A_1` (orange desert; B is cracked earth with a railway) |
-| Water tower | `water_tower_A_1` (farmland; B is a wrecked town) |
-| Ruined gas station | `ruined_gas_station_A` (the road runs up to it; three more views of it were not used) |
+| Crashed ship | `crashed_ship_A_1` (a salt flat), `crashed_ship_B_1` (lava and ash) |
+| Weather station | `weather_station_A_1` (stony ground), `weather_station_B_1` (dry grass) |
+| Chemical dump | `chemical_dump_A_1` (toxic marsh), `chemical_dump_B_1` (a ruined factory city) |
+| Radio tower | `radio_tower_A_1` (green hills), `radio_tower_B_1` (red-rock desert) |
+| Bunker | `bunker_A_1` (open desert), `bunker_B_1` (a dead wood) |
+| Oil pumpjack | `oil_pumpjack_A_1` (orange desert), `oil_pumpjack_B_1` (cracked earth with a railway) |
+| Water tower | `water_tower_A_1` (farmland), `water_tower_B_1` (a wrecked town) |
+| Ruined gas station | `ruined_gas_station_A`, `_A_1` (with an overpass and poles), `_B`, `_B_1` (a road along the front) |
 | Missile silo, Cargo yard | `missile_silo_A_1`, `cargo_yard_A` (the only ones) |
 
 **Searching a site** is one d20 "Site check" in the right-hand Scavenge panel (the party's scavenge modifiers and the situation, against the

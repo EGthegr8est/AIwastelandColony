@@ -392,6 +392,18 @@ func poi_kind(c: Vector2i) -> String:
 	return Data.BUILDINGS[b].get("poi", "") if b != "" and Data.BUILDINGS.has(b) else ""
 
 
+## The picture a point of interest shows (`Data.POI_SCENES` lists one or more for each kind), or "" if there is none. For now it is chance: one of them, picked from the site's kind
+## and place by a hash and not from the random numbers, so the same site always shows the same picture (click after click, through saves and blasts) and nothing else in the game
+## moves. A later pass can choose by the ground around the site instead.
+func poi_scene(c: Vector2i) -> String:
+	var kind := poi_kind(c)
+	var options: Array = Data.POI_SCENES.get(kind, [])
+	if options.is_empty():
+		return ""
+	var anchor := poi_anchor(c)
+	return options[absi(hash([kind, anchor.x, anchor.y])) % options.size()]
+
+
 ## Which quarter of its 2 x 2 site this tile is: (0, 0) the top-left, (1, 0) the top-right, and so on.
 func poi_quadrant(c: Vector2i) -> Vector2i:
 	var b: String = tile(c)["b"]

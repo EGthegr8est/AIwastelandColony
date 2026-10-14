@@ -297,14 +297,20 @@ const POIS := {
 const GAS_STATION := {"reach": 2}
 # Each point of interest has a picture (art/scenes/), shown in the bottom right corner of the screen, under the Tile panel, while one of its four tiles is picked and your
 # colony has seen it. The pictures are 1152 x 768: the 288 x 192 pixel art at 4 times its size, so it is drawn at `POI_SCENE_SIZE` and every art pixel is one screen pixel.
-# Most kinds have a second picture (an "A" and a "B", for another sort of ground); the first pass uses the one that suits where the kind is placed, and a later pass can
-# choose by the ground around the site.
+# Most kinds have more than one picture (an "A" and a "B", set on other sorts of ground; the gas station has four). For now which one a site shows is chance: Game.poi_scene
+# picks one from the site's kind and place (worked out, not drawn from the random numbers), so a site always shows the same picture. A later pass can choose by the ground
+# around the site instead.
 const POI_SCENES := {
-	"crashed_ship": "res://art/scenes/crashed_ship_A_1.png", "weather_station": "res://art/scenes/weather_station_A_1.png",
-	"chemical_dump": "res://art/scenes/chemical_dump_A_1.png", "radio_tower": "res://art/scenes/radio_tower_B_1.png",
-	"bunker": "res://art/scenes/bunker_A_1.png", "pumpjack": "res://art/scenes/oil_pumpjack_A_1.png",
-	"water_tower": "res://art/scenes/water_tower_A_1.png", "gas_station": "res://art/scenes/ruined_gas_station_A.png",
-	"missile_silo": "res://art/scenes/missile_silo_A_1.png", "cargo_yard": "res://art/scenes/cargo_yard_A.png",
+	"crashed_ship": ["res://art/scenes/crashed_ship_A_1.png", "res://art/scenes/crashed_ship_B_1.png"],
+	"weather_station": ["res://art/scenes/weather_station_A_1.png", "res://art/scenes/weather_station_B_1.png"],
+	"chemical_dump": ["res://art/scenes/chemical_dump_A_1.png", "res://art/scenes/chemical_dump_B_1.png"],
+	"radio_tower": ["res://art/scenes/radio_tower_A_1.png", "res://art/scenes/radio_tower_B_1.png"],
+	"bunker": ["res://art/scenes/bunker_A_1.png", "res://art/scenes/bunker_B_1.png"],
+	"pumpjack": ["res://art/scenes/oil_pumpjack_A_1.png", "res://art/scenes/oil_pumpjack_B_1.png"],
+	"water_tower": ["res://art/scenes/water_tower_A_1.png", "res://art/scenes/water_tower_B_1.png"],
+	"gas_station": ["res://art/scenes/ruined_gas_station_A.png", "res://art/scenes/ruined_gas_station_A_1.png", "res://art/scenes/ruined_gas_station_B.png", "res://art/scenes/ruined_gas_station_B_1.png"],
+	"missile_silo": ["res://art/scenes/missile_silo_A_1.png"],
+	"cargo_yard": ["res://art/scenes/cargo_yard_A.png"],
 }
 const POI_SCENE_SIZE := Vector2(288, 192)
 const POI_BASE_GAP := 12     # tiles from any camp or town, so none starts on your doorstep

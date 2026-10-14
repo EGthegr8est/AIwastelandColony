@@ -280,11 +280,11 @@ func _picked_scene() -> Dictionary:
 		return {} if mile == null else {"art": mile, "name": spec.name, "color": spec[version + "_color"]}
 	if building == "" or not Data.BUILDINGS[building].has("poi"):
 		return {}
-	var kind: String = Data.BUILDINGS[building].poi
 	var anchor := Game.poi_anchor(c)
 	if Units.units.any(func(p): return p.job == "scav" and p.target == anchor and p.stage == "site"):
 		return {}
-	var art: Texture2D = Sprites.picture(Data.POI_SCENES[kind]) if Data.POI_SCENES.has(kind) else null
+	var scene := Game.poi_scene(c)
+	var art: Texture2D = Sprites.picture(scene) if scene != "" else null
 	return {} if art == null else {"art": art, "name": Data.BUILDINGS[building].name, "color": Data.BUILDINGS[building].color}
 
 

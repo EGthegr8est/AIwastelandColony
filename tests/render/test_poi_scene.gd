@@ -88,15 +88,37 @@ func _window() -> Rect2:
 
 # ---------------------------------------------------------------- the pictures
 
-func test_every_kind_of_site_has_a_picture_of_the_right_size() -> void:
+func test_every_kind_of_site_has_pictures_of_the_right_size() -> void:
 	for kind in Data.POIS:
-		assert_true(Data.POI_SCENES.has(kind), "%s has a picture" % kind)
-		var art := Sprites.picture(Data.POI_SCENES[kind])
-		assert_not_null(art, "%s: %s loads" % [kind, Data.POI_SCENES[kind]])
-		if art != null:
-			assert_eq(Vector2(art.get_size()), Data.POI_SCENE_SIZE * 4.0, "%s is the art at 4 times its size" % kind)
+		assert_true(Data.POI_SCENES.has(kind), "%s has pictures" % kind)
+		var options: Array = Data.POI_SCENES[kind]
+		assert_ge(options.size(), 1, kind)
+		assert_eq(options.size(), (options as Array).duplicate().filter(func(o): return options.count(o) == 1).size(), "%s: no picture listed twice" % kind)
+		for path in options:
+			var art := Sprites.picture(path)
+			assert_not_null(art, "%s: %s loads" % [kind, path])
+			if art != null:
+				assert_eq(Vector2(art.get_size()), Data.POI_SCENE_SIZE * 4.0, "%s is the art at 4 times its size" % path)
 	for kind in Data.POI_SCENES:
 		assert_true(Data.POIS.has(kind), "%s is a kind of site" % kind)
+
+
+func test_every_picture_in_the_folder_is_used_and_the_counts_are_what_was_chosen() -> void:
+	var used := []
+	for kind in Data.POI_SCENES:
+		used.append_array(Data.POI_SCENES[kind])
+	var on_disk := []
+	for f in DirAccess.get_files_at("res://art/scenes"):
+		if f.ends_with(".png"):
+			on_disk.append("res://art/scenes/" + f)
+	used.sort()
+	on_disk.sort()
+	assert_eq(on_disk, used, "no picture left unused and none missing")
+	assert_eq(Data.POI_SCENES.gas_station.size(), 4, "four views of the gas station")
+	assert_eq(Data.POI_SCENES.missile_silo.size(), 1, "the silo and the cargo yard have only one")
+	assert_eq(Data.POI_SCENES.cargo_yard.size(), 1)
+	for kind in ["crashed_ship", "weather_station", "chemical_dump", "radio_tower", "bunker", "pumpjack", "water_tower"]:
+		assert_eq(Data.POI_SCENES[kind].size(), 2, "%s: an A and a B" % kind)
 
 
 # ---------------------------------------------------------------- when it shows
@@ -119,7 +141,8 @@ func test_each_kind_shows_its_own_picture_and_name() -> void:
 		_discover(c)
 		await _pick(c)
 		assert_true(hud.scene_panel.visible, kind)
-		assert_eq(hud.scene_art.texture, Sprites.picture(Data.POI_SCENES[kind]), "%s: its own picture" % kind)
+		assert_true(Data.POI_SCENES[kind].has(Game.poi_scene(c)), "%s: one of its own pictures" % kind)
+		assert_eq(hud.scene_art.texture, Sprites.picture(Game.poi_scene(c)), "%s: the one the game picked for this site" % kind)
 		assert_eq(hud.scene_name.text, Data.BUILDINGS["poi_" + kind].name)
 
 
@@ -180,6 +203,71 @@ func test_a_party_searching_the_site_has_the_room_to_itself() -> void:
 	Units.units.erase(u)
 	await _pick(c)
 	assert_true(hud.scene_panel.visible, "and the picture is back when the party has gone")
+
+
+# ---------------------------------------------------------------- which picture: chance, but the same one every time
+
+func test_the_same_site_always_shows_the_same_picture() -> void:
+	var c := _site("gas_station")
+	_discover(c)
+	var first := Game.poi_scene(c)
+	for d in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+		assert_eq(Game.poi_scene(c + d), first, "every tile of the site agrees")
+	for i in 5:
+		await _pick(c + Vector2i(i % 2, 0))
+		assert_eq(hud.scene_art.texture, Sprites.picture(first), "click after click")
+	hud.refresh()
+	assert_eq(hud.scene_art.texture, Sprites.picture(first), "and after a rebuild of the panel")
+	Game.save_game("scene")
+	World.new_game(3)
+	assert_true(Game.load_game("scene"))
+	DirAccess.remove_absolute(Game.save_dir + "scene.json")
+	assert_eq(Game.poi_scene(c), first, "through a save")
+
+
+func test_a_blast_does_not_change_it() -> void:
+	var c := _site("bunker")
+	var first := Game.poi_scene(c)
+	Game.tile(c)["t"] = "ash"
+	Game.tile(c + Vector2i(1, 1))["t"] = "crater"
+	assert_eq(Game.poi_scene(c), first, "the picture follows the site, not the ground")
+
+
+func test_it_does_not_use_up_any_random_numbers() -> void:
+	var c := _site("water_tower")
+	seed(77)
+	var expected := randi()
+	seed(77)
+	for i in 50:
+		Game.poi_scene(c)
+	assert_eq(randi(), expected, "everything made after it is as it was")
+
+
+func test_chance_gives_every_picture_a_turn_across_sites() -> void:
+	for kind in ["crashed_ship", "gas_station", "bunker"]:
+		var counts := {}
+		var options: Array = Data.POI_SCENES[kind]
+		var n := 400
+		var c := _site(kind)
+		var real_b: String = Game.tile(c)["b"]
+		for i in n:
+			# the same kind, in 400 different places: a site's picture is a function of its kind and its place
+			var at := Vector2i(10 + i % 40, 10 + i / 40)
+			var picked: String = options[absi(hash([kind, at.x, at.y])) % options.size()]
+			counts[picked] = int(counts.get(picked, 0)) + 1
+		assert_eq(counts.size(), options.size(), "%s: every picture comes up" % kind)
+		for path in counts:
+			assert_ge(counts[path], int(n / options.size() * 0.6), "%s: %s is not starved (%d of %d)" % [kind, path, counts[path], n])
+		assert_eq(Game.tile(c)["b"], real_b)
+
+
+func test_the_picture_picked_by_the_game_is_the_one_the_formula_gives() -> void:
+	for kind in Data.POIS:
+		var c := _site(kind, 1)
+		var options: Array = Data.POI_SCENES[kind]
+		assert_eq(Game.poi_scene(c), options[absi(hash([kind, c.x, c.y])) % options.size()], kind)
+	assert_eq(Game.poi_scene(Vector2i(-1, -1)), "", "no site there")
+	assert_eq(Game.poi_scene(home), "", "your HQ is not a site")
 
 
 # ---------------------------------------------------------------- where it sits
