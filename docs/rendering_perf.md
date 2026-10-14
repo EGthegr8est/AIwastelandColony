@@ -139,3 +139,52 @@ saving 40 ms (282 KB), loading 317 ms; opening the leader screen 13 ms; making t
 Left alone: the tile panel (15 ms) and the Colony and Upgrades panels (31 and 22 ms) are slow to build when they are the tab in view, and a
 whole-map scan like `count_building` is called several times by one panel. Caching the counts would need every place that changes a tile to
 clear the cache, which is easy to get wrong, so it is not done.
+
+
+## Fullscreen and window size (2026-10-13)
+
+Measured with `.	estsun.ps1 -Windowed --bench --filter=bench_fullscreen` (new: `tests/bench/bench_fullscreen.gd`) on the same RTX 3070 Ti and a 4K
+screen. It runs the real `main.tscn` (map, top bar, side panel, log) windowed at 1600 x 900, maximized (3840 x 2054) and fullscreen
+(3840 x 2160), by day and by night, with vsync off. It really does go fullscreen for a few seconds.
+
+**Steady frames cost the same at every size.** The game is CPU-bound at about 1 ms a frame and the GPU hardly notices 4K:
+
+| Frame, median | 1600 x 900 | maximized | fullscreen 4K |
+|---|---|---|---|
+| Standing still, zoom 1 (day) | 1.03 ms | 1.01 ms | 1.01 ms |
+| Standing still, night | 1.05 ms | 1.04 ms | 1.04 ms |
+| Panning, zoom 1 | 1.13 ms | 1.12 ms | 1.12 ms |
+| Whole map, zoom 0.25 | 1.28 ms | 1.27 ms | 1.27 ms |
+| Hovering the map | 1.16 ms | | 1.08 ms |
+| GPU time, standing still | 0.08 ms | 0.27 ms | 0.26 ms (night 0.32) |
+| Draw calls | 164 | 164 | 164 |
+
+Not one of 400 idle frames went over 8 ms in either mode, and a whole season's walk (day into night) ran at 1.46 ms a frame windowed and 1.48 fullscreen.
+Clicking a tile costs about 22 ms in both (the side panel rebuilds: see "The game's turn" above), which is the same hitch windowed.
+
+**Changing the window size was the one thing that cost more than it should.** Going fullscreen, going back, maximizing or dragging an edge each cost
+about 200 ms over two frames (about 140 ms of it on the first). The cause: **the engine redraws every `_draw` node whenever the window changes
+size** (a throwaway test showed it for any node, in every stretch mode, even inside a SubViewport), and the map's 40 chunks are `_draw` nodes. All 40
+redrew each time, 8,640 tiles and about 80 ms of map CPU, with nothing about the map having changed. An empty scene costs 60 to 90 ms on the first frame and
+about 50 on the second for the swapchain alone, so the map was most of what the game added.
+
+The chunks now draw on a rendering item of their own (`Chunk.art`, a child canvas item made with `RenderingServer.canvas_item_create`) with the same commands
+(`canvas_item_add_rect`, `canvas_item_add_texture_rect_region`, `canvas_item_add_multiline`, `Font.draw_string(rid, ...)`), cleared and redone only when the chunk's
+hash changes. The engine has no `_draw` to redo for them. Snapshots are pixel-identical (all 13, including the text-glyph style), and the chunks that hold text
+glyphs (the ASCII look, a few building letters) are still redone when the window's scale changes, because text is drawn for the scale it has.
+
+| Window size change | Before | After |
+|---|---|---|
+| Chunk redraws on a size change | 40 (8,640 tiles, 80 ms map CPU) | **0** |
+| Going fullscreen or back: the two frames after | about 200 ms (150 + 55) | **about 145 to 170 ms** (an empty scene is about 140) |
+| Dragging a window edge: each step | about 145 ms | **about 68 ms** |
+
+What is left of the mode change is the engine and the driver recreating the window's surface; it is the same whatever the vsync mode (enabled, disabled, mailbox,
+adaptive: 133 to 173 ms for the first three frames in an empty scene).
+
+**The legend** (the Tile tab with nothing picked: about 40 rows with pictures) took about 22 ms to build, on every change of the game while nothing was picked.
+It only changes with the art style and the Night switch, so `Hud._legend()` keeps it between rebuilds: a change with nothing picked went from about 42 ms to about 19 ms.
+
+Left alone: a tile click (about 17 to 23 ms: the panel's controls are made fresh each time, around 0.35 ms each), the 100 to 120 ms of `end_season` (about 40 of it the
+autosave), and the first frame of a season replay.
+

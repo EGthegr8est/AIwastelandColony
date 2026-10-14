@@ -83,6 +83,8 @@ var check_needed := false               # the game changed: look for chunks that
 var checked_view := -1                  # Game.view, Game.map_version and Sprites.state() at the last check
 var checked_map := -1
 var checked_art := -1
+var chunk_filter := RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_DEFAULT   # what the chunks' own items sample with (see _find_changed_chunks)
+var last_window_scale := -1.0           # how much the window magnifies the map, at the last check
 var night_layer := NightLayer.new()     # day and night (daylight.gd): between the ground and everything standing on it
 var glow_layer := GlowLayer.new()
 var halo_layer := HaloLayer.new()
@@ -137,6 +139,9 @@ var stats := {"tile_draws": 0, "tiles": 0, "usec": 0, "overlay_draws": 0, "unit_
 
 ## A square of tiles that draws itself once and keeps the result until the map changes. The
 ## renderer skips chunks that are off screen, so panning and zooming cost nothing.
+## It draws on a rendering item of its own (`art`), not with a `_draw` of its own: the engine redraws every `_draw` node whenever the
+## window changes size (going fullscreen, maximizing, dragging an edge), which cost all 40 chunks about 80 ms each time. Commands added
+## straight to the item stay put until the chunk clears them.
 class Chunk:
 	extends Node2D
 	var map: Node2D
@@ -144,9 +149,19 @@ class Chunk:
 	var area: Rect2       # the same, in pixels, grown a cell for glyphs and borders that spill over
 	var dirty := false    # out of date: redraw it next time it's on screen
 	var signature := 0    # hash of everything it shows, from the last check
+	var art := RID()      # what the tiles are drawn on: a child item of this node's own
+	var text := false     # it has text glyphs in it, which are drawn for the window's scale and so are redone when that changes (see MapView._process)
 
-	func _draw() -> void:
-		map.draw_chunk(self)
+	func _enter_tree() -> void:
+		art = RenderingServer.canvas_item_create()
+		RenderingServer.canvas_item_set_parent(art, get_canvas_item())
+		RenderingServer.canvas_item_set_default_texture_filter(art, map.chunk_filter)
+		dirty = true
+
+	func _exit_tree() -> void:
+		if art.is_valid():
+			RenderingServer.free_rid(art)
+			art = RID()
 
 
 ## What one chunk will draw, collected tile by tile and then drawn in passes (see draw_chunk).
@@ -300,6 +315,15 @@ func _process(delta: float) -> void:
 		return
 	_tick_replay(delta)
 	_tick_light(delta)
+	# Text is drawn for the scale the window has (a bigger window draws sharper glyphs), so a chunk with any redraws when that changes. The pictures
+	# and rectangles do not care, and the chunks leave them alone (the engine used to redraw them all: about 80 ms going fullscreen).
+	var window_scale := get_viewport().get_final_transform().get_scale().x
+	if not is_equal_approx(window_scale, last_window_scale):
+		last_window_scale = window_scale
+		for chunk in chunks:
+			if chunk.text:
+				chunk.dirty = true
+				stale = true
 	var on_panel := get_viewport().gui_get_hovered_control() != null
 	if on_panel != over_panel:
 		over_panel = on_panel
@@ -319,8 +343,7 @@ func _process(delta: float) -> void:
 		if not chunk.dirty:
 			continue
 		if chunk.area.intersects(on_screen):
-			chunk.dirty = false
-			chunk.queue_redraw()
+			draw_chunk(chunk)
 		else:
 			stale = true
 
@@ -357,6 +380,9 @@ func _find_changed_chunks() -> void:
 		checked_art = art
 		# Pixel art needs nearest-neighbour filtering to stay crisp. The text glyphs keep the default.
 		tile_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if art > 0 else CanvasItem.TEXTURE_FILTER_PARENT_NODE
+		chunk_filter = RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_NEAREST if art > 0 else RenderingServer.CANVAS_ITEM_TEXTURE_FILTER_DEFAULT
+		for chunk in chunks:
+			RenderingServer.canvas_item_set_default_texture_filter(chunk.art, chunk_filter)
 		unit_layer.texture_filter = tile_layer.texture_filter
 		unit_layer.queue_redraw()
 	var standing := {}   # chunk index -> what stands in it
@@ -408,6 +434,8 @@ func draw_chunk(chunk: Chunk) -> void:
 		chunk.dirty = true
 		return
 	var t0 := Time.get_ticks_usec()
+	var item := chunk.art
+	RenderingServer.canvas_item_clear(item)
 	if ground_map != Game.map_version:
 		_build_ground()
 	var standing := _standing_now()
@@ -419,19 +447,20 @@ func draw_chunk(chunk: Chunk) -> void:
 	var r := chunk.tiles
 	for y in range(r.position.y, r.end.y):
 		for x in range(r.position.x, r.end.x):
-			_draw_tile(chunk, Vector2i(x, y), mem, seen, standing, batch)
-	_paint_art(chunk, batch)
+			_draw_tile(item, Vector2i(x, y), mem, seen, standing, batch)
+	_paint_art(item, batch)
 	for k in batch.heat_pos.size():
-		chunk.draw_rect(Rect2(batch.heat_pos[k], CELL), batch.heat_color[k])
+		RenderingServer.canvas_item_add_rect(item, Rect2(batch.heat_pos[k], CELL), batch.heat_color[k])
 	for g in batch.glyphs:
 		if g[3]:
-			chunk.draw_set_transform(g[0] + Vector2(0, pipe_ascent * pipe_scale.y), 0.0, pipe_scale)
-			chunk.draw_string(font, Vector2.ZERO, g[1], HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, g[2])
-			chunk.draw_set_transform(Vector2.ZERO)
+			RenderingServer.canvas_item_add_set_transform(item, Transform2D(0.0, pipe_scale, 0.0, g[0] + Vector2(0, pipe_ascent * pipe_scale.y)))
+			font.draw_string(item, Vector2.ZERO, g[1], HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, g[2])
+			RenderingServer.canvas_item_add_set_transform(item, Transform2D.IDENTITY)
 		else:
-			chunk.draw_string(font, g[0] + Vector2(0, CELL.y * 0.8), g[1], HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, g[2])
+			font.draw_string(item, g[0] + Vector2(0, CELL.y * 0.8), g[1], HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, g[2])
 	if not batch.lines.is_empty():
-		chunk.draw_multiline_colors(batch.lines, batch.line_colors, 1.0)
+		RenderingServer.canvas_item_add_multiline(item, batch.lines, batch.line_colors, 1.0)
+	chunk.text = not batch.glyphs.is_empty()
 	chunk.dirty = false
 	stats.tile_draws += 1
 	stats.tiles += r.get_area()
@@ -439,37 +468,38 @@ func draw_chunk(chunk: Chunk) -> void:
 
 
 ## The art passes of a batch, in order: ground sprites, the wash over them, the rims, sites, the dark patches under camps, camps and
-## buildings. (The chunks draw this, and so does the night's glow layer for the glowing tiles it shows at full brightness.)
-func _paint_art(canvas: CanvasItem, batch: Batch) -> void:
+## buildings. (The chunks draw this, and so does the night's glow layer for the glowing tiles it shows at full brightness.) `canvas` is a rendering
+## item: a chunk's own, or a layer's `get_canvas_item()` while it draws. These are the same commands the CanvasItem draw methods send.
+func _paint_art(canvas: RID, batch: Batch) -> void:
 	if not batch.sprite_pos.is_empty():
-		var atlas := Sprites.atlas_texture()
+		var atlas := Sprites.atlas_texture().get_rid()
 		for k in batch.sprite_pos.size():
 			var at := Rect2(batch.sprite_pos[k], CELL)
 			if batch.sprite_flip[k] == 1:
 				at = Rect2(at.position, Vector2(-CELL.x, CELL.y))   # a negative width mirrors it, in place
-			canvas.draw_texture_rect_region(atlas, at, batch.sprite_src[k], batch.sprite_tint[k])
+			RenderingServer.canvas_item_add_texture_rect_region(canvas, at, atlas, batch.sprite_src[k], batch.sprite_tint[k], false, true)
 	for k in batch.shade_pos.size():
-		canvas.draw_rect(Rect2(batch.shade_pos[k], CELL), batch.shade_color[k])
+		RenderingServer.canvas_item_add_rect(canvas, Rect2(batch.shade_pos[k], CELL), batch.shade_color[k])
 	for k in batch.edge_rects.size():
-		canvas.draw_rect(batch.edge_rects[k], batch.edge_colors[k])
+		RenderingServer.canvas_item_add_rect(canvas, batch.edge_rects[k], batch.edge_colors[k])
 	if not batch.poi_pos.is_empty():
-		var poi_atlas := Sprites.poi_atlas_texture()
+		var poi_atlas := Sprites.poi_atlas_texture().get_rid()
 		for k in batch.poi_pos.size():
-			canvas.draw_texture_rect_region(poi_atlas, Rect2(batch.poi_pos[k], CELL), batch.poi_src[k], batch.poi_tint[k])
+			RenderingServer.canvas_item_add_texture_rect_region(canvas, Rect2(batch.poi_pos[k], CELL), poi_atlas, batch.poi_src[k], batch.poi_tint[k], false, true)
 	for k in batch.road_out.size():
-		canvas.draw_rect(batch.road_out[k], batch.road_out_colors[k])
+		RenderingServer.canvas_item_add_rect(canvas, batch.road_out[k], batch.road_out_colors[k])
 	for k in batch.road_fill.size():
-		canvas.draw_rect(batch.road_fill[k], batch.road_fill_colors[k])
+		RenderingServer.canvas_item_add_rect(canvas, batch.road_fill[k], batch.road_fill_colors[k])
 	for p in batch.patch_pos:
-		canvas.draw_rect(Rect2(p + Vector2(2, 2), CELL - Vector2(4, 4)), PATCH)
+		RenderingServer.canvas_item_add_rect(canvas, Rect2(p + Vector2(2, 2), CELL - Vector2(4, 4)), PATCH)
 	if not batch.top_pos.is_empty():
-		var top_atlas := Sprites.atlas_texture()
+		var top_atlas := Sprites.atlas_texture().get_rid()
 		for k in batch.top_pos.size():
-			canvas.draw_texture_rect_region(top_atlas, Rect2(batch.top_pos[k], CELL), batch.top_src[k], batch.top_tint[k])
+			RenderingServer.canvas_item_add_texture_rect_region(canvas, Rect2(batch.top_pos[k], CELL), top_atlas, batch.top_src[k], batch.top_tint[k], false, true)
 	if not batch.bld_pos.is_empty():
-		var building_atlas := Sprites.building_atlas_texture()
+		var building_atlas := Sprites.building_atlas_texture().get_rid()
 		for k in batch.bld_pos.size():
-			canvas.draw_texture_rect_region(building_atlas, Rect2(batch.bld_pos[k], CELL), batch.bld_src[k], batch.bld_tint[k])
+			RenderingServer.canvas_item_add_texture_rect_region(canvas, Rect2(batch.bld_pos[k], CELL), building_atlas, batch.bld_src[k], batch.bld_tint[k], false, true)
 
 
 ## The color of a route dot once `ratio` of the party's food would be eaten (0 = none, 1 = all of it):
@@ -998,7 +1028,7 @@ func _add_glow(c: Vector2i, kind: String, strength: float, mem: Array, seen: Pac
 
 
 func draw_glow_tiles(layer: CanvasItem) -> void:
-	_paint_art(layer, glow_batch)
+	_paint_art(layer.get_canvas_item(), glow_batch)
 
 
 ## The edge of what the camera sees, in map pixels.
@@ -1235,7 +1265,7 @@ func _owner_at(i: int, mem: Array) -> int:
 
 ## Draws a tile's background now and queues its sprites, glyph and border lines for the later passes.
 ## `mem` and `seen` are the viewer's memory and sight, both empty for the no-fog view.
-func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArray,
+func _draw_tile(canvas: RID, c: Vector2i, mem: Array, seen: PackedByteArray,
 		overlay: Dictionary, batch: Batch) -> void:
 	var pos := Vector2(c) * CELL
 	var w := Game.w
@@ -1246,7 +1276,7 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 		owner = Game.tiles[i]["o"]
 		building = Game.tiles[i]["b"]
 	elif mem[i] == null:
-		canvas.draw_rect(Rect2(pos, CELL), FOG)
+		RenderingServer.canvas_item_add_rect(canvas, Rect2(pos, CELL), FOG)
 		return
 	else:
 		owner = mem[i][0]
@@ -1255,10 +1285,10 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 	var pixel_art := not batch.rects.is_empty()
 	var clean := pixel_art and Sprites.clean()   # its pictures cover the tile: no background or wash under them
 	if not clean:
-		canvas.draw_rect(Rect2(pos, CELL), bg_dim[owner] if out_of_sight else OWNER_BG[owner])
+		RenderingServer.canvas_item_add_rect(canvas, Rect2(pos, CELL), bg_dim[owner] if out_of_sight else OWNER_BG[owner])
 		var wash: Color = ground_bg_dim[i] if out_of_sight else ground_bg[i]
 		if wash.a > 0.0:
-			canvas.draw_rect(Rect2(pos, CELL), wash)
+			RenderingServer.canvas_item_add_rect(canvas, Rect2(pos, CELL), wash)
 	if Game.show_radiation:
 		var heat := _rad_tint(i)
 		if heat.a > 0.0:
@@ -1268,7 +1298,7 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 				batch.heat_pos.append(pos)   # over the sprite, which would hide it from underneath
 				batch.heat_color.append(heat)
 			else:
-				canvas.draw_rect(Rect2(pos, CELL), heat)
+				RenderingServer.canvas_item_add_rect(canvas, Rect2(pos, CELL), heat)
 
 	var glyph: String
 	var color: Color
@@ -1280,7 +1310,7 @@ func _draw_tile(canvas: CanvasItem, c: Vector2i, mem: Array, seen: PackedByteArr
 			color = shown[1]
 	elif overlay.has(c):
 		# Something is standing here: draw it over the ground, like a creature in Dwarf Fortress
-		canvas.draw_rect(Rect2(pos + Vector2(2, 2), CELL - Vector2(4, 4)), Color(0, 0, 0, 0.7))
+		RenderingServer.canvas_item_add_rect(canvas, Rect2(pos + Vector2(2, 2), CELL - Vector2(4, 4)), Color(0, 0, 0, 0.7))
 		if pixel_art:
 			batch.add_sprite(pos, overlay[c][2], UNIT_DIM if out_of_sight else Color.WHITE)
 		else:

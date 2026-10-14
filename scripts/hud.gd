@@ -40,6 +40,8 @@ var tabs := TabContainer.new()
 var boxes := {}           # tab name -> VBoxContainer
 var _icon_tags := {}      # resource id -> the BBCode image tag for it (or "" if it has no picture)
 var stale_tabs := {}      # tab names whose contents are out of date: only the tab being looked at is rebuilt on a change
+var legend_cache: VBoxContainer   # the legend (what the Tile tab shows with nothing picked), kept between rebuilds: it took about 22 ms to make
+var legend_key := ""              # what it was made for: the art style and the Night switch are all that change it
 var log_text := RichTextLabel.new()
 var bottom := HBoxContainer.new()        # the strip along the bottom: selected party, then the log
 var party_panel := PanelContainer.new()  # who you have selected, StarCraft style: a portrait each
@@ -76,6 +78,13 @@ var hollow_title := Label.new()          # a title card that stands in for the p
 var hollow_note := Label.new()
 var stats_screen := ColorRect.new()      # what you did, and the way back to the main menu
 var stats_box := VBoxContainer.new()
+
+
+## The legend is kept out of the tree between rebuilds (the Tile tab shows a picked tile instead): free it with the HUD.
+func _exit_tree() -> void:
+	if legend_cache != null and legend_cache.get_parent() == null:
+		legend_cache.free()
+	legend_cache = null
 
 
 func _ready() -> void:
@@ -946,45 +955,64 @@ func end_season_pressed() -> void:
 		Game.end_season()
 
 
+## The legend: what each picture on the map means. It stays the same until the art style or the Night switch changes (they are all that does,
+## and the buttons in it show them), so it is made once for each and kept: building it took about 22 ms, on every change of the game while
+## nothing was picked.
+func _legend() -> VBoxContainer:
+	var key := "%d %s" % [Sprites.state(), Daylight.enabled]
+	if legend_cache != null and legend_key == key:
+		return legend_cache
+	if legend_cache != null:
+		legend_cache.free()   # not in the tree: _refresh_tile took it out
+	legend_cache = VBoxContainer.new()
+	legend_cache.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	legend_key = key
+	var box := legend_cache
+	_legend_style_row(box)
+	_legend_night_row(box)
+	for id in Data.TERRAIN:
+		var t: Dictionary = Data.TERRAIN[id]
+		var slow := Game.speed_text(id)
+		_legend_row(box, Sprites.terrain(id), t.glyph[0], "%s  %s%s" % [t.name, Game.cost_text(t.yield) if not t.yield.is_empty() else "", "  (%s)" % slow if slow != "" else ""], t.color)
+	_legend_row(box, Sprites.texture(Sprites.FORD), Data.FORD.glyph, "%s: foot and horseback can wade it" % Data.FORD.name, Data.FORD.color)
+	_legend_row(box, Sprites.road_icon(false), Data.BUILDINGS["road"].glyph, "Road: ground parties take 0.6 times as long (you and the Rust Kings build them, and anyone can use them)", Data.BUILDINGS["road"].color)
+	_legend_row(box, Sprites.road_icon(true), Data.BUILDINGS["old_road"].glyph, "Old highway: 0.8 times as long, but raiders lie in wait on it", Data.BUILDINGS["old_road"].color)
+	for id in ["bridge", "old_bridge"]:
+		var span: Dictionary = Data.BUILDINGS[id]
+		_legend_row(box, Sprites.building(id), span.glyph, "%s: %s" % [span.name, "every ground party can cross (you build it out from your bank)" if id == "bridge" else "the one place every kind of party can cross"], span.color)
+	_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a %s every 10 m): slows everyone a little" % ("ledge" if Sprites.clean() else "line"), AMBER)
+	_legend_row(box, Sprites.slope("steep"), "═║╔╗", "Steep incline: war rigs can't climb it, foot and horses cross slowly", AMBER)
+	for mover in Data.TRAVEL_PREVIEW:
+		_label(box, " ●    %s route from your HQ to the tile you click" % Data.MOVERS[mover].name, Data.MOVERS[mover].color)
+	_label(box, " ●    Click a scouting party to see its route from where it stands: white while its food lasts, yellow as it runs low, red once it's gone", Color("ffe03a"))
+	for kind in Data.UNITS:
+		_legend_row(box, Sprites.unit(kind), Data.UNITS[kind].glyph, Data.UNITS[kind].name, Data.UNITS[kind].color)
+	_legend_row(box, null, Data.SOLDIER.glyph, Data.SOLDIER.name + " (your troops: hunt with them)", Data.SOLDIER.color)
+	for cls in Data.TRIBE_CLASSES:
+		_legend_row(box, Sprites.camp(cls), Data.TRIBE_CLASSES[cls].glyph, "%s camp" % Data.TRIBE_CLASSES[cls].name, Data.TRIBE_CLASSES[cls].color)
+	for kind in Data.ANIMALS:
+		var spec: Dictionary = Data.ANIMALS[kind]
+		_legend_row(box, Sprites.animal(kind), spec.glyph, spec.name + (" (hunt it for meat)" if kind == "deer" else " (dangerous: hunt it to make the land safe)"), spec.color, Sprites.ANIMAL_SIZE)
+	_legend_row(box, Sprites.animal("frog"), Data.FROG.glyph, Data.FROG.name + " (a boss: only one, and it sleeps)", Data.FROG.color, Sprites.ANIMAL_SIZE)
+	for kind in Data.POIS:
+		var building: Dictionary = Data.BUILDINGS["poi_" + kind]
+		_legend_row(box, Sprites.poi_sprite(kind), building.glyph, building.name, building.color, Sprites.POI_SIZE)
+	_label(box, "   Black: never explored. Click it to scout.", DIM)
+	_label(box, "   Dark: explored but out of sight. Shows what was there last time.", DIM)
+	return legend_cache
+
+
 func _refresh_tile() -> void:
 	var box: VBoxContainer = boxes["Tile"]
 	_detach_dice()   # the die lives on between rebuilds: take it out before the panel is cleared
+	if legend_cache != null and legend_cache.get_parent() == box:
+		box.remove_child(legend_cache)   # and so does the legend
 	_clear(box)
 	var c := Game.selected
 	if not Game.in_bounds(c):
 		_label(box, "Click a tile on the map.\n\nWASD / arrows: pan\nMouse wheel: zoom\nRight-drag: pan\nF11: fullscreen")
 		_header(box, "Legend")
-		_legend_style_row(box)
-		_legend_night_row(box)
-		for id in Data.TERRAIN:
-			var t: Dictionary = Data.TERRAIN[id]
-			var slow := Game.speed_text(id)
-			_legend_row(box, Sprites.terrain(id), t.glyph[0], "%s  %s%s" % [t.name, Game.cost_text(t.yield) if not t.yield.is_empty() else "", "  (%s)" % slow if slow != "" else ""], t.color)
-		_legend_row(box, Sprites.texture(Sprites.FORD), Data.FORD.glyph, "%s: foot and horseback can wade it" % Data.FORD.name, Data.FORD.color)
-		_legend_row(box, Sprites.road_icon(false), Data.BUILDINGS["road"].glyph, "Road: ground parties take 0.6 times as long (you and the Rust Kings build them, and anyone can use them)", Data.BUILDINGS["road"].color)
-		_legend_row(box, Sprites.road_icon(true), Data.BUILDINGS["old_road"].glyph, "Old highway: 0.8 times as long, but raiders lie in wait on it", Data.BUILDINGS["old_road"].color)
-		for id in ["bridge", "old_bridge"]:
-			var span: Dictionary = Data.BUILDINGS[id]
-			_legend_row(box, Sprites.building(id), span.glyph, "%s: %s" % [span.name, "every ground party can cross (you build it out from your bank)" if id == "bridge" else "the one place every kind of party can cross"], span.color)
-		_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a %s every 10 m): slows everyone a little" % ("ledge" if Sprites.clean() else "line"), AMBER)
-		_legend_row(box, Sprites.slope("steep"), "═║╔╗", "Steep incline: war rigs can't climb it, foot and horses cross slowly", AMBER)
-		for mover in Data.TRAVEL_PREVIEW:
-			_label(box, " ●    %s route from your HQ to the tile you click" % Data.MOVERS[mover].name, Data.MOVERS[mover].color)
-		_label(box, " ●    Click a scouting party to see its route from where it stands: white while its food lasts, yellow as it runs low, red once it's gone", Color("ffe03a"))
-		for kind in Data.UNITS:
-			_legend_row(box, Sprites.unit(kind), Data.UNITS[kind].glyph, Data.UNITS[kind].name, Data.UNITS[kind].color)
-		_legend_row(box, null, Data.SOLDIER.glyph, Data.SOLDIER.name + " (your troops: hunt with them)", Data.SOLDIER.color)
-		for cls in Data.TRIBE_CLASSES:
-			_legend_row(box, Sprites.camp(cls), Data.TRIBE_CLASSES[cls].glyph, "%s camp" % Data.TRIBE_CLASSES[cls].name, Data.TRIBE_CLASSES[cls].color)
-		for kind in Data.ANIMALS:
-			var spec: Dictionary = Data.ANIMALS[kind]
-			_legend_row(box, Sprites.animal(kind), spec.glyph, spec.name + (" (hunt it for meat)" if kind == "deer" else " (dangerous: hunt it to make the land safe)"), spec.color, Sprites.ANIMAL_SIZE)
-		_legend_row(box, Sprites.animal("frog"), Data.FROG.glyph, Data.FROG.name + " (a boss: only one, and it sleeps)", Data.FROG.color, Sprites.ANIMAL_SIZE)
-		for kind in Data.POIS:
-			var building: Dictionary = Data.BUILDINGS["poi_" + kind]
-			_legend_row(box, Sprites.poi_sprite(kind), building.glyph, building.name, building.color, Sprites.POI_SIZE)
-		_label(box, "   Black: never explored. Click it to scout.", DIM)
-		_label(box, "   Dark: explored but out of sight. Shows what was there last time.", DIM)
+		box.add_child(_legend())
 		return
 	_label(box, "Tile %d,%d" % [c.x, c.y], BRIGHT)
 	# The panel always shows what YOUR colony knows about the tile
