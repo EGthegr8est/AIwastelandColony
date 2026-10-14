@@ -1,7 +1,7 @@
 ## Pixel radiation-meter toggle button (Godot 4): the artist's meter, from tools/make_rad_meter.py and art/rad_meter_sheet.png.
 ##
-## Clicking the meter (or ui_accept while it has focus) switches it on or off and plays the power animations. Only the meter's own pixels are clickable, not the empty
-## corners. The sheet is 40 x 64 frames drawn upright; `turn` lays the meter on its side (every frame and the clickable shape are turned) so it fits a bar.
+## Clicking the meter (or ui_accept while it has focus) switches it on or off and plays the power animations and their sound (audio/rad_meter_on.wav, which ends in
+## an idle hum that loops while the meter is on, and rad_meter_off.wav). Only the meter's own pixels are clickable, not the empty corners. The sheet is 40 x 64 frames drawn upright; `turn` lays the meter on its side (every frame and the clickable shape are turned) so it fits a bar.
 ##
 ##   meter.switched.connect(func(on): print("meter on: ", on))
 ##   meter.set_on(true, true)   # restore from a save without animating
@@ -25,10 +25,13 @@ signal settled(is_on: bool)
 		turn = value
 		_apply_scale()
 @export var start_on := false
-## Optional: plays on each selector-knob detent.
-@export var click_sound: AudioStream
-## Optional: plays when the meter is pressed.
-@export var press_sound: AudioStream
+## rad_meter_on.wav: the power-on intro with the idle hum loop baked in (the loop point is in the file).
+@export var on_sound: AudioStream
+## rad_meter_off.wav: power-off.
+@export var off_sound: AudioStream
+@export_range(-40.0, 6.0) var sound_volume_db := -6.0
+## The audio bus the sounds play on ("Master" unless a game wants its own, like a music volume slider).
+@export var sound_bus: StringName = &"Master"
 
 const FRAME_W := 40
 const FRAME_H := 64
@@ -61,7 +64,9 @@ var _busy := false
 var _hovered := false
 var _sprite: AnimatedSprite2D
 var _outline: Sprite2D
-var _sfx: AudioStreamPlayer
+var _sfx_on: AudioStreamPlayer
+var _sfx_off: AudioStreamPlayer
+var _fade: Tween
 var _hit: BitMap
 var _atlas: Texture2D   # the sheet as laid out for `turn`: every 40 x 64 cell turned into a 64 x 40 one
 
@@ -91,14 +96,16 @@ func _ready() -> void:
 	_outline.visible = false
 	add_child(_outline)
 
-	_sfx = AudioStreamPlayer.new()
-	add_child(_sfx)
+	_sfx_on = AudioStreamPlayer.new()
+	_sfx_off = AudioStreamPlayer.new()
+	for player in [_sfx_on, _sfx_off]:
+		player.bus = sound_bus
+		add_child(player)
 
 	_build_hit_mask(image)
 	_apply_scale()
 
 	_sprite.animation_finished.connect(_on_animation_finished)
-	_sprite.frame_changed.connect(_on_frame_changed)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
 	focus_entered.connect(_update_outline)
@@ -110,6 +117,24 @@ func _ready() -> void:
 ## The size of one frame as drawn: 40 x 64, or 64 x 40 when the meter lies on its side.
 func cell_size() -> Vector2i:
 	return Vector2i(FRAME_H, FRAME_W) if turn != 0 else Vector2i(FRAME_W, FRAME_H)
+
+
+## Holds the meter's sounds still (a menu is over the game) or lets them go on.
+func set_sound_paused(paused: bool) -> void:
+	for player in [_sfx_on, _sfx_off]:
+		if player != null:
+			player.stream_paused = paused
+
+
+## Whether the idle hum is sounding (the meter is on and its sound is loaded).
+func is_humming() -> bool:
+	return _sfx_on != null and _sfx_on.playing
+
+
+## The frame table to play: the survey meter's own. A button that is another picture on the same sheet layout (rad_meter_button's cell size, the hover outline in the
+## second cell of the top row) overrides this with its own (see sonar_tablet_button.gd).
+func _get_anims() -> Dictionary:
+	return ANIMS
 
 
 ## Whether a power animation is playing (a click does nothing until it finishes).
@@ -130,12 +155,56 @@ func set_on(value: bool, instant := false) -> void:
 	if instant:
 		_busy = false
 		_sprite.play("on" if is_on else "off")
+		if is_on:
+			_start_hum(true)
+		else:
+			_stop_hum()
 	else:
 		_busy = true
 		_sprite.play("power_on" if is_on else "power_off")
-		_play_sound(press_sound)
+		if is_on:
+			_start_hum(false)
+		else:
+			_stop_hum()
+			_play_off()
 		switched.emit(is_on)
 	_update_outline()
+
+
+## Starts rad_meter_on.wav. `skip_intro` jumps straight to the idle loop (the meter is simply found on, as after a load).
+func _start_hum(skip_intro: bool) -> void:
+	if on_sound == null:
+		return
+	if _fade:
+		_fade.kill()
+	_sfx_off.stop()
+	_sfx_on.stream = on_sound
+	_sfx_on.volume_db = sound_volume_db
+	var from := 0.0
+	if skip_intro:
+		var wav := on_sound as AudioStreamWAV
+		if wav == null or wav.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+			return   # only a looping hum has an idle part to start in: a blip is for the click, not for finding the button already on
+		from = float(wav.loop_begin) / wav.mix_rate
+	_sfx_on.play(from)
+
+
+func _stop_hum() -> void:
+	if _sfx_on == null or not _sfx_on.playing:
+		return
+	if _fade:
+		_fade.kill()
+	_fade = create_tween()   # a 30 ms fade, so cutting the loop never pops
+	_fade.tween_property(_sfx_on, "volume_db", -60.0, 0.03)
+	_fade.tween_callback(_sfx_on.stop)
+
+
+func _play_off() -> void:
+	if off_sound == null or _sfx_off == null:
+		return
+	_sfx_off.stream = off_sound
+	_sfx_off.volume_db = sound_volume_db
+	_sfx_off.play()
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -187,8 +256,9 @@ func _cell_rect(x: int, y: int) -> Rect2:
 func _build_frames() -> SpriteFrames:
 	var frames := SpriteFrames.new()
 	frames.remove_animation(&"default")
-	for anim_name in ANIMS:
-		var anim: Dictionary = ANIMS[anim_name]
+	var table := _get_anims()
+	for anim_name in table:
+		var anim: Dictionary = table[anim_name]
 		frames.add_animation(anim_name)
 		frames.set_animation_loop(anim_name, anim["loop"])
 		# Frame durations are stored in milliseconds, so 1000 "fps" makes 1 unit = 1 ms.
@@ -222,20 +292,6 @@ func _on_animation_finished() -> void:
 		_sprite.play("on" if is_on else "off")
 		_update_outline()
 		settled.emit(is_on)
-
-
-func _on_frame_changed() -> void:
-	var anim: Dictionary = ANIMS.get(String(_sprite.animation), {})
-	if anim.is_empty() or _sprite.frame >= anim["frames"].size():
-		return
-	if anim["frames"][_sprite.frame][3] == 1:
-		_play_sound(click_sound)
-
-
-func _play_sound(stream: AudioStream) -> void:
-	if stream and _sfx:
-		_sfx.stream = stream
-		_sfx.play()
 
 
 func _on_mouse_entered() -> void:

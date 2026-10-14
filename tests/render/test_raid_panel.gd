@@ -90,7 +90,7 @@ func test_the_camp_attack_button_shows_the_dc_and_the_chance() -> void:
 	var text := _button_with("Diplomacy", "Attack their camp")
 	var att := Game.player_attack(t.pos)
 	assert_ne(text, "", "the button is there")
-	assert_has(text, Game.raid_odds_text(att, 6.0))
+	assert_has(text, D20.plain(Game.raid_odds_text(att, 6.0)))
 	assert_has(text, "% to win")
 
 
@@ -102,10 +102,10 @@ func test_the_fort_raid_and_dustwell_buttons_show_the_dc_and_the_chance() -> voi
 	await _show_tab("Diplomacy")
 	var raid := _button_with("Diplomacy", "RAID them")
 	assert_ne(raid, "")
-	assert_has(raid, Game.raid_odds_text(Game.player_attack(Game.home(Data.AI)), Game.ai_defense(Game.wall_breach())))
+	assert_has(raid, D20.plain(Game.raid_odds_text(Game.player_attack(Game.home(Data.AI)), Game.ai_defense(Game.wall_breach()))))
 	var conquer := _button_with("Diplomacy", "Conquer")
 	assert_ne(conquer, "")
-	assert_has(conquer, Game.raid_odds_text(Game.player_attack(Game.home(Data.TOWN)), Game.TOWN_DEFENSE))
+	assert_has(conquer, D20.plain(Game.raid_odds_text(Game.player_attack(Game.home(Data.TOWN)), Game.TOWN_DEFENSE)))
 
 
 # ---------------------------------------------------------------- a scouting party attacks a camp
@@ -136,7 +136,7 @@ func test_a_stationed_party_beside_a_camp_gets_an_attack_button_and_a_die() -> v
 	var camp: Dictionary = Units.tribes[-1]
 	var text := _button_with("Tile", "Attack the %s" % camp.name)
 	assert_ne(text, "", "an attack button for the camp")
-	assert_has(text, "DC 16")
+	assert_false(text.contains("DC 16"), "the DC is not on the button")
 	assert_has(text, "strength 5")
 	Units.dice = ForcedDice.new([18, 5], [3])
 	_press("Attack the %s" % camp.name)

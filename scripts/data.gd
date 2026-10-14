@@ -233,7 +233,7 @@ const BUILDINGS := {
 	"ai_airfield": {"name": "Raider airfield", "glyph": "Æ", "color": Color("ff5a3c"), "buildable": false,
 		"desc": "Where the Rust Kings keep their bomber. A scouting party next to it can attack it, and while none stands nothing of theirs can launch a nuke."},
 	"ai_wall":  {"name": "Raider wall",   "glyph": "▓", "color": Color("d0603c"), "buildable": false, "desc": "A stretch of Rust Kings wall, standing for 4 of their walls. A scouting party next to it can attack it."},
-	"farm":     {"name": "Farm",          "glyph": "≡", "color": Color("b8d060"), "cost": {"wood": 5}, "on": ["sand", "scrub"], "yield": {"grain": 3, "veg": 2}, "desc": "Grows grain and vegetables."},
+	"farm":     {"name": "Farm",          "glyph": "≡", "color": Color("b8d060"), "cost": {"wood": 5}, "on": ["sand", "scrub"], "yield": {"grain": 3.5, "veg": 1.5}, "desc": "Grows grain and vegetables."},
 	"lodge":    {"name": "Hunting lodge", "glyph": "h", "color": Color("d08050"), "cost": {"wood": 8}, "on": ["sand", "scrub", "trees", "dunes", "grove"], "yield": {"meat": 3}, "desc": "Hunts in the wastes for meat (+2 in a green grove). Hunters sometimes don't come back."},
 	"mine":     {"name": "Mine",          "glyph": "∩", "color": Color("c8c0b0"), "cost": {"wood": 10}, "on": ["rock"], "yield": {"stone": 2, "metal": 2}, "desc": "Digs stone and metal."},
 	"salvage":  {"name": "Salvage yard",  "glyph": "Σ", "color": Color("e07a3a"), "cost": {"wood": 6}, "on": ["ruins"], "yield": {"metal": 3}, "desc": "Strips ruins for metal."},

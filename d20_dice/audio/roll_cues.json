@@ -1,0 +1,902 @@
+{
+ "note": "at_ms is measured from the click (roll_started) at playback_speed 1.0. Divide by playback_speed if you change it. mix_scale is 1.0 unless a roll had to be turned down to avoid clipping; apply it if you play the cues yourself.",
+ "sample_rate": 22050,
+ "sounds": {
+  "crack_hairline_a": "damage/crack_hairline_a.wav",
+  "chip_small_a": "damage/chip_small_a.wav",
+  "chip_medium_a": "damage/chip_medium_a.wav",
+  "chip_large_a": "damage/chip_large_a.wav",
+  "crack_hairline_b": "damage/crack_hairline_b.wav",
+  "chip_small_b": "damage/chip_small_b.wav",
+  "chip_medium_b": "damage/chip_medium_b.wav",
+  "chip_large_b": "damage/chip_large_b.wav",
+  "skitter": "damage/skitter.wav",
+  "crumble": "damage/crumble.wav"
+ },
+ "rolls": {
+  "1": {
+   "file": "rolls/dice_roll_01.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: medium chip (upper right), crack, pieces skitter; while it bounces: large chip (lower left), large chip (bottom point), crack, pieces skitter; second landing: medium chip (upper left), debris crumbles, crack",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "chip_medium_a",
+     "stage": "a",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 322,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 362,
+     "sound": "skitter",
+     "stage": "a",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_large_a",
+     "stage": "b",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "chip_large_b",
+     "stage": "b",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 423,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 463,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 480,
+     "sound": "crumble",
+     "stage": "c",
+     "what": "debris crumbles"
+    },
+    {
+     "at_ms": 492,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "2": {
+   "file": "rolls/dice_roll_02.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: medium chip (upper right), crack, pieces skitter; while it bounces: large chip (lower left), crack, pieces skitter; second landing: large chip (bottom point), debris crumbles, medium chip (upper left), crack",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "chip_medium_a",
+     "stage": "a",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 322,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 362,
+     "sound": "skitter",
+     "stage": "a",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_large_a",
+     "stage": "b",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 480,
+     "sound": "crumble",
+     "stage": "c",
+     "what": "debris crumbles"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "3": {
+   "file": "rolls/dice_roll_03.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: large chip (lower left), medium chip (upper right), crack, pieces skitter; second landing: large chip (bottom point), debris crumbles, medium chip (upper left), crack",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_large_a",
+     "stage": "b",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 423,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 463,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 480,
+     "sound": "crumble",
+     "stage": "c",
+     "what": "debris crumbles"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "4": {
+   "file": "rolls/dice_roll_04.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: large chip (lower left), medium chip (upper right), crack, pieces skitter; second landing: large chip (bottom point), debris crumbles, medium chip (upper left), crack",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_large_a",
+     "stage": "b",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 423,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 463,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 480,
+     "sound": "crumble",
+     "stage": "c",
+     "what": "debris crumbles"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "5": {
+   "file": "rolls/dice_roll_05.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: large chip (lower left), medium chip (upper right), crack, pieces skitter; second landing: large chip (bottom point), debris crumbles, medium chip (upper left), crack",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_large_a",
+     "stage": "b",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 423,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 463,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 480,
+     "sound": "crumble",
+     "stage": "c",
+     "what": "debris crumbles"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "6": {
+   "file": "rolls/dice_roll_06.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: large chip (lower left), medium chip (upper right), crack, pieces skitter; second landing: large chip (bottom point), medium chip (upper left), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_large_a",
+     "stage": "b",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 423,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 463,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 558,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "7": {
+   "file": "rolls/dice_roll_07.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), debris crumbles, large chip (bottom point), medium chip (upper left), crack",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 480,
+     "sound": "crumble",
+     "stage": "c",
+     "what": "debris crumbles"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "chip_medium_b",
+     "stage": "c",
+     "what": "chip (upper left)"
+    },
+    {
+     "at_ms": 544,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "8": {
+   "file": "rolls/dice_roll_08.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), large chip (bottom point), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 558,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "9": {
+   "file": "rolls/dice_roll_09.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "first landing: crack; while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), large chip (bottom point), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 296,
+     "sound": "crack_hairline_a",
+     "stage": "a",
+     "what": "crack"
+    },
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_b",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 558,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "10": {
+   "file": "rolls/dice_roll_10.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), large chip (bottom point), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "chip_large_b",
+     "stage": "c",
+     "what": "chip (bottom point)"
+    },
+    {
+     "at_ms": 518,
+     "sound": "crack_hairline_b",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 558,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "11": {
+   "file": "rolls/dice_roll_11.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "crack_hairline_b",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 532,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "12": {
+   "file": "rolls/dice_roll_12.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "crack_hairline_b",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 532,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "13": {
+   "file": "rolls/dice_roll_13.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: medium chip (upper right), crack, pieces skitter; second landing: large chip (lower left), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_large_a",
+     "stage": "c",
+     "what": "chip (lower left)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "crack_hairline_b",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 532,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "14": {
+   "file": "rolls/dice_roll_14.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: medium chip (upper right), crack, pieces skitter; second landing: crack",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "chip_medium_a",
+     "stage": "b",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 397,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 437,
+     "sound": "skitter",
+     "stage": "b",
+     "what": "pieces skitter"
+    },
+    {
+     "at_ms": 466,
+     "sound": "crack_hairline_b",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "15": {
+   "file": "rolls/dice_roll_15.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: crack; second landing: medium chip (upper right), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_medium_a",
+     "stage": "c",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "crack_hairline_b",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 532,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "16": {
+   "file": "rolls/dice_roll_16.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "while it bounces: crack; second landing: medium chip (upper right), pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 371,
+     "sound": "crack_hairline_a",
+     "stage": "b",
+     "what": "crack"
+    },
+    {
+     "at_ms": 466,
+     "sound": "chip_medium_a",
+     "stage": "c",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 506,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "17": {
+   "file": "rolls/dice_roll_17.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "second landing: medium chip (upper right), crack, pieces skitter",
+   "damage_cues": [
+    {
+     "at_ms": 466,
+     "sound": "chip_medium_a",
+     "stage": "c",
+     "what": "chip (upper right)"
+    },
+    {
+     "at_ms": 492,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    },
+    {
+     "at_ms": 532,
+     "sound": "skitter",
+     "stage": "c",
+     "what": "pieces skitter"
+    }
+   ]
+  },
+  "18": {
+   "file": "rolls/dice_roll_18.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "second landing: crack",
+   "damage_cues": [
+    {
+     "at_ms": 466,
+     "sound": "crack_hairline_a",
+     "stage": "c",
+     "what": "crack"
+    }
+   ]
+  },
+  "19": {
+   "file": "rolls/dice_roll_19.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "no damage sounds, plain roll",
+   "damage_cues": []
+  },
+  "20": {
+   "file": "rolls/dice_roll_20.wav",
+   "length_ms": 750,
+   "mix_scale": 1.0,
+   "summary": "no damage sounds, plain roll",
+   "damage_cues": []
+  }
+ }
+}

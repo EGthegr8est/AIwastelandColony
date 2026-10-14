@@ -98,14 +98,16 @@ func test_a_style_can_be_asked_for_directly() -> void:
 	assert_eq(Sprites.texture("scout", 1).get_image().get_data(), Sprites.image("scout", 1).get_data())
 
 
-func test_the_art_cycles_through_the_styles_and_then_the_text_glyphs() -> void:
-	Sprites.choose(1)
+func test_the_art_switches_between_the_pixel_art_and_the_text_glyphs() -> void:
+	Sprites.choose(Sprites.CLEAN)
 	var seen := []
-	for i in 5:
+	for i in 4:
 		seen.append(Sprites.state())
 		Sprites.cycle()
-	assert_eq(seen, [1, 2, 3, 4, 0])
-	assert_eq(Sprites.state(), 1, "and round again to the first")
+	assert_eq(seen, [4, 0, 4, 0], "the clean pixel art, the glyphs, and round again")
+	Sprites.choose(1)
+	Sprites.cycle()
+	assert_eq(Sprites.state(), 4, "from one of the old styles it goes to the pixel art")
 
 
 func test_choosing_is_limited_to_what_exists() -> void:
@@ -206,7 +208,7 @@ func test_textures_are_cached() -> void:
 func test_the_clean_look_is_style_4_and_the_last_picture_choice() -> void:
 	assert_eq(Sprites.CLEAN, 4)
 	assert_eq(Sprites.STYLES, 4)
-	assert_eq(Sprites.CHOICES, [1, 2, 3, 4, 0])
+	assert_eq(Sprites.CHOICES, [4, 0], "styles 1 to 3 are not offered any more")
 
 
 func test_every_clean_ground_covers_its_whole_tile() -> void:

@@ -1,6 +1,6 @@
 extends "res://tests/framework/test_case.gd"
 ## The legend in the side panel shows the pixel-art sprites in place of the text glyphs, with
-## buttons to flip between the four styles. Driven through the real game scene and its HUD.
+## buttons to flip between the pixel art and the glyphs. Driven through the real game scene and its HUD.
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
@@ -76,37 +76,39 @@ func test_the_names_and_meanings_are_still_there() -> void:
 	assert_true(labels.any(func(t): return t.begins_with("Raider tribe camp")))
 
 
-func test_the_style_buttons_flip_the_whole_legend() -> void:
-	var before: Array = _sprites().map(func(r): return r.texture.get_image().get_data())
-	_press("2")
+func test_the_pixel_art_and_ascii_buttons_flip_the_whole_legend() -> void:
+	var old_style: Array = _sprites().map(func(r): return r.texture.get_image().get_data())
+	_press("Pixel art")
 	await wait_frames(2)
-	assert_eq(Sprites.style, 2)
+	assert_eq(Sprites.style, Sprites.CLEAN)
 	tile_box = hud.boxes["Tile"]
-	var after: Array = _sprites().map(func(r): return r.texture.get_image().get_data())
-	assert_eq(after.size(), before.size())
-	var same_in_every_style := [Sprites.road_icon(false).get_image().get_data(), Sprites.road_icon(true).get_image().get_data()]   # a road is drawn the same in every style
-	for i in before.size():
-		if before[i] in same_in_every_style:
-			continue
-		assert_ne(after[i], before[i], "sprite %d changed style" % i)
-	_press("3")
+	var clean: Array = _sprites().map(func(r): return r.texture.get_image().get_data())
+	assert_eq(clean.size(), 30, "the clean look has a picture for everything too, and the two bridges")
+	assert_ne(clean, old_style, "and the pictures are the clean look's")
+	_press("ASCII")
 	await wait_frames(2)
-	assert_eq(Sprites.style, 3)
-	_press("4")
+	assert_eq(Sprites.state(), 0)
+	_press("Pixel art")
 	await wait_frames(2)
-	assert_eq(Sprites.style, 4)
+	assert_eq(Sprites.state(), Sprites.CLEAN)
+	assert_eq(Sprites.CHOICES, [4, 0], "styles 1 to 3 are not offered any more: no buttons for them")
+	var labels := []
 	tile_box = hud.boxes["Tile"]
-	assert_eq(_sprites().size(), 30, "the clean look has a picture for everything too, and the two bridges")
-	_press("1")
-	await wait_frames(2)
-	assert_eq(Sprites.style, 1)
-
-
-func test_the_style_you_are_on_cannot_be_pressed_again() -> void:
 	for b in tile_box.find_children("*", "Button", true, false):
-		if b.text == "1":
+		labels.append(b.text)
+	for old in ["1", "2", "3"]:
+		assert_false(labels.has(old), "no button %s" % old)
+
+
+func test_the_look_you_are_on_cannot_be_pressed_again() -> void:
+	Sprites.choose(Sprites.CLEAN)
+	hud.refresh()
+	await wait_frames(2)
+	tile_box = hud.boxes["Tile"]
+	for b in tile_box.find_children("*", "Button", true, false):
+		if b.text == "Pixel art":
 			assert_true(b.disabled)
-		elif b.text in ["2", "3", "ASCII"]:
+		elif b.text == "ASCII":
 			assert_false(b.disabled)
 
 
@@ -117,23 +119,11 @@ func test_the_ascii_button_brings_back_the_text_glyphs_everywhere() -> void:
 	tile_box = hud.boxes["Tile"]
 	assert_eq(_sprites().size(), 0, "no pictures left in the legend")
 	assert_true(_labels().any(func(t): return t.begins_with(Data.UNITS["scav"].glyph)))
-	assert_eq(hud.art_button.text, "Art: text glyphs")
-	_press("2")
+	assert_true(hud.sonar_tablet.is_on, "the tablet in the top bar shows the glyphs are on")
+	_press("Pixel art")
 	await wait_frames(3)
-	assert_eq(Sprites.state(), 2)
-	assert_eq(hud.art_button.text, "Art: style 2")
-
-
-func test_the_art_button_in_the_top_bar_cycles_the_map_and_legend() -> void:
-	assert_eq(hud.art_button.text, "Art: style 1")
-	var seen := []
-	for i in 5:
-		_press("Art:")
-		await wait_frames(3)
-		seen.append(Sprites.state())
-	assert_eq(seen, [2, 3, 4, 0, 1])
-	tile_box = hud.boxes["Tile"]
-	assert_eq(_sprites().size(), 28, "back on style 1: the pictures are back")
+	assert_eq(Sprites.state(), Sprites.CLEAN)
+	assert_false(hud.sonar_tablet.is_on)
 
 
 func test_without_the_art_the_legend_falls_back_to_the_old_glyphs() -> void:

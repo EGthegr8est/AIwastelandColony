@@ -69,8 +69,16 @@ warning, where saves live). The zip lands in `..\WastelandColony3-release\`: sen
 - **Left-click** a tile to inspect, claim or build on it. Click one of your scouting parties to pick it. **Esc** deselects it.
 - **END SEASON** runs gather, upkeep and the AI turn, then autosaves, and the map plays the season's walking back (see "The living map").
   While that is playing, the button only skips it.
-- **Walk: Normal / Fast / Off** (top bar) is the speed of that replay. A click on the map, Space or Enter skips it too.
+- **Walk: Normal / Fast / Off** (top bar) is the speed of that replay. A click on the map or Enter skips it too (Space is the die's key).
 - **Map: ...** button (top bar) switches whose knowledge the map shows: yours, the Rust Kings', or no fog (debug).
+- **Space** is the die's key: with a party at a site and its die on the Tile panel, Space rolls it (the same as clicking the die), and once the number has landed and sat
+  for a second it moves on. It does nothing when no die is showing, and it no longer skips the season's walk (Enter and a click do).
+- **R** flips the radiation view from anywhere in the game, whichever tab is up: the same as clicking the radiation meter (the view flips at once, the meter plays its
+  animation and sound; it does nothing while the meter is still powering up, and not over a menu, the title or an ending). It is `Hud.RADIATION_KEY`.
+- **Sounds** all go through the Music bus, so the volume slider covers them and turning it to 0 mutes them: the nuke's boom, the die (`d20_dice/audio/rolls/dice_roll_NN.wav`,
+  one for each number it can land on: the plain 8-bit roll with the chips and cracks a low roll breaks off the die mixed in, a 20 clean, at the animation's 1.25x), the radiation
+  meter (`audio/rad_meter_on.wav`, which ends in a hum that loops while the radiation view is on, and `rad_meter_off.wav`) and the map-art tablet's blip
+  (`audio/sonar_tablet_blip.wav`, made by `tools/make_sonar_blip.py`). The meter's hum waits while a menu is up and stops when you leave the game.
 
 ## The living map
 END SEASON still decides everything at once, but the map then plays the season back so you can watch it (`scripts/season_replay.gd`).
@@ -91,7 +99,7 @@ is 40 days), plus what happened (`Units.replay`, handed to the map by `Game.seas
   markers walk from your HQ to the target (two tiles a day, so a far fort is a long march: at most 24 days of the clock), the fight
   flashes there and they come home (`Game.troops_marched`, `SeasonReplay.march`). The
   fight is decided at the button press as before; the march is only the picture.
-- **Skipping.** The replay and the march are skipped by a click on the map, Space, Enter, or pressing END SEASON (that press does not
+- **Skipping.** The replay and the march are skipped by a click on the map, Enter, or pressing END SEASON (that press does not
   end another season). If a season ends the game, the ending screen waits for the replay to finish or be skipped.
 - **Walk: Off** (top bar, remembered in `settings.cfg`) turns all of this off, camp fires and bobbing included.
 - **Units have a layer of their own.** `MapView.UnitLayer` draws the units and camp fires every frame over the cached map chunks, so a
@@ -160,9 +168,13 @@ send them on, or press **Recall to camp**. How many parties you can have out gro
 The map and the Legend (the Tile tab with nothing selected) are drawn with pixel art: `art/atlas.png` holds 24 sprites of 8 x 8
 pixels, four styles each, described by `art/atlas.json`. They cover the 11 kinds of ground, the shallow ford, the two slopes, the 7 kinds of unit
 (scavengers, scouts, caravans, war rigs, boats, recon planes, raider bands) and the three tribe camps.
-- **Switching.** The **Art:** button in the top bar cycles style 1, 2, 3, 4 and the old **text glyphs** (the Dwarf Fortress look), and
-  the **Art style: 1 2 3 4 ASCII** buttons at the top of the legend do the same. It changes the map and the legend together. **Style 4,
-  the clean look, is the one the game starts on.**
+- **Switching.** There are two looks now: the clean pixel art (style 4) and the old **text glyphs** (the Dwarf Fortress look, "ASCII"). **Styles 1 to 3 are no longer
+  offered**: `Sprites.CHOICES` is `[4, 0]` (their pictures are still in the atlas, because the units and camps are drawn from style 1's rows, and `Sprites.choose` still takes
+  them, so the old drawing is still tried by the tests; they can be purged when you like). The **field tablet** in the top bar, where the Art button was, switches between them:
+  off, its screen shows a colour map and the map is the pixel art; click it and the screen turns to a green sonar sweep (with a short blip) and the map is text glyphs; click
+  again and it turns back. The **Map art: Pixel art / ASCII** buttons at the top of the legend do the same, and the tablet follows them. It changes the map and the legend
+  together. **The pixel art is what the game starts on.** (`scripts/sonar_tablet_button.gd` is the meter's script with the tablet's frames, `art/sonar_tablet_sheet.png`,
+  turned a quarter clockwise to fit the bar; `tools/make_sonar_tablet.py` draws the sheet and needs Pillow.)
 - **The clean look (style 4).** Made to be easy to read: every ground is one flat colour with one bold shape on it, and the colours are
   far apart (sand pale tan, dunes orange-yellow, scrub olive, petrified wood dark brown, grove green, rock grey, ruins slate, river blue).
   It is a dusk palette, darkened and warmed, and **only the hazards glow**: the crater's green ring, the fallout waste's and fused glass's
@@ -392,6 +404,9 @@ before the switch load with every refinery off.
 
 ## Resources and money
 There are eight resources: **wood, stone, metal, fuel, grain, veg, meat and gold**. There is no scrap and no silver any more.
+- **Farms** yield **3.5 grain and 1.5 veg** each a season (`Data.BUILDINGS.farm.yield`; it was 3 and 2): more grain, a little less veg, the same 5 food. The yields of all your
+  tiles are added up and then rounded, so 1 farm gives 4 grain and 2 veg, 2 farms 7 and 3, 3 farms 11 and 5, 4 farms 14 and 6. Irrigation (+1 grain a farm) and a Green Thumb
+  leader (+1 veg a farm) still add whole ones.
 - **Metal** is what ruins give. A pre-war ruin you own makes 1 a season, a Salvage yard on it makes 3 more, and a scavenger party
   strips a ruin once for loot that is mostly metal (see "Scavenging: the d20 rolls": about 9 gold-equivalent a visit).
   A war rig brings back half as much again, but burns 2 fuel on the way (`SCAV_CAR_MULT`, `SCAV_CAR_FUEL`).
@@ -416,6 +431,10 @@ and the number stays up for a second until you click off it. Every roll is one c
 Combat" and the integration plan.
 - **Each roll** is one d20 plus modifiers against a DC, and the margin gives `CRITICAL_FAILURE`, `FAILURE`, `SUCCESS` or
   `CRITICAL_SUCCESS` (a natural 1 or 20 always gives the critical ones). Modifiers are clamped to -5..+5.
+- **The arithmetic is hidden on screen.** The panel shows who rolls, the party's perks ("Traits: ...") and the die, then what came of it; the DC, the modifiers, the sum and
+  the "d20 8 +4 = 12 vs DC 11" line are left out, in the panel, on the buttons ("Attack the camp (strength 5)") and in the log ("Mara (Sharp-Eyed) trap: success"). `D20.plain`
+  strips them from what is drawn (the Hud's label and button helpers and the log); the game's own log, its saves and its tests keep the full lines, and
+  `D20.show_math = true` puts the numbers back. A raid or conquest button still shows its chance ("55% to win").
 - **The party rolls as one.** Every survivor has 1 to 3 traits (the 11 in `d20_data.gd`, rolled when the party is sent). The traits of
   the whole party combine, and a trait two survivors share counts once (three Magpies are worth one). The survivor in the best
   condition makes the roll; injuries and fumbles land on them. A Lucky trait gives the party one reroll.
@@ -694,6 +713,8 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |
 | `scripts/icons.gd` | The small pixel icons for how a party travels. |
 | `scripts/geiger.gd` | The Geiger counter dial. |
+| `scripts/sonar_tablet_button.gd` | The map-art switch in the top bar: the rad meter's script with the field tablet's frames (`art/sonar_tablet_sheet.png`), lying on its side. |
+| `d20_dice/audio/` | The die's 8-bit sounds (a roll for each number 1 to 20, the stems and the chips and cracks; see its README). |
 | `scripts/rad_meter_button.gd` | The radiation view's switch in the top bar: the animated survey meter (`art/rad_meter_sheet.png`), turned to lie on its side. `tools/make_rad_meter.py` draws the sheet (needs Python with Pillow). |
 | `art/scenes/` | The pictures of the ten points of interest, shown in the bottom right corner when you pick one. |
 | `scripts/fuel_gauge.gd` | The three fuel gauges (war rig, plane, boat). |

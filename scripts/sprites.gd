@@ -30,8 +30,9 @@ const PINNED := {}
 
 ## What the legend and the map show: one of the four styles (1 to 4), or 0 for the old text glyphs.
 static var style := CLEAN
-## The things you can pick, in the order the buttons cycle through them.
-const CHOICES := [1, 2, 3, 4, 0]
+## The things you can pick: the clean pixel art (4) and the text glyphs (0), which the map-art tablet in the top bar and the legend's buttons flip between. Styles 1 to 3 are
+## no longer offered (their pictures are still in the atlas: the units and camps are drawn from style 1's rows), but `choose` still takes them, so the old drawing is tried by tests.
+const CHOICES := [4, 0]
 
 static var _atlas: Image
 static var _atlas_texture: ImageTexture
@@ -113,7 +114,7 @@ static func choose(n: int) -> void:
 	style = clampi(n, 0, STYLES)
 
 
-## Moves on to the next choice: style 1, 2, 3, then the text glyphs, then 1 again.
+## Moves on to the other choice: the clean pixel art, then the text glyphs, then the pixel art again.
 static func cycle() -> void:
 	style = CHOICES[(CHOICES.find(style) + 1) % CHOICES.size()]
 

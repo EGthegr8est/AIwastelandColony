@@ -158,6 +158,45 @@ static func log_line(scout: Dictionary, r: Dictionary) -> String:
 
 
 ## "+4 traits, -1 radiation (35 R/h)": the parts a modifier is made of.
+## What a player sees of a line of text that carries a roll's arithmetic: the DC, the modifier, the sum and the odds are left out, so what is left is who rolled, the perks
+## they had, the die, and what came of it ("Mara (Sharp-Eyed) trap: d20 8 +4 = 12 vs DC 11 -> SUCCESS" reads "Mara (Sharp-Eyed) trap: success"; "Attack the camp (DC 12,
+## strength 5)" reads "Attack the camp (strength 5)"). The game keeps the full lines (its log, its saves, its tests); only the screen is plain. `show_math` puts the numbers back.
+static var show_math := false
+static var _plain_rules: Array = []
+
+
+static func plain(text: String) -> String:
+	if show_math or not ("DC " in text or "d20 " in text):
+		return text
+	if _plain_rules.is_empty():
+		for pair in [
+			[": d20 \\d+ [+-]\\d+ = \\d+ vs DC \\d+ -> ", ": "],                  # a full roll line: only its tier is left
+			[": d20 \\d+ [+-]\\d+ vs DC \\d+(?:: |, )", ": "],                      # a frog's hit, a building strike
+			[": d20 \\d+ vs DC \\d+ \\(\\d+% to win\\), ", ": "],                  # a raid's roll
+			[" \\(rerolled from \\d+\\)", " (rerolled)"],
+			[" \\(raw [A-Z_]+\\)", ""],
+			[" \\[[+-][^\\]]*\\]", ""],                                            # the modifier parts: [+3 traits, -1 radiation]
+			[" \\([+-]\\d+ vs DC \\d+\\)", ""],                                  # a roll button: (+3 vs DC 14)
+			[", DC \\d+, [+-]\\d+", ""],                                           # "Site check, DC 14, +3"
+			[": DC \\d+, [+-]\\d+", ""],                                           # "rolls to run: DC 12, +2"
+			[" \\((?:track |kill )?DC \\d+(?:, kill DC \\d+)?\\)", ""],             # (DC 12), (track DC 11, kill DC 14)
+			[" \\(DC \\d+, ", " ("],                                              # (DC 12, strength 5)
+			["\\(DC \\d+: ", "("],                                                # (DC 12: a scouting party ...)
+			[" at DC \\d+", ""],                                                   # "Search deeper at DC 15, or"
+			["DC \\d+, (\\d+% to win)", "$1"],                                        # "DC 11, 50% to win"
+			["DC \\d+ \\(", "("],
+		]:
+			var rule := RegEx.new()
+			rule.compile(pair[0])
+			_plain_rules.append([rule, pair[1]])
+	var out := text
+	for rule in _plain_rules:
+		out = rule[0].sub(out, rule[1], true)
+	for tier in ["CRITICAL_FAILURE", "CRITICAL_SUCCESS", "FAILURE", "SUCCESS"]:
+		out = out.replace(tier, tier.to_lower().replace("_", " "))
+	return out
+
+
 static func parts_text(parts: Array) -> String:
 	var bits := []
 	for p in parts:

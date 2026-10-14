@@ -156,7 +156,9 @@ func test_a_site_is_one_check_in_the_panel_and_the_panel_says_what_it_gave() -> 
 	await wait_frames(3)
 	var text := _tile_labels()
 	assert_has(text, "SCAVENGE")
-	assert_has(text, "Site check, DC 11")
+	assert_has(text, "Site check")
+	assert_false(text.contains("DC 11"), "the DC is not on screen")
+	assert_false(text.contains("+0") or text.contains("vs DC"), "nor the modifier")
 	assert_has(text, "Click the die to roll")
 	hud.dice.clicked.emit()
 	await wait_seconds(1.1)
@@ -206,7 +208,8 @@ func test_a_scout_party_next_to_a_raider_wall_attacks_it_through_the_panel() -> 
 	assert_eq(party.stage, "site")
 	var text := _tile_labels()
 	assert_has(text, "ATTACK")
-	assert_has(text, "Attack, DC 12")
+	assert_has(text, "Attack")
+	assert_false(text.contains("DC 12"), "the DC is not on screen")
 	assert_has(text, "Click the die to roll")
 	hud.dice.clicked.emit()
 	await wait_seconds(1.1)
@@ -234,3 +237,37 @@ func test_choices_that_are_not_rolls_are_buttons() -> void:
 	await wait_frames(3)
 	assert_eq(party.visit.stage, "done")
 	assert_false(hud.boxes["Tile"].is_ancestor_of(hud.dice_holder), "nothing left to roll: no die")
+
+
+func test_the_roll_shows_the_die_and_what_came_of_it_but_not_the_arithmetic() -> void:
+	await _go_to_ruin(ForcedDice.new([17, 10, 13], [6]))
+	assert_false(_tile_labels().contains("DC"), "before the roll: no DC")
+	assert_false(_tile_labels().contains("vs"), "and no modifier sum")
+	for roll in 2:
+		hud.dice.clicked.emit()
+		await wait_seconds(1.1)
+		assert_eq(hud.dice_phase, "landed")
+		var panel := _tile_labels()
+		assert_false(panel.contains("DC"), "roll %d: no DC on the panel" % roll)
+		assert_false(panel.contains(" vs "), "roll %d: no sum against it" % roll)
+		assert_false(panel.contains("] "), "roll %d: no list of modifiers" % roll)
+		await wait_seconds(1.0)
+		hud.dice.clicked.emit()
+		await wait_frames(3)
+	assert_true(Game.log_lines.any(func(l): return l.contains("vs DC")), "the game's own log keeps the full line")
+	assert_false(hud.log_text.text.contains("vs DC"), "the log on screen does not show the DC")
+	assert_false(hud.log_text.text.contains("d20 10 +"), "nor the sum")
+	assert_true(hud.log_text.text.contains("cache"), "but it still says what was rolled for")
+
+
+func test_the_numbers_come_back_with_show_math() -> void:
+	const D20 = preload("res://scripts/d20.gd")
+	D20.show_math = true
+	await _go_to_ruin(ForcedDice.new([17, 10, 13], [6]))
+	hud.dice.clicked.emit()
+	await wait_seconds(1.1)
+	await wait_seconds(1.0)
+	hud.dice.clicked.emit()
+	await wait_frames(3)
+	assert_has(_tile_labels(), "DC", "with the switch on, the arithmetic is on the panel")
+	D20.show_math = false

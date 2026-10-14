@@ -7,6 +7,7 @@ const Portrait = preload("res://scripts/portrait.gd")
 const Icons = preload("res://scripts/icons.gd")
 const Geiger = preload("res://scripts/geiger.gd")
 const RadMeter = preload("res://scripts/rad_meter_button.gd")
+const SonarTablet = preload("res://scripts/sonar_tablet_button.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
@@ -19,6 +20,11 @@ const D20DiceScene = preload("res://d20_dice/D20Dice.tscn")
 const DICE_SCALE := 3          # the pixel-art die is 64 x 80: shown at 3x it is 192 x 240
 const DICE_SPEED := 1.25       # playback speed of the roll animation (1.0 is about 0.75 seconds)
 const DICE_HOLD_MSEC := 1000   # the landed number stays up at least this long before a click moves on
+const DICE_ROLL_SOUND := "res://d20_dice/audio/rolls/dice_roll_%02d.wav"   # one for each result: the plain roll, plus the chips and cracks a low roll breaks off the die (a 20 is clean)
+const DICE_SOUND_DB := -6.0
+const RAD_METER_ON_SOUND := "res://audio/rad_meter_on.wav"     # the power-on, ending in an idle hum that loops while the meter is on
+const RAD_METER_OFF_SOUND := "res://audio/rad_meter_off.wav"
+const RADIATION_KEY := KEY_R   # flips the radiation view from anywhere in the game, the same as clicking the meter
 const LEGEND_ICON_SCALE := 3   # screen pixels per pixel of legend art
 const LOGO_WIDTH := 440        # how wide the slab-stack logo is on the character selection screen
 const CARD_WIDTH := 440        # one leader card on that screen, and the face on it (480 px pictures shown at half size)
@@ -34,6 +40,8 @@ const GREEN := Color("a8d060")
 const BG := Color(0.07, 0.05, 0.03, 0.95)
 const SLOTS := ["slot1", "slot2", "slot3", "autosave"]
 const BOTTOM_HEIGHT := 190
+const SONAR_TABLET_SHEET := "res://art/sonar_tablet_sheet.png"   # the map-art switch in the top bar: this tablet, laid on its side like the meter
+const SONAR_TABLET_BLIP := "res://audio/sonar_tablet_blip.wav"   # its click: a short 8-bit blip (tools/make_sonar_blip.py)
 const RAD_METER_SHEET := "res://art/rad_meter_sheet.png"   # the radiation view's switch in the top bar: this meter, laid on its side, 64 x 40 at its own pixel size
 
 var root := Control.new()
@@ -62,11 +70,12 @@ var title_buttons := HBoxContainer.new()
 var music_sliders: Array = []            # [slider, reading] for each volume slider on screen
 var view_button: Button
 var rad_meter: Control   # the radiation view's switch (a RadMeter): the artist's survey meter, which plays its power-on and power-off animations when clicked
-var art_button: Button
+var sonar_tablet: Control   # the map art's switch (a SonarTablet): off shows the clean pixel-art map, on shows it in text glyphs
 var walk_button: Button
 var end_button: Button
 var dice: Control                       # the one clickable d20 (see d20_dice/), moved into whichever panel shows it
 var dice_holder := Control.new()         # gives the scaled die its room in a panel
+var dice_sfx := AudioStreamPlayer.new()  # the sound of the roll, chosen by the number it lands on
 var dice_phase := "idle"                 # "idle" (the ROLL face), "rolling" or "landed" (the number is up)
 var dice_uid := -1                       # the party the die is for
 var dice_hold_until := 0                 # when a click may move on from the landed number (msec)
@@ -149,8 +158,7 @@ func _build_top_bar() -> void:
 	view_button = _button(row, "Map: you", Game.cycle_view)
 	view_button.tooltip_text = "Switch whose knowledge the map shows: what you know, what the Rust Kings know, or everything (no fog, for debugging)"
 	_build_rad_meter(row)
-	art_button = _button(row, "Art: style 1", _cycle_art)
-	art_button.tooltip_text = "Switch the map and legend between the four pixel-art styles (4 is the clean look) and the old text glyphs"
+	_build_sonar_tablet(row)
 	walk_button = _button(row, "Walk: Normal", _cycle_walk)
 	walk_button.tooltip_text = "How fast the map plays back each season's walking: Normal, Fast or Off (no animation at all). A click, Space or Enter skips it."
 	end_button = _button(row, "END SEASON", end_season_pressed)
@@ -166,11 +174,48 @@ func _build_rad_meter(row: HBoxContainer) -> void:
 	rad_meter.turn = 1
 	rad_meter.pixel_scale = 1
 	rad_meter.sheet = Sprites.picture(RAD_METER_SHEET)
-	rad_meter.tooltip_text = "Radiation view: tint the tiles your scouts have measured by how hot they are"
+	rad_meter.on_sound = _sound(RAD_METER_ON_SOUND)
+	rad_meter.off_sound = _sound(RAD_METER_OFF_SOUND)
+	rad_meter.sound_bus = Music.BUS   # the one volume slider covers it, as it does the nuke's boom
+	rad_meter.tooltip_text = "Radiation view (%s): tint the tiles your scouts have measured by how hot they are" % OS.get_keycode_string(RADIATION_KEY)
 	rad_meter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	rad_meter.switched.connect(_on_rad_meter_switched)
 	rad_meter.settled.connect(func(_on): _sync_rad_meter())
 	row.add_child(rad_meter)
+
+
+## The map art's switch: the field tablet lying on its side (a quarter turn clockwise, like the radiation meter) to fit the bar. Off, its screen shows a colour map and the
+## game draws the clean pixel art; click it and the screen turns to a green sonar sweep, with a blip, and the map is drawn in text glyphs (the old Dwarf Fortress look).
+func _build_sonar_tablet(row: HBoxContainer) -> void:
+	sonar_tablet = SonarTablet.new()
+	sonar_tablet.turn = 1
+	sonar_tablet.pixel_scale = 1
+	sonar_tablet.sheet = Sprites.picture(SONAR_TABLET_SHEET)
+	var blip := _sound(SONAR_TABLET_BLIP)
+	sonar_tablet.on_sound = blip
+	sonar_tablet.off_sound = blip
+	sonar_tablet.sound_bus = Music.BUS
+	sonar_tablet.tooltip_text = "Map art: the pixel-art map, or text glyphs (the old Dwarf Fortress look)"
+	sonar_tablet.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sonar_tablet.switched.connect(_on_sonar_switched)
+	sonar_tablet.settled.connect(func(_on): _sync_sonar_tablet())
+	row.add_child(sonar_tablet)
+
+
+func _on_sonar_switched(on: bool) -> void:
+	_set_art_style(0 if on else Sprites.CLEAN)
+
+
+## The tablet shows which art the map has: if something else changed it (the legend's buttons) while no animation is playing, the tablet jumps to match.
+func _sync_sonar_tablet() -> void:
+	var glyphs := Sprites.state() == 0
+	if not sonar_tablet.is_busy() and sonar_tablet.is_on != glyphs:
+		sonar_tablet.set_on(glyphs, true)
+
+
+## A sound from the project, or null if the file is not there (the game plays on in silence).
+func _sound(path: String) -> AudioStream:
+	return load(path) if ResourceLoader.exists(path) else null
 
 
 func _on_rad_meter_switched(on: bool) -> void:
@@ -368,7 +413,7 @@ func _clear(box: Container) -> void:
 
 func _label(box: Container, text: String, color := AMBER) -> Label:
 	var l := Label.new()
-	l.text = text
+	l.text = D20.plain(text)   # the roll's arithmetic stays off the screen
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.add_theme_color_override("font_color", color)
 	box.add_child(l)
@@ -383,7 +428,7 @@ func _header(box: Container, text: String) -> void:
 ## A button that runs `action`. If `blocked` isn't empty the button is disabled and shows why.
 func _button(box: Container, text: String, action: Callable, blocked := "") -> Button:
 	var b := Button.new()
-	b.text = text
+	b.text = D20.plain(text)
 	b.disabled = blocked != ""
 	b.tooltip_text = blocked
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -500,6 +545,7 @@ func _open_menu(heading: String, with_logo := false) -> void:
 func _close_menu() -> void:
 	menu.visible = false
 	title_screen.visible = false
+	rad_meter.set_sound_paused(false)
 	for p in game_ui:
 		p.visible = Game.in_game
 	if Game.in_game:
@@ -511,8 +557,10 @@ func _close_menu() -> void:
 ## Without the title art it's the same choices in a plain panel. Before a colony is running it plays the
 ## menu music.
 func show_main_menu() -> void:
+	rad_meter.set_sound_paused(true)   # the meter's hum waits while the menu is up (and a game that is left has the meter off)
 	if not Game.in_game:
 		Music.play_menu()
+		rad_meter.set_on(false, true)
 	if title_art.texture == null:
 		_open_menu("A post-nuclear colony sandbox")
 		_add_title_buttons(menu_box)
@@ -681,7 +729,7 @@ func refresh() -> void:
 	_refresh_tab(tabs.current_tab)
 	_sync_scene()
 	_refresh_party()
-	log_text.text = "\n".join(Game.log_lines)
+	log_text.text = "\n".join(Game.log_lines.map(D20.plain))
 
 
 ## Rebuilds one side panel tab (by its position) and marks it up to date.
@@ -732,7 +780,7 @@ func _refresh_top() -> void:
 	var views := {Data.PLAYER: "Map: you", Data.AI: "Map: Rust Kings", Data.NONE: "Map: no fog"}   # short: the top bar is full
 	view_button.text = views[Game.view]
 	_sync_rad_meter()
-	art_button.text = "Art: " + Sprites.choice_name(Sprites.state())
+	_sync_sonar_tablet()
 	walk_button.text = "Walk: " + SeasonReplay.mode_text()
 
 
@@ -1008,11 +1056,11 @@ func _legend_style_row(box: VBoxContainer) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	box.add_child(row)
-	var title := _label(row, "Art style:", DIM)
+	var title := _label(row, "Map art:", DIM)
 	title.autowrap_mode = TextServer.AUTOWRAP_OFF   # it would squash into a column of single letters
 	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for n in Sprites.CHOICES:
-		var b := _button(row, "%d" % n if n > 0 else "ASCII", func(): _set_art_style(n),
+		var b := _button(row, "Pixel art" if n > 0 else "ASCII", func(): _set_art_style(n),
 			"Showing this" if n == Sprites.state() else "")
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
@@ -1036,15 +1084,10 @@ func _set_night(on: bool) -> void:
 	Game.changed.emit()
 
 
-## Switches the legend and the map between the four art styles and the old text glyphs.
+## Switches the legend and the map between the pixel art and the old text glyphs.
 func _set_art_style(n: int) -> void:
 	Sprites.choose(n)
 	Game.changed.emit()   # redraws the map (and, a moment later, every panel)
-
-
-func _cycle_art() -> void:
-	Sprites.cycle()
-	Game.changed.emit()
 
 
 ## Normal, Fast or Off for the season replay.
@@ -1464,12 +1507,18 @@ func _ending_next() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_ESCAPE]:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == RADIATION_KEY and not (event.ctrl_pressed or event.alt_pressed or event.meta_pressed) and _hotkeys_live():
+		rad_meter.toggle()   # whatever has the focus, and whichever tab is up; it flips the view, plays the animation and the sound, and does nothing while it is still powering up
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_ESCAPE]:
 		if hollow_screen.visible:
 			_hollow_next()
 			get_viewport().set_input_as_handled()
 		elif ending_screen.visible and event.keycode != KEY_ESCAPE:
 			_ending_next()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_SPACE and _die_is_up():
+			_on_dice_clicked()   # Space is a click on the die: it rolls, and once the number has landed it moves on
 			get_viewport().set_input_as_handled()
 
 
@@ -1548,7 +1597,11 @@ func _build_dice() -> void:
 	dice_holder.mouse_filter = Control.MOUSE_FILTER_PASS
 	dice_holder.add_child(dice)
 	dice.clicked.connect(_on_dice_clicked)
+	dice.roll_started.connect(_on_dice_started)
 	dice.roll_finished.connect(_on_dice_finished)
+	dice_sfx.bus = Music.BUS
+	dice_sfx.volume_db = DICE_SOUND_DB
+	add_child(dice_sfx)
 
 
 func _detach_dice() -> void:
@@ -1585,7 +1638,7 @@ func _visit_panel(box: VBoxContainer, u: Dictionary) -> void:
 		_label(box, view.text, BRIGHT)
 		if view.traits != "":
 			_label(box, "Traits: %s" % view.traits, DIM)
-		if not view.parts.is_empty():
+		if not view.parts.is_empty() and D20.show_math:
 			_label(box, D20.parts_text(view.parts), DIM)
 		_label(box, "Click the die to roll", DIM).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	else:
@@ -1603,6 +1656,16 @@ func _visit_press(uid: int, id: String) -> void:
 	else:
 		Units.visit_do(uid, id)
 	Game.changed.emit()
+
+
+## Whether the game is being played, so a key means something: a colony is running and no menu, title, ending, stats or picture is over it.
+func _hotkeys_live() -> bool:
+	return Game.in_game and not menu.visible and not title_screen.visible and not stats_screen.visible and not ending_screen.visible and not hollow_screen.visible
+
+
+## Whether the die is on screen for you to roll (a party at a site, with the Tile tab up and the game being played).
+func _die_is_up() -> bool:
+	return _hotkeys_live() and dice_holder.is_inside_tree() and dice_holder.is_visible_in_tree()
 
 
 func _on_dice_clicked() -> void:
@@ -1626,6 +1689,17 @@ func _on_dice_clicked() -> void:
 	dice_phase = "rolling"
 	dice.roll(shown)
 	refresh()
+
+
+## The die is thrown: its sound is the one for the number it will land on, so a bad roll sounds like one (chips and cracks come off the die) and a 20 is clean. The roll
+## animation's speed is the sound's pitch, which keeps them in step.
+func _on_dice_started(result: int) -> void:
+	var stream := _sound(DICE_ROLL_SOUND % clampi(result, 1, 20))
+	if stream == null:
+		return
+	dice_sfx.stream = stream
+	dice_sfx.pitch_scale = DICE_SPEED
+	dice_sfx.play()
 
 
 func _on_dice_finished(_result: int) -> void:

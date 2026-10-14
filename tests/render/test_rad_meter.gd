@@ -62,7 +62,7 @@ func test_the_meter_stands_where_the_rad_button_was() -> void:
 		assert_false(b.text.begins_with("Rad:"), "the Rad button is gone")
 	var row: Node = hud.rad_meter.get_parent()
 	assert_true(row.get_child(hud.rad_meter.get_index() - 1).text.begins_with("Map:"), "after the Map button")
-	assert_true(row.get_child(hud.rad_meter.get_index() + 1).text.begins_with("Art:"), "and before the Art button")
+	assert_eq(row.get_child(hud.rad_meter.get_index() + 1), hud.sonar_tablet, "and before the map-art tablet, which took the Art button's place")
 
 
 func test_it_lies_on_its_side_and_fits_the_bar() -> void:
@@ -278,3 +278,139 @@ func test_a_meter_with_no_sheet_says_so_and_does_not_crash() -> void:
 	m.set_on(true)
 	assert_true(m.is_on)
 	assert_false(m.is_busy())
+
+
+# ---------------------------------------------------------------- the sounds
+
+func test_the_meter_has_its_two_sounds_on_the_music_bus() -> void:
+	var m: Control = hud.rad_meter
+	assert_not_null(m.on_sound, "audio/rad_meter_on.wav")
+	assert_not_null(m.off_sound, "audio/rad_meter_off.wav")
+	assert_eq(m.sound_bus, Music.BUS, "the music slider is the one volume control")
+	assert_eq(m._sfx_on.bus, Music.BUS)
+	assert_eq(m._sfx_off.bus, Music.BUS)
+
+
+func test_the_power_on_sound_ends_in_a_hum_that_loops() -> void:
+	var on: AudioStreamWAV = hud.rad_meter.on_sound
+	assert_eq(on.mix_rate, 44100)
+	assert_eq(on.loop_mode, AudioStreamWAV.LOOP_FORWARD, "the loop point in the file was found")
+	assert_eq(on.loop_begin, 39690, "the loop starts where the 0.9 s power-on animation ends")
+	assert_gt(on.loop_end, on.loop_begin)
+	var off: AudioStreamWAV = hud.rad_meter.off_sound
+	assert_eq(off.loop_mode, AudioStreamWAV.LOOP_DISABLED, "the power-off plays once")
+
+
+func test_a_click_on_starts_the_sound_and_the_hum_goes_on_while_it_is_on() -> void:
+	var m: Control = hud.rad_meter
+	assert_false(m.is_humming())
+	_click(m)
+	assert_true(m.is_humming(), "the power-on sound plays from the click")
+	assert_eq(m._sfx_on.stream, m.on_sound)
+	await wait_seconds(1.3)
+	assert_true(m.is_humming(), "and the idle hum carries on (the file loops)")
+
+
+func test_a_click_off_plays_the_power_off_and_stops_the_hum() -> void:
+	var m: Control = hud.rad_meter
+	_click(m)
+	await wait_seconds(1.3)
+	_click(m)
+	assert_true(m._sfx_off.playing, "the power-off sound")
+	assert_eq(m._sfx_off.stream, m.off_sound)
+	await wait_seconds(0.2)
+	assert_false(m.is_humming(), "the hum is faded out and stopped")
+
+
+func test_a_meter_found_on_hums_straight_from_the_idle_loop() -> void:
+	var m: Control = hud.rad_meter
+	Game.show_radiation = true
+	hud.refresh()
+	assert_true(m.is_on)
+	assert_true(m.is_humming(), "no intro: it was already on")
+	assert_false(m._sfx_off.playing)
+	Game.toggle_radiation_view()
+	hud.refresh()
+	await wait_seconds(0.2)
+	assert_false(m.is_humming())
+	assert_false(m._sfx_off.playing, "switched off by the game, not flicked: no click sound")
+
+
+func test_the_hum_waits_while_a_menu_is_up_and_a_game_that_is_left_has_it_off() -> void:
+	var m: Control = hud.rad_meter
+	_click(m)
+	await wait_seconds(1.3)
+	hud.show_main_menu()
+	assert_true(m._sfx_on.stream_paused, "held still under the menu")
+	hud._close_menu()
+	assert_false(m._sfx_on.stream_paused)
+	assert_true(m.is_humming())
+	Game.leave_game()
+	hud.show_main_menu()
+	assert_false(m.is_on, "no game, so the meter is off")
+	await wait_seconds(0.2)
+	assert_false(m.is_humming())
+
+
+# ---------------------------------------------------------------- the hotkey
+
+func _key(keycode: Key, ctrl := false) -> void:
+	var e := InputEventKey.new()
+	e.keycode = keycode
+	e.pressed = true
+	e.ctrl_pressed = ctrl
+	hud._input(e)
+
+
+func test_r_flips_the_radiation_view_like_a_click() -> void:
+	var m: Control = hud.rad_meter
+	assert_eq(hud.RADIATION_KEY, KEY_R)
+	_key(KEY_R)
+	assert_true(Game.show_radiation, "on at once")
+	assert_eq(m._sprite.animation, &"power_on", "the meter plays its power-on")
+	assert_true(m.is_humming(), "with its sound")
+	await wait_seconds(1.3)
+	_key(KEY_R)
+	assert_false(Game.show_radiation)
+	assert_eq(m._sprite.animation, &"power_off")
+	assert_true(m._sfx_off.playing)
+
+
+func test_r_while_the_meter_is_still_powering_up_does_nothing() -> void:
+	_key(KEY_R)
+	_key(KEY_R)
+	_key(KEY_R)
+	assert_true(Game.show_radiation, "still on, not flipped back")
+
+
+func test_r_works_on_every_tab() -> void:
+	for i in 4:
+		hud.tabs.current_tab = i
+		await wait_frames(2)
+		var before := Game.show_radiation
+		_key(KEY_R)
+		assert_ne(Game.show_radiation, before, "tab %d" % i)
+		await wait_seconds(1.3)
+
+
+func test_other_keys_and_ctrl_r_do_not() -> void:
+	_key(KEY_T)
+	_key(KEY_R, true)
+	assert_false(Game.show_radiation)
+
+
+func test_r_does_nothing_over_a_menu_the_title_or_the_ending() -> void:
+	hud.show_main_menu()
+	_key(KEY_R)
+	assert_false(Game.show_radiation, "the title screen is up")
+	hud._close_menu()
+	hud.ending_screen.visible = true
+	_key(KEY_R)
+	assert_false(Game.show_radiation, "the ending is up")
+	hud.ending_screen.visible = false
+	_key(KEY_R)
+	assert_true(Game.show_radiation, "and it works again once they are gone")
+
+
+func test_the_tooltip_names_the_key() -> void:
+	assert_has(hud.rad_meter.tooltip_text, "(R)")

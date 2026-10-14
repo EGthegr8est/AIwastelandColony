@@ -1,0 +1,53 @@
+{
+ "sample_rate": 22050,
+ "sample_depth_bits": 8,
+ "channels": 1,
+ "full_mix": {
+  "file": "dice_roll.wav",
+  "length_ms": 750,
+  "start_at": "roll_started",
+  "note": "Matches the roll animation at playback_speed 1.0. The animation reaches roll_finished at 740 ms."
+ },
+ "stems": [
+  {
+   "file": "stems/roll_start.wav",
+   "start_ms": 0,
+   "hook": "roll_started",
+   "animation_frame": "press frame",
+   "length_ms": 300
+  },
+  {
+   "file": "stems/impact_1.wav",
+   "start_ms": 290,
+   "hook": "impact(result, 0)",
+   "animation_frame": "land frame (frame 4)",
+   "length_ms": 170
+  },
+  {
+   "file": "stems/impact_2.wav",
+   "start_ms": 460,
+   "hook": "impact(result, 1)",
+   "animation_frame": "land again frame (frame 6)",
+   "length_ms": 110
+  },
+  {
+   "file": "stems/settle.wav",
+   "start_ms": 530,
+   "hook": "frame 7 of the roll animation",
+   "animation_frame": "settle frame (frame 7)",
+   "length_ms": 100
+  }
+ ],
+ "animation_timeline_ms": {
+  "press": 0,
+  "launch": 70,
+  "peak": 140,
+  "fall": 220,
+  "land": 290,
+  "bounce": 380,
+  "land_again": 460,
+  "settle": 530,
+  "final": 640,
+  "finished": 740
+ }
+}

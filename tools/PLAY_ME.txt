@@ -21,7 +21,7 @@ THE BASICS
 - F11 goes fullscreen, and F11 again goes back. The game fills whatever size the window is.
 - Left-click a tile to look at it, claim it or build on it.
 - END SEASON (top right) moves time on. The game autosaves every season. The map then plays the
-  season's walking back, so you watch your parties go; a click, Space or Enter skips it, and the
+  season's walking back, so you watch your parties go; a click or Enter skips it, and the
   WALK button beside END SEASON sets it to Normal, Fast or Off.
 - Menu (top right) goes back to the title screen: Resume, Load, Quit.
 - Click a scouting party to pick it, then click somewhere to see how far its food goes.
@@ -29,7 +29,8 @@ THE BASICS
 - Deer and bears wander the wastes. Click one and send hunters (two dice rolls: track it, then
   the kill shot). Bears attack parties that come too close. Something huge sleeps under the
   biggest ruined city: scavenging near it is a gamble, and its hide makes Salt (build a Drug Factory).
-- The ART button switches the map between four pixel-art styles (4, the clean look, is the default) and old-school text.
+- The little field tablet in the top bar switches the map between the pixel art (the default) and old-school text.
+- SPACE rolls the die when a party is at a site (ENTER or a click skips the season's walk). R flips the radiation view.
 - Hover the mouse over a tile to see what it is.
 - Every season the map fades between day and night (Spring and Autumn are day). Craters, camps you can see and ruins
   held by raiders keep glowing in the dark. The Legend tab has a Night On/Off switch.

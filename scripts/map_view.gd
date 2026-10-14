@@ -1618,8 +1618,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not Game.in_game:
 		return
 	if playing and ((event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)
-			or (event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER])):
-		finish_replay()   # a click, Space or Enter skips what is playing
+			or (event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER])):
+		finish_replay()   # a click or Enter skips what is playing (Space is the die's key: it rolls the die on the party's panel)
 	if event is InputEventMouseMotion:
 		var c := Vector2i((get_global_mouse_position() / CELL).floor())
 		if c != hover:

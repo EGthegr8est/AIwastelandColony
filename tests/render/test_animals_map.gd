@@ -161,7 +161,8 @@ func test_an_animals_tile_says_what_it_is_and_offers_hunters() -> void:
 	await wait_frames(3)
 	assert_true(_has_text("BLACK BEAR"), "a header")
 	assert_true(_has_text("strength 3"))
-	assert_true(_has_text("track it (DC 11)"))
+	assert_true(_has_text("track it with each party") or _has_text("Two rolls: track it"), "what the hunt is")
+	assert_false(_has_text("DC 11"), "the DC is not on screen")
 	assert_true(_has_button("Hunt with scavengers on foot"), "send hunters")
 
 
@@ -198,7 +199,8 @@ func test_a_party_at_a_hunt_shows_hunt_above_the_die() -> void:
 	await wait_frames(3)
 	assert_true(_has_text("HUNT"), "the header")
 	assert_false(_has_text("SCAVENGE"), "and not Scavenge")
-	assert_true(_has_text("Track, DC 8"), "what the roll is")
+	assert_true(_has_text("Track"), "what the roll is")
+	assert_false(_has_text("DC 8"), "but not its DC")
 	assert_true(_has_button("Give up the hunt"))
 	assert_eq(hud.dice_holder.get_parent() != null, true, "the die is in the panel")
 
@@ -232,7 +234,8 @@ func test_the_awake_frog_has_its_own_panel_and_can_be_hunted() -> void:
 	await wait_frames(3)
 	assert_true(_has_text("GIANT FROG"))
 	assert_true(_has_text("heading for your colony"))
-	assert_true(_has_text("DC 14"), "its track roll")
+	assert_true(_has_text("Track it"), "its track roll")
+	assert_false(_has_text("DC 14"), "without its DC")
 	assert_true(_has_button("Hunt with scavengers on foot"))
 
 

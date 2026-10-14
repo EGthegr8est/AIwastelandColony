@@ -1,6 +1,6 @@
 extends "res://tests/framework/test_case.gd"
 ## The real game's map and HUD playing a season back: the replay starts at END SEASON, runs on its own clock, can be skipped
-## (a click, Space, Enter, or END SEASON again), raider bands in the fog stay hidden, the ground a party uncovers stays dark
+## (a click, Enter, or END SEASON again), raider bands in the fog stay hidden, the ground a party uncovers stays dark
 ## until it gets there, a raid sends a column of troops, and the ending screen waits for all of it.
 
 const Data = preload("res://scripts/data.gd")
@@ -132,8 +132,8 @@ func test_a_click_skips_the_replay() -> void:
 	assert_false(map.playing)
 
 
-func test_space_and_enter_skip_the_replay_but_other_keys_do_not() -> void:
-	for key in [KEY_SPACE, KEY_ENTER]:
+func test_enter_skips_the_replay_but_other_keys_do_not_and_space_is_the_dice_key() -> void:
+	for key in [KEY_ENTER, KEY_KP_ENTER]:
 		_send_party()
 		hud.end_season_pressed()
 		var e := InputEventKey.new()
@@ -142,13 +142,16 @@ func test_space_and_enter_skip_the_replay_but_other_keys_do_not() -> void:
 		map._unhandled_input(e)
 		assert_false(map.playing, "%d skips" % key)
 		Units.units = []
-	_send_party()
-	hud.end_season_pressed()
-	var other := InputEventKey.new()
-	other.keycode = KEY_A
-	other.pressed = true
-	map._unhandled_input(other)
-	assert_true(map.playing, "panning with A does not skip")
+	for key in [KEY_A, KEY_SPACE]:
+		_send_party()
+		hud.end_season_pressed()
+		var other := InputEventKey.new()
+		other.keycode = key
+		other.pressed = true
+		map._unhandled_input(other)
+		assert_true(map.playing, "%d does not skip (A pans, Space rolls the die)" % key)
+		map.finish_replay()
+		Units.units = []
 
 
 func test_scrolling_to_zoom_does_not_skip_the_replay() -> void:

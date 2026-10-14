@@ -8,6 +8,7 @@ const D20Data = preload("res://scripts/d20_data.gd")
 const D20 = preload("res://scripts/d20.gd")
 const D20Visit = preload("res://scripts/d20_visit.gd")
 const Dice = preload("res://scripts/dice.gd")
+const Leaders = preload("res://scripts/leaders.gd")
 
 const RETIRED := ["scrap", "silver"]
 
@@ -304,6 +305,59 @@ func test_toll_roads_pay_1_gold_for_every_2_walls() -> void:
 	Game.res["gold"] = 0
 	Game._gather()
 	assert_eq(Game.res["gold"], base + 2, "5 walls pay 2 gold")
+
+
+# ---------------------------------------------------------------- farms
+
+## What gathering adds to grain and veg with `n` farms on bare sand you own and plenty of workers (every other tile's yield is the same either way).
+func _farm_food(n: int) -> Dictionary:
+	Game.pop = 100
+	var spots: Array = Game.owned(Data.PLAYER).filter(func(c): return Game.tile(c)["b"] == "" and Game.tile(c)["t"] == "sand")
+	assert_ge(spots.size(), n, "room for %d farms" % n)
+	for i in n:
+		Game.tile(spots[i])["b"] = "farm"
+	Game.res["grain"] = 0
+	Game.res["veg"] = 0
+	Game._gather()
+	var got := {"grain": Game.res["grain"], "veg": Game.res["veg"]}
+	for i in n:
+		Game.tile(spots[i])["b"] = ""
+	return got
+
+
+func test_a_farm_yields_3_and_a_half_grain_and_1_and_a_half_veg() -> void:
+	assert_eq(Data.BUILDINGS.farm.yield, {"grain": 3.5, "veg": 1.5})
+	assert_eq(float(Data.BUILDINGS.farm.yield.grain) + float(Data.BUILDINGS.farm.yield.veg), 5.0, "the same 5 food a farm as before: more of it is grain")
+
+
+func test_farms_add_up_before_the_total_is_rounded() -> void:
+	var none := _farm_food(0)
+	var expected := {1: [4, 2], 2: [7, 3], 3: [11, 5], 4: [14, 6], 6: [21, 9]}
+	for n in expected:
+		var got := _farm_food(n)
+		assert_eq(got.grain - none.grain, expected[n][0], "%d farms: grain" % n)
+		assert_eq(got.veg - none.veg, expected[n][1], "%d farms: veg" % n)
+
+
+func test_more_farms_means_more_grain_and_less_veg_than_before() -> void:
+	var none := _farm_food(0)
+	for n in [2, 3, 4, 6]:
+		var got := _farm_food(n)
+		assert_gt(got.grain - none.grain, 3 * n, "%d farms: more grain than the old 3 each" % n)
+		assert_lt(got.veg - none.veg, 2 * n, "%d farms: less veg than the old 2 each" % n)
+
+
+func test_irrigation_and_the_green_thumb_still_add_a_whole_one_per_farm() -> void:
+	var none := _farm_food(0)
+	var plain := _farm_food(4)
+	Game.upgrades.append("farming")
+	var irrigated := _farm_food(4)
+	assert_eq(irrigated.grain - plain.grain, 4, "Irrigation: +1 grain a farm")
+	assert_eq(irrigated.veg - plain.veg, 0)
+	Game.leader_info = Leaders.fill("builder", {"name": "Test Leader", "perks": ["green_thumb"], "flaw": ""})
+	var thumbed := _farm_food(4)
+	assert_eq(thumbed.veg - plain.veg, 4, "Green Thumb: +1 veg a farm")
+	assert_ge(plain.grain, none.grain)
 
 
 # ---------------------------------------------------------------- old saves
