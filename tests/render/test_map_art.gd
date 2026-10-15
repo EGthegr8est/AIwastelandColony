@@ -1,7 +1,7 @@
 extends "res://tests/framework/test_case.gd"
-## The map drawn with the pixel-art sprites (art/atlas.png) in place of the text glyphs: which sprite
+## The map drawn with the pixel-art sprites (art/atlas16.png) in place of the text glyphs: which sprite
 ## goes where, that changing the art redraws the map (and nothing else does), and, with a GPU, that the
-## pixels on screen really are the atlas art at exactly twice its size.
+## pixels on screen really are the atlas art at exactly its size (one screen pixel to an art pixel).
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
@@ -16,7 +16,7 @@ func before_all() -> void:
 
 
 func before_each() -> void:
-	Sprites.choose(1)
+	Sprites.choose(Sprites.CLEAN)
 	Game.view = Data.PLAYER
 	Game.show_radiation = false
 	Units.units = []
@@ -27,7 +27,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	Sprites.choose(1)
+	Sprites.choose(Sprites.CLEAN)
 	Game.show_radiation = false
 	Game.view = Data.PLAYER
 	Units.units = []
@@ -96,7 +96,11 @@ func test_units_and_camps_carry_their_sprite() -> void:
 # ---------------------------------------------------------------- redrawing
 
 func test_choosing_other_art_redraws_every_tile_on_screen() -> void:
-	Sprites.choose(2)
+	Sprites.choose(0)
+	Game.changed.emit()
+	await fx.settle()
+	fx.reset_stats()
+	Sprites.choose(Sprites.CLEAN)
 	Game.changed.emit()
 	await fx.settle()
 	assert_gt(fx.map.stats.tile_draws, 0)
@@ -122,59 +126,57 @@ func test_pixel_art_is_filtered_with_the_nearest_pixel_and_text_is_not() -> void
 	Game.changed.emit()
 	await fx.settle()
 	assert_eq(fx.map.tile_layer.texture_filter, CanvasItem.TEXTURE_FILTER_PARENT_NODE)
-	Sprites.choose(3)
+	Sprites.choose(Sprites.CLEAN)
 	Game.changed.emit()
 	await fx.settle()
 	assert_eq(fx.map.tile_layer.texture_filter, CanvasItem.TEXTURE_FILTER_NEAREST)
 
 
-func test_a_cell_is_twice_a_sprite() -> void:
-	assert_eq(fx.map.CELL, Vector2(Sprites.SIZE, Sprites.SIZE) * 2.0, "so every art pixel is two screen pixels")
+func test_a_cell_is_one_sprite() -> void:
+	assert_eq(fx.map.CELL, Vector2(Sprites.SIZE, Sprites.SIZE), "so every art pixel is one screen pixel")
 
 
 # ---------------------------------------------------------------- real pixels (needs a GPU)
 
-## A tile in the open, with a plain sprite: nothing built or standing on it, no slope over it, and no
-## claimed land next to it (territory borders draw 1 pixel lines over the edge of the tiles).
+## A tile in the open, with a plain sprite: nothing built or standing on it, no slope over it, no height shade over
+## it, and no claimed land next to it (territory borders draw 1 pixel lines over the edge of the tiles).
 func _open_tile(terrain: String) -> Vector2i:
+	fx.map._build_ground()
 	return World.find_tile(func(c, t): return t["t"] == terrain and t["b"] == "" and t["o"] == Data.NONE \
-		and Game.slopes[Game.idx(c)] == "" and c.x > 2 and c.y > 2 and c.x < Game.w - 3 and c.y < Game.h - 3 \
+		and Game.slopes[Game.idx(c)] == "" and fx.map.ground_shade[Game.idx(c)].a == 0.0 and c.x > 2 and c.y > 2 and c.x < Game.w - 3 and c.y < Game.h - 3 \
 		and Game.neighbors(c).all(func(n): return Game.tile(n)["o"] == Data.NONE))
 
 
-## How many opaque pixels of `sprite` (in `style`) aren't on screen at twice the size with their
-## top-left at `origin` (to within a couple of shades), in `shot`.
-func _wrong_pixels(shot: Image, sprite: String, style: int, origin: Vector2i, shade := Color.WHITE) -> int:
-	var art := Sprites.image(sprite, style)
+## How many opaque pixels of `sprite` aren't on screen at its own size with their
+## top-left at `origin` (to within a couple of shades), in `shot`. A ground tile is left out its outer
+## pixel all round, where a rim may run, and mirrored where the map mirrors it (`flip`).
+func _wrong_pixels(shot: Image, sprite: String, origin: Vector2i, shade := Color.WHITE, flip := false, inset := 0) -> int:
+	var art := Sprites.image(sprite)
 	var wrong := 0
-	for sy in 8:
-		for sx in 8:
-			var want := art.get_pixel(sx, sy)
+	for sy in range(inset, Sprites.SIZE - inset):
+		for sx in range(inset, Sprites.SIZE - inset):
+			var want := art.get_pixel(Sprites.SIZE - 1 - sx if flip else sx, sy)
 			if want.a < 1.0:
 				continue
 			want = Color(want.r * shade.r, want.g * shade.g, want.b * shade.b)
-			for dy in 2:
-				for dx in 2:
-					var got := shot.get_pixel(origin.x + sx * 2 + dx, origin.y + sy * 2 + dy)
-					if absf(got.r - want.r) > 0.02 or absf(got.g - want.g) > 0.02 or absf(got.b - want.b) > 0.02:
-						wrong += 1
+			var got := shot.get_pixel(origin.x + sx, origin.y + sy)
+			if absf(got.r - want.r) > 0.02 or absf(got.g - want.g) > 0.02 or absf(got.b - want.b) > 0.02:
+				wrong += 1
 	return wrong
 
 
-func test_a_ground_tile_on_screen_is_its_sprite_at_exactly_twice_the_size() -> void:
+func test_a_ground_tile_on_screen_is_its_sprite_at_exactly_its_size() -> void:
 	if _needs_gpu():
 		return
 	Game.view = Data.NONE   # no fog: nothing dimmed
-	for style in [1, 2, 3]:
-		Sprites.choose(style)
-		Game.changed.emit()   # the map only redraws when told the game changed
-		for terrain in ["rock", "water", "ruins", "sand"]:
-			var c := _open_tile(terrain)
-			assert_ne(c, Vector2i(-1, -1), "this map needs some %s" % terrain)
-			await fx.view_cell(c, 1.0)
-			var shot: Image = await fx.capture()
-			var origin := Vector2i(fx.screen_pos(c) - Vector2(8, 8))
-			assert_eq(_wrong_pixels(shot, Sprites.TERRAIN[terrain], style, origin), 0, "%s, style %d" % [terrain, style])
+	Game.changed.emit()   # the map only redraws when told the game changed
+	for terrain in ["rock", "water", "ruins", "sand"]:
+		var c := _open_tile(terrain)
+		assert_ne(c, Vector2i(-1, -1), "this map needs some %s" % terrain)
+		await fx.view_cell(c, 1.0)
+		var shot: Image = await fx.capture()
+		var origin := Vector2i(fx.screen_pos(c) - Vector2(8, 8))
+		assert_eq(_wrong_pixels(shot, Sprites.TERRAIN[terrain], origin, Color.WHITE, fx.map.ground_flip[Game.idx(c)] == 1, 1), 0, terrain)
 
 
 func test_a_unit_on_screen_is_its_sprite() -> void:
@@ -188,7 +190,7 @@ func test_a_unit_on_screen_is_its_sprite() -> void:
 	await fx.view_cell(c, 1.0)
 	var shot: Image = await fx.capture()
 	var origin := Vector2i(fx.screen_pos(c) - Vector2(8, 8))
-	assert_eq(_wrong_pixels(shot, "war_rig", 1, origin), 0)
+	assert_eq(_wrong_pixels(shot, "war_rig", origin), 0)
 	Units.units.erase(u)
 
 
@@ -199,7 +201,8 @@ func test_remembered_ground_is_dimmed() -> void:
 	Game.view = Data.PLAYER
 	Game.reveal(Data.PLAYER, Game.home(Data.AI), 9)
 	Game.update_fog()
-	var c := World.find_tile(func(cell, t): return t["t"] == "sand" and t["b"] == "" and Game.slopes[Game.idx(cell)] == "" \
+	fx.map._build_ground()
+	var c := World.find_tile(func(cell, t): return t["t"] == "sand" and t["b"] == "" and Game.slopes[Game.idx(cell)] == "" and fx.map.ground_shade[Game.idx(cell)].a == 0.0 \
 		and Game.memory[Data.PLAYER][Game.idx(cell)] != null and not Game.in_sight(Data.PLAYER, cell) \
 		and Game.tile(cell)["o"] == Data.NONE and Game.neighbors(cell).all(func(n): return Game.tile(n)["o"] == Data.NONE))
 	assert_ne(c, Vector2i(-1, -1), "needs remembered open ground")
@@ -207,7 +210,7 @@ func test_remembered_ground_is_dimmed() -> void:
 	await fx.view_cell(c, 1.0)
 	var shot: Image = await fx.capture()
 	var origin := Vector2i(fx.screen_pos(c) - Vector2(8, 8))
-	assert_eq(_wrong_pixels(shot, "ash_sand", 1, origin, fx.map.SPRITE_DIM), 0)
+	assert_eq(_wrong_pixels(shot, "ash_sand", origin, fx.map.SPRITE_DIM, fx.map.ground_flip[Game.idx(c)] == 1, 1), 0)
 
 
 func test_the_radiation_tint_still_shows_over_the_sprites() -> void:
@@ -223,13 +226,13 @@ func test_the_radiation_tint_still_shows_over_the_sprites() -> void:
 	await fx.view_cell(c, 1.0)
 	var tinted: Image = await fx.capture()
 	# a pixel where the rock sprite is solid: a tint drawn underneath it couldn't show there
-	var art := Sprites.image("rock", 1)
+	var art := Sprites.image("rock")
 	var solid := Vector2i(-1, -1)
-	for sy in 8:
-		for sx in 8:
+	for sy in Sprites.SIZE:
+		for sx in Sprites.SIZE:
 			if solid.x < 0 and art.get_pixel(sx, sy).a == 1.0:
 				solid = Vector2i(sx, sy)
 	assert_ne(solid, Vector2i(-1, -1))
-	var at := Vector2i(fx.screen_pos(c) - Vector2(8, 8)) + solid * 2
+	var at := Vector2i(fx.screen_pos(c) - Vector2(8, 8)) + solid
 	assert_ne(tinted.get_pixel(at.x, at.y), plain.get_pixel(at.x, at.y), "the tint must be drawn on top of the sprite")
 	Game.show_radiation = false

@@ -89,7 +89,7 @@ Redraws now cost half as much. Snapshots are byte-identical.
 
 ## 6. Pixel-art sprites
 
-The map now draws pixel art instead of text glyphs (`art/atlas.png`, see the README). Each chunk gets one more pass,
+The map now draws pixel art instead of text glyphs (`art/atlas.png`, see the README; the art has been 16 x 16 in `art/atlas16.png` since 2026-10-14, drawn at 1x). Each chunk gets one more pass,
 between the backgrounds and the text: every ground sprite, slope mark, unit and camp, drawn with
 `draw_texture_rect_region` from the single atlas texture, so the renderer batches the lot. Buildings are still text.
 The cell went from 18 to 16 pixels so an 8 x 8 sprite is exactly 2x. That shows more of the map at zoom 1 (5,760 tiles

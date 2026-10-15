@@ -1,9 +1,9 @@
 # Wasteland Colony
 
 A 2D post-nuclear colony sim for Godot 4.7, coded with AI by Eric B. You lead a band of survivors in the wastes: claim land, build, scout the fog, scavenge ruins with d20 rolls, trade, hunt, fight the
-raider kingdom across the river, and try not to get nuked. Pixel-art tiles (or ASCII ones, in the style of Dwarf Fortress) under an amber terminal UI.
+raider kingdom across the river, and try not to get nuked. Pixel-art tiles at 16 x 16 pixels (or ASCII ones, in the style of Dwarf Fortress) under an amber terminal UI.
 
-**Status (2026-10-14): finished for now and handed over.** Everything below is built and all three test suites pass (headless 1375, windowed render 450, snapshots 13; 0 failures). What comes next
+**Status (2026-10-14): finished for now and handed over.** Everything below is built and all three test suites pass (headless 1381, windowed render 450, snapshots 12; 0 failures). What comes next
 is under "What's next". Branch `main` is the finished project; `v5` is the same commit.
 
 - [How the game works](docs/GAME_REFERENCE.md): every system, with the code that does it and the tests that pin it.
@@ -21,7 +21,7 @@ Saves live in `%APPDATA%\Godot\app_userdata\Wasteland Colony\saves\` (and the se
 ## Controls and interface
 The layout is designed for 1600 x 900 and scaled to the window (`Main._fit_window`, content scale mode `canvas_items`); **F11** toggles fullscreen.
 
-- **The map:** WASD or arrows pan, the wheel zooms, right-drag pans. Left-click a tile to inspect, claim or build on it; click one of your scouting parties to pick it. Hover a tile for a label.
+- **The map:** WASD or arrows pan, the wheel zooms (in whole steps, 0.25x to 3x), right-drag pans. Left-click a tile to inspect, claim or build on it; click one of your scouting parties to pick it. Hover a tile for a label.
 - **The top bar** (76 px): the status line and the eight resources, a music slider, then three animated pixel-art buttons drawn 20% bigger (`Hud.BAR_ART_SCALE`) and the text buttons:
   - the **radiation meter** (**R**) flips the radiation view; the **field tablet** (**M**) flips the map between pixel art and ASCII; the **END SEASON window** (**E**) ends the season;
   - **Save** (F5), **Load** (F9), **Menu** (Esc).
@@ -63,7 +63,7 @@ Run the three in that order and never two at once (they share the same Godot use
 Run `.\tools\build_windows.ps1`. It exports a single `WastelandColony.exe` (art and music inside), runs the game's own self-check on it (`WastelandColony.exe -- --selftest`: one ok/FAIL line per thing the
 game loads), and zips it with `tools/PLAY_ME.txt` into `..\WastelandColony-release\`.
 - It needs Godot's Windows **export templates** once (Editor > Manage Export Templates) and the `Windows Desktop` preset in `export_presets.cfg`. Files the game reads at run time that are not
-  pictures or sound (`art/atlas.json`) must be in that preset's include filter; the tests and docs are left out. A sprite that works in the editor but shows as text in the built game means a file
+  pictures or sound (`art/*.json`: the atlases' descriptions) must be in that preset's include filter; the tests and docs are left out. A sprite that works in the editor but shows as text in the built game means a file
   did not make it: run the self-check.
 - The exe has Godot's default icon and is not code-signed. **Rebuild before sharing**: an exe built earlier does not have the newest features.
 
@@ -84,7 +84,7 @@ game loads), and zips it with `tools/PLAY_ME.txt` into `..\WastelandColony-relea
 | `scripts/main.gd`, `selftest.gd` | Puts the map, camera and UI together (and fullscreen); the `--selftest` check. |
 | `art/`, `audio/`, `d20_dice/` | Pictures (atlases, scenes, leaders, button sheets), music and sounds, the pixel-art die and its sounds. |
 | `tools/` | Generators for the art and sounds (`make_*.gd` run in Godot; `make_*.py` need Python, and Pillow where they draw), `build_windows.ps1`, `PLAY_ME.txt`. |
-| `tests/` | `unit/` (49 files, the simulation), `render/` (31 files, the real HUD and map), `bench/`, `framework/`, `helpers/`. |
+| `tests/` | `unit/` (50 files, the simulation), `render/` (31 files, the real HUD and map), `bench/`, `framework/`, `helpers/`. |
 | `docs/` | The game reference, rendering notes, the unit glyph picture. |
 
 ## Working on it: things that will bite
@@ -113,6 +113,7 @@ Nothing is half-built. The future decisions are kept in two planning docs (priva
 
 Smaller loose ends:
 - A point of interest's corner picture is chosen at random per site (`Game.poi_scene`); a later pass could pick by the surrounding biome.
-- Art styles 1 to 3 are not offered but their sprites are still in the atlas (units and camps use style 1's rows); they could be purged.
+- The Giant Frog and the 10 sites (32 x 32) are Scale2x upscales of their 16 x 16 originals in `art/source/` (`tools/upscale_sites.py`): the right size but no new detail. Redraw them by hand, then drop the script.
+- The 16 x 16 grounds, ledges, units, camps and buildings were drawn in one pass (rows in `tools/make_tiles16.gd` and `tools/make_buildings.gd`); expect to nudge some (ruins, fused glass, the units) after looking at them in play.
 - `Game.view` and `Game.cycle_view()` (the Rust Kings' view, no fog) have no button or key any more; they were a debug tool and only the tests use them.
 - The three animated buttons are drawn at 1.2x, which is not a whole number, so some of their pixels are a little wider than others. Whole-number sizes (1x, 2x) are cleaner but 2x does not fit the bar.

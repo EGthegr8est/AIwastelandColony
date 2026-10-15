@@ -82,7 +82,7 @@ other rule ignore it. The rules are in `scripts/daylight.gd`; `scripts/map_view.
   Skipping the walk does not cut it short. A new game or a loaded one goes straight to its light.
 - **The dark.** One moon-blue layer is multiplied over the ground and buildings (`Daylight.NIGHT`: dark, but the grounds stay apart). It is a
   single rectangle whose strength is the light, so no tile is redrawn while it fades. The panels, hover label and selection marks stay as
-  they are. Every art look gets the dark; only the clean look (style 4) also redraws the glowing tiles.
+  they are. Both looks get the dark; only the pixel art also redraws the glowing tiles.
 - **What glows.** Drawn again over the dark at full brightness, with a soft flickering halo: **craters**; **ruins that raiders hold** (once you
   have found out: tile state `rogue_seen`); the **raider, trader and builder camps** while one of your units can see them (a camp you only
   remember stays dark, so night shows you nothing you cannot see). **Fallout waste and fused glass** keep their bright speckles without a halo. A
@@ -132,20 +132,22 @@ send them on, or press **Recall to camp**. How many parties you can have out gro
   `FUEL_LOW`, `CRASH_*` and `SCOUT_RATION` in `scripts/data.gd`.
 
 ## Pixel art
-The map and the legend are drawn from `art/atlas.png` (24 sprites of 8 x 8 pixels, described by `art/atlas.json`: the 11 kinds of ground, the shallow ford, the two slopes, the 7 kinds of unit and
-the three tribe camps), with `art/building_atlas.png` (22 buildings), `art/animals.png` and `art/poi_atlas.png` beside it. A tile is 16 pixels wide, so every sprite shows at exactly 2x, crisp, with no gaps.
-- **Two looks.** The clean pixel art (style 4, what the game starts on) and the old **text glyphs** (the Dwarf Fortress look, "ASCII"). The **field tablet** in the top bar (or **M**) switches between
+The map and the legend are drawn from `art/atlas16.png` (26 sprites of 16 x 16 pixels, described by `art/atlas16.json`: the 12 kinds of ground and the shallow ford, the two slope ledges, the 8 kinds of unit
+and the three tribe camps), with `art/building_atlas.png` (22 buildings, 16 x 16), `art/animals.png` (the deer and bears 16 x 16, the Giant Frog 32 x 32) and `art/poi_atlas.png` (10 sites, 32 x 32 across 2 x 2 tiles) beside it.
+A tile is 16 pixels wide, so every sprite shows at exactly 1x, crisp, with no gaps: one art pixel is one screen pixel at zoom 1. (The art was 8 x 8 shown at 2x until 2026-10-14; the pixel level is doubled.)
+- **Two looks.** The pixel art (what the game starts on) and the old **text glyphs** (the Dwarf Fortress look, "ASCII"). The **field tablet** in the top bar (or **M**) switches between
   them: off, its screen shows a colour map and the map is the pixel art; click it and the screen turns to a green sonar sweep (with a short blip) and the map is text glyphs. The legend's
-  **Map art: Pixel art / ASCII** buttons do the same and the tablet follows them. It changes the map and the legend together. `Sprites.CHOICES` is `[4, 0]`. The atlas still holds three older
-  sprite styles (units and camps are drawn from style 1's rows and some tests use them through `Sprites.choose`); they are not offered and can be purged.
+  **Map art: Pixel art / ASCII** buttons do the same and the tablet follows them. It changes the map and the legend together. `Sprites.CHOICES` is `[Sprites.CLEAN, 0]`.
   `scripts/sonar_tablet_button.gd` is the radiation meter's script with the tablet's frames (`art/sonar_tablet_sheet.png`), turned a quarter clockwise; `tools/make_sonar_tablet.py` draws the sheet (needs Pillow).
-- **The clean look (style 4).** Made to be easy to read: every ground is one flat colour with one bold shape on it, and the colours are far apart (sand pale tan, dunes orange-yellow, scrub olive,
+- **The look.** Made to be easy to read: every ground is one flat colour with one bold shape on it, and the colours are far apart (sand pale tan, dunes orange-yellow, scrub olive,
   petrified wood dark brown, grove green, rock grey, ruins slate, river blue). It is a dusk palette, darkened and warmed, and **only the hazards glow**: the crater's green ring, the fallout waste's and
-  fused glass's bright specks and the lit windows in ruins. Height is three quiet shades (a third of the land each) and a slope is a dark **ledge** along the tile's lower edge (thin for a gentle
-  slope, with teeth for a steep incline). Half the tiles are mirrored so a wide field is not wallpaper, and a feature (rock, water, ruins, trees, grove, waste, glass, crater) gets a thin dark **rim**
-  on the sides that meet plainer ground (never next to unexplored tiles). Your land keeps its border line and a faint tint. **Buildings have pictures** (22, the two bridges among them), each with a
-  dark outline. Roads are drawn from rectangles (see "Roads and the old highway"). The pictures are text rows in `tools/make_style4.gd` (the grounds and ledges) and `tools/make_buildings.gd`: edit the rows and run
-  the tool (the command is in each file's header). In the text look a building is its letter.
+  fused glass's bright specks and the lit windows in ruins. Each ground has five shades (the fill, a dark and a light one, the deepest and the lightest). Height is three quiet shades (a third of the land
+  each) and a slope is a dark **ledge** along the tile's lower edge (two rows for a gentle slope, with teeth for a steep incline). Half the tiles are mirrored so a wide field is not wallpaper, and a feature
+  (rock, water, ruins, trees, grove, waste, glass, crater) gets a 1 pixel dark **rim** on the sides that meet plainer ground (never next to unexplored tiles). Your land keeps its border line and a faint tint.
+  **Buildings have pictures** (22, the two bridges among them), each with a dark outline, as do the units and camps. Roads are drawn from rectangles (see "Roads and the old highway"). The pictures are text rows in
+  `tools/make_tiles16.gd` (the grounds, ledges, units and camps) and `tools/make_buildings.gd`: edit the rows and run the tool (the command is in each file's header). The frog and the 10 sites are 2x upscales of
+  their 16 x 16 originals in `art/source/` (`tools/upscale_sites.py`, Scale2x): they have the new pixel size but not new detail yet, and are the next pictures to redraw by hand. In the text look a building is its letter.
+- **Zoom.** The wheel steps between 0.25, 0.5, 1, 2 and 3 (`Main.ZOOM_STEPS`), so a pixel is never uneven on screen. Code-drawn marks (rims, dust, camp embers, a hopping party) are one art pixel, `MapView.ART_PIXEL`.
 - **Hover.** Move the mouse over a tile and a small label names it: what stands there, the ground and its height ("Farm on Ash sand, +5 m"), or "Unexplored". It is drawn at one size whatever the zoom,
   stays inside the window and is hidden while the mouse is over a panel.
 - **Speed.** Every sprite is drawn from one atlas texture, so they batch: an idle frame takes about 100 draw calls where the glyphs took about 380. See `rendering_perf.md`.
@@ -406,7 +408,7 @@ and the number stays up for a second until you click off it. Every roll is one c
   and `tests/render/test_visit_panel.gd` for the panel).
 
 ## Points of interest
-Each map has one of ten 2 x 2 sites (`Data.POIS`, art in `art/poi_atlas.png`): a crashed ship, weather station, chemical dump, radio tower,
+Each map has one of ten 2 x 2 sites (`Data.POIS`, art in `art/poi_atlas.png`, 32 x 32 each): a crashed ship, weather station, chemical dump, radio tower,
 bunker, oil pumpjack, water tower, ruined gas station, missile silo and cargo yard. Each stands where it fits (the gas station beside the old highway, water towers and cargo yards
 by the river, bunkers and silos 6 to 16 tiles from a ruin field, towers on or beside rock, the chemical dump on fallout waste, the pumpjack
 in deep desert), 12 tiles from any camp and 10 from the next site. A site is four tiles that carry one building id (`poi_<kind>`), so the
@@ -509,7 +511,7 @@ once, and the **missile silo** can hold up to three. A nuke is a very heavy item
   horseback, 1.5 in a war rig), and the warhead is yours only when the caravan reaches your HQ: a wiped-out caravan loses it and the gold.
 - **Only you and the Rust Kings** have nukes. Dustwell, the raider bands and the tribes never launch one.
 - **Tuning.** `D20Data.CRATER`, the silo rows of `SITES`, `Data.NUKE`, `ITEM_WEIGHT.nuke`, `VEHICLES.bomber`, `VEHICLE_FUEL.bomber`, `UPGRADES.wv5` and
-  `SeasonReplay.BLAST_SECONDS`. `tools/make_nuke_sprites.gd` adds the ash and bomber pictures to the end of the atlas.
+  `SeasonReplay.BLAST_SECONDS`. The ash and bomber pictures are in `tools/make_tiles16.gd` with the rest.
 
 ## Prison breaks
 A season whose upkeep finds more than 4 prisoners and fewer than 2 of your outposts within 6 tiles of the HQ (your circle of control; the

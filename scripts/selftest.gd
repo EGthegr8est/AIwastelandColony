@@ -17,10 +17,10 @@ static func requested() -> bool:
 ## One line per check.
 static func run() -> Array:
 	var out := []
-	_check(out, Sprites.available(), "pixel-art atlas loads (art/atlas.png and atlas.json)")
+	_check(out, Sprites.available(), "pixel-art atlas loads (art/atlas16.png and atlas16.json)")
 	_check(out, Sprites.names().size() == 26, "the atlas has all 26 sprites (has %d)" % Sprites.names().size())
 	_check(out, not Sprites.rects().is_empty() or Sprites.style == 0, "sprite rectangles are ready for the map")
-	_check(out, Sprites.animals_available() and Sprites.animals_texture().get_size() == Vector2(64, 16), "the animals' picture loads (art/animals.png, 4 pictures of 16 x 16)")
+	_check(out, Sprites.animals_available() and Sprites.animals_texture().get_size() == Vector2(80, 32), "the animals' picture loads (art/animals.png, 3 pictures of 16 x 16 and the frog's 32 x 32)")
 	_check(out, Sprites.building_atlas_texture() != null and Sprites.building_ids().size() == 22, "the building pictures load (art/building_atlas.png and .json, 22 of them)")
 	_check(out, Sprites.poi_available(), "points-of-interest atlas loads (art/poi_atlas.png and .json)")
 	_check(out, Sprites.poi_kinds().size() == Data.POIS.size(), "a sprite for each of the %d kinds of site" % Data.POIS.size())

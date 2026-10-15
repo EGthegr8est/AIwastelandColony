@@ -27,14 +27,14 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	Sprites.style = 1
+	Sprites.style = Sprites.CLEAN
 	Daylight.enabled = false   # the test setup keeps it day
 	DirAccess.remove_absolute(Music.settings_path)
 
 
-## The pictures in the legend (8 x 8 sprites, not the portraits and icons elsewhere).
+## The pictures in the legend (16 x 16 sprites, not the animals, the sites, the portraits and icons elsewhere).
 func _sprites() -> Array:
-	return tile_box.find_children("*", "TextureRect", true, false).filter(func(r): return r.texture.get_size() == Vector2(8, 8))
+	return tile_box.find_children("*", "TextureRect", true, false).filter(func(r): return r.texture.get_size() == Vector2(16, 16) and not (r.texture is AtlasTexture and r.texture.atlas == Sprites.animals_texture()))
 
 
 func _labels() -> Array:
@@ -42,8 +42,8 @@ func _labels() -> Array:
 
 
 func test_the_legend_has_a_sprite_for_every_ground_slope_unit_and_camp() -> void:
-	var expected: int = Data.TERRAIN.size() + 1 + 2 + 2 + Data.UNITS.size() + Data.TRIBE_CLASSES.size()   # the grounds, the ford, the two slopes, the road and the highway, units and camps
-	assert_eq(expected, 28)
+	var expected: int = Data.TERRAIN.size() + 1 + 2 + 2 + 2 + Data.UNITS.size() + Data.TRIBE_CLASSES.size()   # the grounds, the ford, the two slopes, the road and the highway, the two bridges, units and camps
+	assert_eq(expected, 30)
 	assert_eq(_sprites().size(), expected)
 
 
@@ -77,21 +77,15 @@ func test_the_names_and_meanings_are_still_there() -> void:
 
 
 func test_the_pixel_art_and_ascii_buttons_flip_the_whole_legend() -> void:
-	var old_style: Array = _sprites().map(func(r): return r.texture.get_image().get_data())
-	_press("Pixel art")
-	await wait_frames(2)
 	assert_eq(Sprites.style, Sprites.CLEAN)
-	tile_box = hud.boxes["Tile"]
-	var clean: Array = _sprites().map(func(r): return r.texture.get_image().get_data())
-	assert_eq(clean.size(), 30, "the clean look has a picture for everything too, and the two bridges")
-	assert_ne(clean, old_style, "and the pictures are the clean look's")
+	assert_eq(_sprites().size(), 30, "a picture for everything, and the two bridges")
 	_press("ASCII")
 	await wait_frames(2)
 	assert_eq(Sprites.state(), 0)
 	_press("Pixel art")
 	await wait_frames(2)
 	assert_eq(Sprites.state(), Sprites.CLEAN)
-	assert_eq(Sprites.CHOICES, [4, 0], "styles 1 to 3 are not offered any more: no buttons for them")
+	assert_eq(Sprites.CHOICES, [Sprites.CLEAN, 0], "the pixel art and the glyphs: no other buttons")
 	var labels := []
 	tile_box = hud.boxes["Tile"]
 	for b in tile_box.find_children("*", "Button", true, false):

@@ -27,7 +27,7 @@ const DICE_SOUND_DB := -6.0
 const RAD_METER_ON_SOUND := "res://audio/rad_meter_on.wav"     # the power-on, ending in an idle hum that loops while the meter is on
 const RAD_METER_OFF_SOUND := "res://audio/rad_meter_off.wav"
 const RADIATION_KEY := KEY_R   # flips the radiation view from anywhere in the game, the same as clicking the meter
-const LEGEND_ICON_SCALE := 3   # screen pixels per pixel of legend art
+const LEGEND_ICON_SCALE := 1.5   # screen pixels per pixel of legend art (a 16 x 16 picture shows 24 px wide)
 const LOGO_WIDTH := 440        # how wide the slab-stack logo is on the character selection screen
 const CARD_WIDTH := 440        # one leader card on that screen, and the face on it (480 px pictures shown at half size)
 const CARD_FACE := 240
@@ -1209,7 +1209,7 @@ func _sync_music_sliders(_volume: float) -> void:
 		s[1].add_theme_color_override("font_color", RED if Music.volume <= 0.0 else DIM)
 
 
-## Each sprite comes in four styles: these buttons flip the whole legend between them.
+## These buttons flip the whole legend (and the map) between the pixel art and the text glyphs.
 func _legend_style_row(box: VBoxContainer) -> void:
 	if not Sprites.available():
 		return
@@ -1287,7 +1287,7 @@ func _legend() -> VBoxContainer:
 	for id in ["bridge", "old_bridge"]:
 		var span: Dictionary = Data.BUILDINGS[id]
 		_legend_row(box, Sprites.building(id), span.glyph, "%s: %s" % [span.name, "every ground party can cross (you build it out from your bank)" if id == "bridge" else "the one place every kind of party can cross"], span.color)
-	_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a %s every 10 m): slows everyone a little" % ("ledge" if Sprites.clean() else "line"), AMBER)
+	_legend_row(box, Sprites.slope("gentle"), "─│┌┐", "Gentle slope (a ledge every 10 m): slows everyone a little", AMBER)
 	_legend_row(box, Sprites.slope("steep"), "═║╔╗", "Steep incline: war rigs can't climb it, foot and horses cross slowly", AMBER)
 	for mover in Data.TRAVEL_PREVIEW:
 		_label(box, " ●    %s route from your HQ to the tile you click" % Data.MOVERS[mover].name, Data.MOVERS[mover].color)
@@ -1303,7 +1303,7 @@ func _legend() -> VBoxContainer:
 	_legend_row(box, Sprites.animal("frog"), Data.FROG.glyph, Data.FROG.name + " (a boss: only one, and it sleeps)", Data.FROG.color, Sprites.ANIMAL_SIZE)
 	for kind in Data.POIS:
 		var building: Dictionary = Data.BUILDINGS["poi_" + kind]
-		_legend_row(box, Sprites.poi_sprite(kind), building.glyph, building.name, building.color, Sprites.POI_SIZE)
+		_legend_row(box, Sprites.poi_sprite(kind), building.glyph, building.name, building.color, Sprites.POI_SIZE / 2)
 	_label(box, "   Black: never explored. Click it to scout.", DIM)
 	_label(box, "   Dark: explored but out of sight. Shows what was there last time.", DIM)
 	return legend_cache

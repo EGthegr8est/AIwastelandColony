@@ -1,76 +1,76 @@
 {
-  "sprite_size_px": 16,
-  "tile_footprint": "2x2 tiles of 8x8",
+  "sprite_size_px": 32,
   "sprites": {
-    "crashed_ship": {
-      "name": "Crashed ship",
-      "x": 0,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "weather_station": {
-      "name": "Weather station",
-      "x": 16,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "chemical_dump": {
-      "name": "Chemical dump",
-      "x": 32,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "radio_tower": {
-      "name": "Radio tower",
-      "x": 48,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
     "bunker": {
+      "h": 32,
       "name": "Bunker",
-      "x": 64,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "pumpjack": {
-      "name": "Oil pumpjack",
-      "x": 80,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "water_tower": {
-      "name": "Water tower",
-      "x": 96,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "gas_station": {
-      "name": "Ruined gas station",
-      "x": 112,
-      "y": 0,
-      "w": 16,
-      "h": 16
-    },
-    "missile_silo": {
-      "name": "Missile silo",
+      "w": 32,
       "x": 128,
-      "y": 0,
-      "w": 16,
-      "h": 16
+      "y": 0
     },
     "cargo_yard": {
+      "h": 32,
       "name": "Cargo yard",
-      "x": 144,
-      "y": 0,
-      "w": 16,
-      "h": 16
+      "w": 32,
+      "x": 288,
+      "y": 0
+    },
+    "chemical_dump": {
+      "h": 32,
+      "name": "Chemical dump",
+      "w": 32,
+      "x": 64,
+      "y": 0
+    },
+    "crashed_ship": {
+      "h": 32,
+      "name": "Crashed ship",
+      "w": 32,
+      "x": 0,
+      "y": 0
+    },
+    "gas_station": {
+      "h": 32,
+      "name": "Ruined gas station",
+      "w": 32,
+      "x": 224,
+      "y": 0
+    },
+    "missile_silo": {
+      "h": 32,
+      "name": "Missile silo",
+      "w": 32,
+      "x": 256,
+      "y": 0
+    },
+    "pumpjack": {
+      "h": 32,
+      "name": "Oil pumpjack",
+      "w": 32,
+      "x": 160,
+      "y": 0
+    },
+    "radio_tower": {
+      "h": 32,
+      "name": "Radio tower",
+      "w": 32,
+      "x": 96,
+      "y": 0
+    },
+    "water_tower": {
+      "h": 32,
+      "name": "Water tower",
+      "w": 32,
+      "x": 192,
+      "y": 0
+    },
+    "weather_station": {
+      "h": 32,
+      "name": "Weather station",
+      "w": 32,
+      "x": 32,
+      "y": 0
     }
-  }
+  },
+  "tile_footprint": "2x2 tiles of 8x8"
 }

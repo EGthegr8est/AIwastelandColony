@@ -87,13 +87,13 @@ func test_the_halos_are_smooth_filtered_while_the_map_is_pixel_art() -> void:
 	assert_eq(map.halo_layer.texture_filter, CanvasItem.TEXTURE_FILTER_LINEAR)
 
 
-func test_the_other_looks_get_the_dark_and_the_halos_but_do_not_redraw_tiles() -> void:
-	Sprites.choose(1)
+func test_the_text_glyphs_get_the_dark_and_the_halos_but_do_not_redraw_tiles() -> void:
+	Sprites.choose(0)
 	_night()
 	map._sync_night_layers()
 	assert_true(map.night_layer.visible)
 	assert_true(map.halo_layer.visible)
-	assert_false(map.glow_layer.visible, "only the clean look has pictures that cover a whole tile")
+	assert_false(map.glow_layer.visible, "only the pixel art has pictures that cover a whole tile")
 	assert_eq(map.glow_batch.sprite_pos.size(), 0)
 
 

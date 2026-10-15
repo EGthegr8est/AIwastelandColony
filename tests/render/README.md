@@ -19,7 +19,7 @@ CPU time spent. They pin down rules like these, so an optimization can't quietly
 a colony, zooms and ends a season by clicking the END SEASON window, as a player would.
 
 **Map art tests** (`test_map_art.gd`) check which sprite goes where and that changing the art redraws the map. With a
-GPU they also check the pixels on screen: a ground tile or unit is exactly the atlas sprite at 2x.
+GPU they also check the pixels on screen: a ground tile or unit is exactly the atlas sprite at 1x (16 x 16 on the 16 pixel cell).
 
 **GPU tests** need a window. Headless runs skip them.
 

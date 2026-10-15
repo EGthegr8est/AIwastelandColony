@@ -1,12 +1,12 @@
 extends "res://tests/framework/test_case.gd"
-## The pixel-art sprites in art/atlas.png: every legend entry has one, in four styles (4 is the clean look).
+## The pixel-art sprites in art/atlas16.png: every legend entry has one, 16 x 16 pixels.
 
 const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 
 
 func after_each() -> void:
-	Sprites.style = 1
+	Sprites.style = Sprites.CLEAN
 
 
 func test_the_atlas_loads_with_every_sprite() -> void:
@@ -36,66 +36,38 @@ func test_every_sprite_in_the_atlas_is_used_by_something() -> void:
 		assert_has(Sprites.names(), sprite)
 
 
-func test_sprites_are_8_by_8_pictures_with_something_in_them() -> void:
+func test_sprites_are_16_by_16_pictures_with_something_in_them() -> void:
 	for sprite in Sprites.names():
-		for n in range(1, Sprites.STYLES + 1):
-			var img := Sprites.image(sprite, n)
-			assert_eq(img.get_size(), Vector2i(8, 8), "%s style %d" % [sprite, n])
-			var drawn := 0
-			for y in 8:
-				for x in 8:
-					if img.get_pixel(x, y).a > 0.0:
-						drawn += 1
-			assert_gt(drawn, 3, "%s style %d is blank" % [sprite, n])
+		var img := Sprites.image(sprite)
+		assert_eq(img.get_size(), Vector2i(16, 16), sprite)
+		var drawn := 0
+		for y in 16:
+			for x in 16:
+				if img.get_pixel(x, y).a > 0.0:
+					drawn += 1
+		assert_gt(drawn, 6, "%s is blank" % sprite)
 
 
-## What a picture shows: its visible pixels (the colour of a see-through one is meaningless, and the import changes it).
-func _seen(img: Image) -> Array:
-	var out := []
-	for y in img.get_height():
-		for x in img.get_width():
-			var c := img.get_pixel(x, y)
-			out.append(c if c.a > 0.0 else Color(0, 0, 0, 0))
-	return out
-
-
-func test_the_four_styles_of_each_ground_and_slope_look_different() -> void:
+func test_every_ground_and_slope_looks_different() -> void:
+	var seen := {}
 	for sprite in Sprites.TERRAIN.values() + Sprites.SLOPES.values() + [Sprites.FORD]:
-		var seen := {}
-		for n in range(1, Sprites.STYLES + 1):
-			seen[Sprites.image(sprite, n).get_data()] = true
-		assert_eq(seen.size(), Sprites.STYLES, sprite)
-
-
-func test_units_and_camps_keep_their_style_1_pictures_in_the_clean_look() -> void:
-	for sprite in Sprites.UNITS.values() + Sprites.CAMPS.values():
-		var seen := {}
-		for n in range(1, Sprites.STYLES):
-			seen[Sprites.image(sprite, n).get_data()] = true
-		assert_eq(seen.size(), 3, "%s: styles 1 to 3 differ" % sprite)
-		assert_eq(_seen(Sprites.image(sprite, Sprites.CLEAN)), _seen(Sprites.image(sprite, 1)), "%s: style 4 is style 1's" % sprite)
+		seen[Sprites.image(sprite).get_data()] = true
+	assert_eq(seen.size(), Sprites.TERRAIN.size() + Sprites.SLOPES.size() + 1)
 
 
 func test_every_sprite_lies_inside_the_atlas_picture() -> void:
 	var atlas: Image = Sprites._atlas
 	for sprite in Sprites.names():
-		for o in Sprites._meta.sprites[sprite].options:
-			assert_ge(o.x, 0)
-			assert_ge(o.y, 0)
-			assert_le(o.x + o.w, atlas.get_width(), sprite)
-			assert_le(o.y + o.h, atlas.get_height(), sprite)
+		var o: Dictionary = Sprites._meta.sprites[sprite]
+		assert_ge(o.x, 0)
+		assert_ge(o.y, 0)
+		assert_le(o.x + o.w, atlas.get_width(), sprite)
+		assert_le(o.y + o.h, atlas.get_height(), sprite)
 
 
-func test_the_style_setting_picks_which_version_you_get() -> void:
-	for n in range(1, Sprites.STYLES + 1):
-		Sprites.style = n
-		assert_eq(Sprites.terrain("sand").get_image().get_data(), Sprites.image("ash_sand", n).get_data(), "style %d" % n)
-		assert_eq(Sprites.unit("car").get_image().get_data(), Sprites.image("war_rig", n).get_data(), "style %d" % n)
-
-
-func test_a_style_can_be_asked_for_directly() -> void:
-	Sprites.style = 3
-	assert_eq(Sprites.texture("scout", 1).get_image().get_data(), Sprites.image("scout", 1).get_data())
+func test_the_pictures_are_what_you_get_for_a_ground_or_a_unit() -> void:
+	assert_eq(Sprites.terrain("sand").get_image().get_data(), Sprites.image("ash_sand").get_data())
+	assert_eq(Sprites.unit("car").get_image().get_data(), Sprites.image("war_rig").get_data())
 
 
 func test_the_art_switches_between_the_pixel_art_and_the_text_glyphs() -> void:
@@ -104,19 +76,14 @@ func test_the_art_switches_between_the_pixel_art_and_the_text_glyphs() -> void:
 	for i in 4:
 		seen.append(Sprites.state())
 		Sprites.cycle()
-	assert_eq(seen, [4, 0, 4, 0], "the clean pixel art, the glyphs, and round again")
-	Sprites.choose(1)
-	Sprites.cycle()
-	assert_eq(Sprites.state(), 4, "from one of the old styles it goes to the pixel art")
+	assert_eq(seen, [Sprites.CLEAN, 0, Sprites.CLEAN, 0], "the pixel art, the glyphs, and round again")
 
 
 func test_choosing_is_limited_to_what_exists() -> void:
 	Sprites.choose(9)
-	assert_eq(Sprites.state(), Sprites.STYLES)
+	assert_eq(Sprites.state(), Sprites.CLEAN, "anything above 0 is the pixel art")
 	Sprites.choose(-4)
 	assert_eq(Sprites.state(), 0)
-	assert_eq(Sprites.choice_name(0), "text glyphs")
-	assert_eq(Sprites.choice_name(2), "style 2")
 
 
 func test_with_the_text_glyphs_chosen_there_are_no_pictures_to_draw() -> void:
@@ -124,29 +91,18 @@ func test_with_the_text_glyphs_chosen_there_are_no_pictures_to_draw() -> void:
 	assert_null(Sprites.terrain("sand"))
 	assert_null(Sprites.unit("scav"))
 	assert_true(Sprites.rects().is_empty())
-	assert_not_null(Sprites.texture("scout", 2), "asking for a style by name still works")
 
 
 func test_every_sprite_has_a_rectangle_inside_the_atlas() -> void:
-	Sprites.choose(1)
+	Sprites.choose(Sprites.CLEAN)
 	var atlas := Sprites.atlas_texture()
-	assert_eq(atlas.get_size(), Vector2(32, 208))
 	var rects := Sprites.rects()
 	assert_eq(rects.size(), 26)
 	for sprite in rects:
 		var r: Rect2 = rects[sprite]
 		assert_eq(r.size, Vector2(Sprites.SIZE, Sprites.SIZE), sprite)
 		assert_true(Rect2(Vector2.ZERO, atlas.get_size()).encloses(r), sprite)
-
-
-func test_the_rectangles_follow_the_style() -> void:
-	Sprites.choose(1)
-	var one: Rect2 = Sprites.rects()["dunes"]
-	Sprites.choose(3)
-	var three: Rect2 = Sprites.rects()["dunes"]
-	assert_ne(one, three)
-	assert_eq(three, Sprites.rect("dunes", 3))
-	assert_eq(one, Sprites.rect("dunes", 1))
+	assert_eq(Sprites.rect("dunes"), rects["dunes"])
 	assert_eq(Sprites.rect("no_such_sprite"), Rect2())
 
 
@@ -200,48 +156,36 @@ func test_unknown_things_have_no_sprite() -> void:
 
 func test_textures_are_cached() -> void:
 	assert_true(Sprites.unit("boat") == Sprites.unit("boat"))
-	assert_false(Sprites.unit("boat") == Sprites.texture("boat", 2))
+	assert_true(Sprites.unit("boat") == Sprites.texture("boat"))
 
 
-# ---------------------------------------------------------------- the clean look (style 4)
+# ---------------------------------------------------------------- the look
 
-func test_the_clean_look_is_style_4_and_the_last_picture_choice() -> void:
-	assert_eq(Sprites.CLEAN, 4)
-	assert_eq(Sprites.STYLES, 4)
-	assert_eq(Sprites.CHOICES, [4, 0], "styles 1 to 3 are not offered any more")
+func test_the_pixel_art_is_the_one_look_and_the_glyphs_the_other() -> void:
+	assert_eq(Sprites.CHOICES, [Sprites.CLEAN, 0])
+	assert_eq(Sprites.SIZE, 16)
 
 
-func test_every_clean_ground_covers_its_whole_tile() -> void:
+func test_every_ground_covers_its_whole_tile() -> void:
 	var grounds: Dictionary = Sprites.TERRAIN.duplicate()
 	grounds["ford"] = Sprites.FORD
 	for id in grounds:
-		var img := Sprites.image(grounds[id], Sprites.CLEAN)
-		for y in 8:
-			for x in 8:
+		var img := Sprites.image(grounds[id])
+		for y in 16:
+			for x in 16:
 				assert_eq(img.get_pixel(x, y).a, 1.0, "%s pixel %d,%d is see-through" % [id, x, y])
 
 
-func test_the_old_looks_leave_the_ground_see_through_so_their_wash_shows() -> void:
-	for id in Sprites.TERRAIN:
-		var img := Sprites.image(Sprites.TERRAIN[id], 1)
-		var clear := 0
-		for y in 8:
-			for x in 8:
-				if img.get_pixel(x, y).a < 1.0:
-					clear += 1
-		assert_gt(clear, 0, id)
-
-
-func test_the_clean_grounds_are_told_apart_by_colour() -> void:
+func test_the_grounds_are_told_apart_by_colour() -> void:
 	# the whole point: two different grounds never share a tile colour (the most common pixel)
 	var common := {}
 	var every: Dictionary = Sprites.TERRAIN.duplicate()
 	every["ford"] = Sprites.FORD
 	for id in every:
 		var counts := {}
-		var img := Sprites.image(every[id], Sprites.CLEAN)
-		for y in 8:
-			for x in 8:
+		var img := Sprites.image(every[id])
+		for y in 16:
+			for x in 16:
 				var c := img.get_pixel(x, y).to_html(false)
 				counts[c] = counts.get(c, 0) + 1
 		var best := ""
@@ -252,13 +196,13 @@ func test_the_clean_grounds_are_told_apart_by_colour() -> void:
 		common[best] = id
 
 
-func test_only_the_hazards_glow_in_the_clean_look() -> void:
+func test_only_the_hazards_glow() -> void:
 	var glows := ["crater", "glass", "waste", "ruins", "ash"]   # the ash keeps its green-yellow flecks lit
 	for id in Sprites.TERRAIN:
-		var img := Sprites.image(Sprites.TERRAIN[id], Sprites.CLEAN)
+		var img := Sprites.image(Sprites.TERRAIN[id])
 		var brightest := 0.0
-		for y in 8:
-			for x in 8:
+		for y in 16:
+			for x in 16:
 				brightest = maxf(brightest, img.get_pixel(x, y).v)
 		if id in glows:
 			assert_gt(brightest, 0.85, "%s should glow" % id)
@@ -268,28 +212,25 @@ func test_only_the_hazards_glow_in_the_clean_look() -> void:
 
 func test_a_clean_slope_is_a_dark_see_through_ledge_along_the_bottom() -> void:
 	for id in ["gentle_slope", "steep_incline"]:
-		var img := Sprites.image(id, Sprites.CLEAN)
-		for x in 8:
-			var c := img.get_pixel(x, 7)
+		var img := Sprites.image(id)
+		for x in 16:
+			var c := img.get_pixel(x, 15)
 			assert_gt(c.a, 0.0, "%s has a ledge pixel at the bottom" % id)
 			assert_lt(c.a, 1.0, "%s is see-through" % id)
 			assert_lt(c.v, 0.2, "%s is dark" % id)
-		for y in 4:
-			for x in 8:
+		for y in 8:
+			for x in 16:
 				assert_eq(img.get_pixel(x, y).a, 0.0, "%s leaves the top of the tile alone" % id)
-	assert_gt(Sprites.image("steep_incline", Sprites.CLEAN).get_pixel(0, 7).a, Sprites.image("gentle_slope", Sprites.CLEAN).get_pixel(0, 7).a,
+	assert_gt(Sprites.image("steep_incline").get_pixel(0, 15).a, Sprites.image("gentle_slope").get_pixel(0, 15).a,
 		"a steep incline is darker than a gentle slope")
 
 
 func test_the_legend_shows_a_clean_slope_over_sand() -> void:
 	Sprites.choose(Sprites.CLEAN)
 	var on_sand := Sprites.slope("gentle").get_image()
-	assert_eq(on_sand.get_pixel(0, 0), Sprites.image("ash_sand", Sprites.CLEAN).get_pixel(0, 0), "the ground is the sand picture")
-	assert_ne(on_sand.get_pixel(0, 7), Sprites.image("ash_sand", Sprites.CLEAN).get_pixel(0, 7), "with the ledge laid over it")
-	assert_eq(on_sand.get_pixel(0, 7).a, 1.0)
-	Sprites.choose(1)
-	assert_eq(Sprites.slope("gentle").get_image().get_data(), Sprites.image("gentle_slope", 1).get_data(), "the old looks show the plain slope")
-	assert_true(Sprites.clean() == false)
+	assert_eq(on_sand.get_pixel(0, 0), Sprites.image("ash_sand").get_pixel(0, 0), "the ground is the sand picture")
+	assert_ne(on_sand.get_pixel(0, 15), Sprites.image("ash_sand").get_pixel(0, 15), "with the ledge laid over it")
+	assert_eq(on_sand.get_pixel(0, 15).a, 1.0)
 
 
 # ---------------------------------------------------------------- building pictures
@@ -309,23 +250,68 @@ func test_the_building_pictures_lie_inside_their_atlas_and_have_a_dark_outline()
 	var atlas := Sprites.building_atlas_texture()
 	assert_not_null(atlas)
 	var img := atlas.get_image()
-	assert_eq(img.get_height(), 8)
+	assert_eq(img.get_height(), 16)
 	for id in Sprites.building_ids():
 		var r := Sprites.building_rect(id)
-		assert_eq(r.size, Vector2(8, 8), id)
+		assert_eq(r.size, Vector2(16, 16), id)
 		assert_true(Rect2(Vector2.ZERO, atlas.get_size()).encloses(r), id)
 		var drawn := 0
 		var dark := 0
-		for y in 8:
-			for x in 8:
+		for y in 16:
+			for x in 16:
 				var c := img.get_pixel(int(r.position.x) + x, y)
 				if c.a > 0.0:
 					drawn += 1
 					if c.v < 0.2:
 						dark += 1
-		assert_gt(drawn, 20, "%s is nearly blank" % id)
-		assert_gt(dark, 3, "%s has no dark outline, so it would melt into the ground" % id)
+		assert_gt(drawn, 60, "%s is nearly blank" % id)
+		assert_gt(dark, 12, "%s has no dark outline, so it would melt into the ground" % id)
 
 
 func test_an_unknown_building_has_no_picture() -> void:
 	assert_eq(Sprites.building_rect("no_such_building"), Rect2())
+
+
+# ---------------------------------------------------------------- the animals and the sites
+
+func test_the_frog_is_32_by_32_and_the_deer_and_bears_16_by_16() -> void:
+	assert_eq(Sprites.animals_texture().get_size(), Vector2(80, 32))
+	assert_eq(Sprites.animal_rect("frog"), Rect2(48, 0, 32, 32))
+	for kind in ["deer", "black_bear", "brown_bear"]:
+		assert_eq(Sprites.animal_rect(kind).size, Vector2(16, 16), kind)
+	var img := Sprites.animals_texture().get_image()
+	var drawn := 0
+	for y in 32:
+		for x in range(48, 80):
+			if img.get_pixel(x, y).a > 0.0:
+				drawn += 1
+	assert_gt(drawn, 300, "the frog fills its 32 x 32 square")
+
+
+func test_every_site_is_a_32_by_32_picture_of_four_16_by_16_tiles() -> void:
+	assert_eq(Sprites.POI_SIZE, 32)
+	assert_eq(Sprites.poi_atlas_texture().get_size(), Vector2(320, 32))
+	for kind in Sprites.poi_kinds():
+		assert_eq(Sprites.poi_rect(kind).size, Vector2(32, 32), kind)
+		for q in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+			var piece := Sprites.poi_quadrant_rect(kind, q)
+			assert_eq(piece.size, Vector2(16, 16), "%s %s" % [kind, q])
+			assert_true(Sprites.poi_rect(kind).encloses(piece))
+
+
+func test_the_16_by_16_originals_of_the_sites_are_kept_for_the_upscale_tool() -> void:
+	assert_true(FileAccess.file_exists("res://art/source/poi_atlas_16.png"))
+	assert_true(FileAccess.file_exists("res://art/source/animals_16.png"))
+	assert_true(FileAccess.file_exists("res://tools/upscale_sites.py"))
+
+
+func test_units_and_camps_have_a_dark_outline_so_they_stand_on_any_ground() -> void:
+	for sprite in Sprites.UNITS.values() + Sprites.CAMPS.values():
+		var img := Sprites.image(sprite)
+		var dark := 0
+		for y in 16:
+			for x in 16:
+				var c := img.get_pixel(x, y)
+				if c.a > 0.0 and c.v < 0.2:
+					dark += 1
+		assert_gt(dark, 8, "%s has no outline" % sprite)

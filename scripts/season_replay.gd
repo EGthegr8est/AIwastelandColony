@@ -38,7 +38,7 @@ const MARCH_PAUSE := 2.0
 const MARCH_BACK_SHARE := 0.85
 
 # The troop marker, 8 x 8 (1 = body, 2 = dark)
-const SOLDIER := ["..1111..", ".111111.", "..1221..", "...11...", ".111111.", "1.1111.1", "..1111..", "..1..1.."]
+const SOLDIER := ["................", ".....111111.....", "....11111111....", "....11222211....", "....11222211....", ".....111111.....", "......1111......", "...1111111111...", "..111111111111..", ".11.11111111.11.", ".11.11111111.11.", ".11..111111..11.", ".....111111.....", ".....11..11.....", ".....11..11.....", "....111..111...."]
 const SOLDIER_COLORS := {"1": Color("c9e07a"), "2": Color("1d2814")}
 
 static var mode := "normal"   # the game always plays the walk at normal speed (there is no setting for it any more); tests set "off" so they do not wait for it

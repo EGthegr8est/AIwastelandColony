@@ -13,7 +13,7 @@ var fx: MapFixture
 
 
 func before_all() -> void:
-	Sprites.choose(1)   # the baselines are the map in pixel-art style 1 (one is in text glyphs)
+	Sprites.choose(1)   # the baselines are the map in pixel art (one is in text glyphs)
 	World.new_game(3)
 	var hq := Game.home(Data.PLAYER)
 	# Something of every kind on the move near home, so the overlays show up
@@ -49,14 +49,6 @@ func test_snapshot_home_in_text_glyphs() -> void:
 	Sprites.choose(0)
 	await fx.view_cell(Game.home(Data.PLAYER), 1.0)
 	await _snap("home_text")
-
-
-func test_snapshot_home_in_each_pixel_art_style() -> void:
-	for style in [2, 3, 4]:
-		Sprites.choose(style)
-		Game.changed.emit()   # the map only redraws when told the game changed
-		await fx.view_cell(Game.home(Data.PLAYER), 1.0)
-		await _snap("home_style%d" % style)
 
 
 func test_snapshot_whole_map_without_fog() -> void:
@@ -200,7 +192,7 @@ func test_switching_the_art_matches_a_fresh_draw() -> void:
 	var hq := Game.home(Data.PLAYER)
 	Game.view = Data.NONE
 	await fx.view_cell(hq, 1.0)
-	for choice in [2, 0, 3, 1]:
+	for choice in [0, 1, 0, 1]:
 		Sprites.choose(choice)
 		Game.changed.emit()
 		await fx.settle(2)

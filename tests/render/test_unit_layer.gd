@@ -65,7 +65,7 @@ func test_the_chunks_do_not_draw_units() -> void:
 
 
 func test_the_unit_layer_uses_the_same_pixel_filter_as_the_tiles() -> void:
-	Sprites.choose(2)
+	Sprites.choose(Sprites.CLEAN)
 	Game.changed.emit()
 	await fx.settle()
 	assert_eq(fx.map.unit_layer.texture_filter, CanvasItem.TEXTURE_FILTER_NEAREST)

@@ -1,5 +1,5 @@
 extends Node2D
-## Draws the map: a pixel-art sprite per tile on a dark cell (art/atlas.png, see sprites.gd), or, with
+## Draws the map: a pixel-art sprite per tile on a dark cell (art/atlas16.png, see sprites.gd), or, with
 ## the text glyphs chosen, Dwarf Fortress style, one colored glyph per tile. Buildings have no sprites
 ## yet, so they are always drawn as text.
 
@@ -7,7 +7,7 @@ const Data = preload("res://scripts/data.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
 const Daylight = preload("res://scripts/daylight.gd")
-# Sprites are 8 x 8, so a 16 pixel cell shows them at exactly 2x: every art pixel the same size,
+# Sprites are 16 x 16, so a 16 pixel cell shows them at exactly 1x: every art pixel the same size,
 # and tiles that meet without gaps.
 const CELL := Vector2(16, 16)
 const FONT_SIZE := 16
@@ -46,10 +46,11 @@ const OWN_TINT := 0.10        # how much of its owner's border colour an owned t
 # or a lake reads as one shape. Where two features meet, the one with the higher number draws the rim.
 const RIM_RANK := {"trees": 1, "grove": 2, "waste": 3, "ruins": 4, "rock": 5, "glass": 6, "crater": 7, "water": 8}
 const RIM_INK := Color(0.07, 0.05, 0.03, 0.5)
-const RIM := 2.0              # one art pixel, in canvas pixels
+const ART_PIXEL := 1.0       # one art pixel, in canvas pixels (the pictures are 16 x 16 on a 16 pixel cell)
+const RIM := ART_PIXEL
 # Roads and the old highway are drawn from rectangles in the clean look: a strip ROAD_WIDTH wide that runs on to the next road, bridge or ford
 # beside it, with a one-art-pixel dark edge. A road is pale packed earth, the old highway cracked grey asphalt.
-const ROAD_WIDTH := 8.0
+const ROAD_WIDTH := 6.0
 const ROAD_FILL := Color("b3a37a")
 const ROAD_EDGE := Color("4a4030")
 const HIGHWAY_FILL := Color("7e7b75")
@@ -57,7 +58,7 @@ const HIGHWAY_EDGE := Color("2b2926")
 enum Shown {HIDDEN, SHOWN, DIM}   # how a unit standing on the map shows, see unit_shown()
 # What stands on the map and moves, drawn every frame in a layer of its own (see UnitLayer)
 const PATCH := Color(0, 0, 0, 0.7)         # the dark square under a unit
-const HOP := 2.0                           # a step: the unit hops this many pixels (one art pixel)
+const HOP := ART_PIXEL                     # a step: the unit hops this many pixels (one art pixel)
 const HOP_HZ := 8.0                        # hops a second while it walks
 const IDLE_STEP := 0.6                     # a parked scouting party bobs one art pixel this often, in seconds
 const IDLE_REDRAW := 0.1                   # the unit layer redraws this often while something idles
@@ -862,11 +863,10 @@ func _draw_dust(layer: CanvasItem, a: Dictionary, day: float) -> void:
 	for p in SeasonReplay.recent(a.trail, day, SeasonReplay.DUST_DAYS):
 		var cell: Vector2i = p[0]
 		var h := absi(hash(cell))
-		var at := (Vector2(cell) * CELL + CELL * 0.5 + Vector2(h % 9 - 4, (h / 9) % 9 - 4)).round()
-		at = (at / 2.0).floor() * 2.0   # on the art pixel grid
+		var at := (Vector2(cell) * CELL + CELL * 0.5 + Vector2(h % 9 - 4, (h / 9) % 9 - 4)).floor()   # on the art pixel grid
 		var c: Color = DUST[a.mover]
 		c.a = DUST_ALPHA * (1.0 - p[1] / SeasonReplay.DUST_DAYS) * alpha
-		layer.draw_rect(Rect2(at, Vector2(2, 2)), c)
+		layer.draw_rect(Rect2(at, Vector2(ART_PIXEL, ART_PIXEL)), c)
 
 
 ## The tiles your parties uncover after `day` of the replay: they stay dark until then.
@@ -902,7 +902,7 @@ func _draw_fires(layer: CanvasItem) -> void:
 		var c: Color = EMBER[n]
 		if Game.view != Data.NONE and not Game.in_sight(Game.view, t.pos):
 			c = c.darkened(0.5)
-		layer.draw_rect(Rect2(Vector2(t.pos) * CELL + Vector2(10, 4 - n % 2 * 2), Vector2(2, 2)), c)
+		layer.draw_rect(Rect2(Vector2(t.pos) * CELL + Vector2(10, 4 - n % 2 * ART_PIXEL), Vector2(ART_PIXEL, ART_PIXEL)), c)
 
 
 # ---------------------------------------------------------------- day and night (the rules are in daylight.gd)

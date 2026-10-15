@@ -119,10 +119,10 @@ func test_the_frog_is_visible_when_any_of_the_four_tiles_it_stands_on_is_in_sigh
 
 func test_every_animal_has_its_picture_in_the_animals_file() -> void:
 	assert_true(Sprites.animals_available())
-	assert_eq(Sprites.animals_texture().get_size(), Vector2(64, 16))
+	assert_eq(Sprites.animals_texture().get_size(), Vector2(80, 32))
 	for kind in Sprites.ANIMALS:
 		var rect := Sprites.animal_rect(kind)
-		assert_eq(rect.size, Vector2(16, 16), kind)
+		assert_eq(rect.size, Vector2(32, 32) if kind == "frog" else Vector2(16, 16), kind)
 		assert_not_null(Sprites.animal(kind))
 	assert_eq(Sprites.animal_rect("dodo").size, Vector2.ZERO)
 
@@ -279,11 +279,11 @@ func test_the_legend_lists_the_animals_and_the_frog() -> void:
 		assert_true(_has_text(name), name)
 
 
-func test_the_legend_pictures_of_the_animals_are_the_16_pixel_ones() -> void:
+func test_the_legend_pictures_of_the_animals_are_their_own_pixels() -> void:
 	Game.selected = Vector2i(-1, -1)
 	Game.changed.emit()
 	await wait_frames(3)
-	var big: Array = hud.boxes["Tile"].find_children("*", "TextureRect", true, false).filter(func(r): return r.texture is AtlasTexture and r.texture.region.size == Vector2(16, 16) and r.texture.atlas == Sprites.animals_texture())
+	var big: Array = hud.boxes["Tile"].find_children("*", "TextureRect", true, false).filter(func(r): return r.texture is AtlasTexture and r.texture.atlas == Sprites.animals_texture())
 	assert_eq(big.size(), 4, "deer, two bears and the frog")
 
 

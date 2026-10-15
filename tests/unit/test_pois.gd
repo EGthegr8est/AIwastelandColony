@@ -115,12 +115,12 @@ func test_every_site_has_its_art_and_a_quarter_for_each_tile() -> void:
 	assert_eq(Sprites.poi_kinds().size(), 10)
 	for kind in Data.POIS:
 		assert_ne(Sprites.poi_rect(kind).size, Vector2.ZERO, kind)
-		assert_eq(Sprites.poi_rect(kind).size, Vector2(16, 16))
+		assert_eq(Sprites.poi_rect(kind).size, Vector2(32, 32))
 		assert_not_null(Sprites.poi_sprite(kind), kind)
 		var seen := {}
 		for q in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
 			var r := Sprites.poi_quadrant_rect(kind, q)
-			assert_eq(r.size, Vector2(8, 8))
+			assert_eq(r.size, Vector2(16, 16))
 			assert_true(Sprites.poi_rect(kind).encloses(r))
 			seen[r.position] = true
 		assert_eq(seen.size(), 4, "four different quarters")

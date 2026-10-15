@@ -1,0 +1,76 @@
+{
+  "sprite_size_px": 16,
+  "tile_footprint": "2x2 tiles of 8x8",
+  "sprites": {
+    "crashed_ship": {
+      "name": "Crashed ship",
+      "x": 0,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "weather_station": {
+      "name": "Weather station",
+      "x": 16,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "chemical_dump": {
+      "name": "Chemical dump",
+      "x": 32,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "radio_tower": {
+      "name": "Radio tower",
+      "x": 48,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "bunker": {
+      "name": "Bunker",
+      "x": 64,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "pumpjack": {
+      "name": "Oil pumpjack",
+      "x": 80,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "water_tower": {
+      "name": "Water tower",
+      "x": 96,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "gas_station": {
+      "name": "Ruined gas station",
+      "x": 112,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "missile_silo": {
+      "name": "Missile silo",
+      "x": 128,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    },
+    "cargo_yard": {
+      "name": "Cargo yard",
+      "x": 144,
+      "y": 0,
+      "w": 16,
+      "h": 16
+    }
+  }
+}

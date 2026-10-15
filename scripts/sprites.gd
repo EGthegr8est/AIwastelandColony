@@ -1,20 +1,18 @@
 extends RefCounted
-## The pixel-art sprites (8 x 8 each) from art/atlas.png, described by art/atlas.json: one picture for
-## every kind of ground, slope, unit and tribe camp. Each comes in four styles, and `style` picks
-## which one the game shows (the legend has buttons to flip between them). Styles 1 to 3 are sparse
-## pictures on a dim ground; style 4 (CLEAN, the default) fills the whole tile with one colour and one bold
-## shape, with its slopes drawn as dark ledges: see tools/make_style4.gd. The atlas is read with
+## The pixel-art sprites (16 x 16 each) from art/atlas16.png, described by art/atlas16.json: one picture for
+## every kind of ground, slope, unit and tribe camp. The look fills the whole tile with one colour and one bold
+## shape, with its slopes drawn as dark ledges: see tools/make_tiles16.gd. `style` is that look (CLEAN) or 0 for the text
+## glyphs (the legend and the field tablet flip between them). The atlas is read with
 ## Image.load_from_file, like the portraits and icons are drawn in code, so it doesn't need importing.
 ## Show the textures with nearest-neighbour filtering to keep the pixels crisp.
 
 const SeasonReplay = preload("res://scripts/season_replay.gd")
-const ATLAS_PNG := "res://art/atlas.png"
-const ATLAS_JSON := "res://art/atlas.json"
-const SIZE := 8
-const STYLES := 4
-## The clean look: every ground picture covers its whole tile, so the map skips the ground wash under it, and it
+const ATLAS_PNG := "res://art/atlas16.png"
+const ATLAS_JSON := "res://art/atlas16.json"
+const SIZE := 16
+## The pixel-art look: every ground picture covers its whole tile, so the map skips the ground wash under it, and it
 ## lays height shades and your territory's tint over the picture instead.
-const CLEAN := 4
+const CLEAN := 1
 
 # Which sprite in the atlas draws each thing in the game
 const TERRAIN := {"sand": "ash_sand", "dunes": "dunes", "scrub": "dead_scrub", "trees": "petrified_wood", "grove": "green_grove",
@@ -25,14 +23,11 @@ const FORD := "ford"
 const UNITS := {"scav": "scavenger", "scout": "scout", "caravan": "caravan", "car": "war_rig", "boat": "boat",
 	"plane": "recon_plane", "bomber": "bomber", "band": "raider_band"}
 const CAMPS := {"raider": "raider_camp", "trader": "trader_camp", "builder": "builder_camp"}
-# A sprite that should always use one particular style, whatever `style` says: {"war_rig": 2}
-const PINNED := {}
 
-## What the legend and the map show: one of the four styles (1 to 4), or 0 for the old text glyphs.
+## What the legend and the map show: the pixel art (CLEAN), or 0 for the old text glyphs.
 static var style := CLEAN
-## The things you can pick: the clean pixel art (4) and the text glyphs (0), which the map-art tablet in the top bar and the legend's buttons flip between. Styles 1 to 3 are
-## no longer offered (their pictures are still in the atlas: the units and camps are drawn from style 1's rows), but `choose` still takes them, so the old drawing is tried by tests.
-const CHOICES := [4, 0]
+## The things you can pick: the pixel art and the text glyphs (0), which the map-art tablet in the top bar and the legend's buttons flip between.
+const CHOICES := [CLEAN, 0]
 
 static var _atlas: Image
 static var _atlas_texture: ImageTexture
@@ -41,7 +36,6 @@ static var _soldier_texture: ImageTexture
 static var _loaded := false
 static var _cache := {}
 static var _rects := {}
-static var _rects_for := -1
 
 
 ## False if the atlas can't be read, in which case everything here returns null and the game shows
@@ -65,14 +59,14 @@ static func terrain(id: String) -> Texture2D:
 ## over ground, so it is shown over a sand tile (on the dark legend panel it would vanish).
 static func slope(id: String) -> Texture2D:
 	var sprite: String = SLOPES.get(id, "")
-	if state() != CLEAN:
-		return texture(sprite)
+	if state() == 0:
+		return null
 	var key := "%s:on_sand" % sprite
 	if not _cache.has(key):
 		if not _meta.get("sprites", {}).has(sprite):
 			return null
-		var img := image(TERRAIN["sand"], CLEAN)
-		img.blend_rect(image(sprite, CLEAN), Rect2i(0, 0, SIZE, SIZE), Vector2i.ZERO)
+		var img := image(TERRAIN["sand"])
+		img.blend_rect(image(sprite), Rect2i(0, 0, SIZE, SIZE), Vector2i.ZERO)
 		_cache[key] = ImageTexture.create_from_image(img)
 	return _cache[key]
 
@@ -87,7 +81,7 @@ static func unit(id: String) -> Texture2D:
 	return texture(UNITS.get(id, ""))
 
 
-## The troop marker (and a hunting party): an 8 x 8 picture drawn from the rows in season_replay.gd, since it is not in the atlas.
+## The troop marker (and a hunting party): a 16 x 16 picture drawn from the rows in season_replay.gd, since it is not in the atlas.
 static func soldier() -> ImageTexture:
 	if _soldier_texture == null:
 		var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
@@ -102,25 +96,21 @@ static func camp(tribe_class: String) -> Texture2D:
 	return texture(CAMPS.get(tribe_class, ""))
 
 
-## What's showing right now: the style (1 to 3), or 0 for the text glyphs, which is also what you get
+## What's showing right now: CLEAN, or 0 for the text glyphs, which is also what you get
 ## if the atlas couldn't be read.
 static func state() -> int:
 	_load()
 	return style if _atlas != null else 0
 
 
-## Picks what the legend and the map show: 1 to 3, or 0 for the text glyphs.
+## Picks what the legend and the map show: the pixel art (any n above 0) or 0 for the text glyphs.
 static func choose(n: int) -> void:
-	style = clampi(n, 0, STYLES)
+	style = CLEAN if n > 0 else 0
 
 
 ## Moves on to the other choice: the clean pixel art, then the text glyphs, then the pixel art again.
 static func cycle() -> void:
 	style = CHOICES[(CHOICES.find(style) + 1) % CHOICES.size()]
-
-
-static func choice_name(n: int) -> String:
-	return "style %d" % n if n > 0 else "text glyphs"
 
 
 ## The whole atlas as one texture. The map draws every sprite from it, so they all batch together.
@@ -133,50 +123,41 @@ static func atlas_texture() -> Texture2D:
 	return _atlas_texture
 
 
-## Where each sprite is in the atlas, in the style that's showing (a sprite can be pinned to another
-## style): {"ash_sand": Rect2(0, 0, 8, 8), ...}. Empty when the text glyphs are showing.
+## Where each sprite is in the atlas: {"ash_sand": Rect2(0, 0, 16, 16), ...}. Empty when the text glyphs are showing.
 static func rects() -> Dictionary:
 	if state() == 0:
 		return {}
-	if _rects_for != style:
-		_rects_for = style
-		_rects = {}
+	if _rects.is_empty():
 		for sprite in _meta.sprites:
 			_rects[sprite] = rect(sprite)
 	return _rects
 
 
-## Where one sprite is in the atlas, in the current style (or `use_style`, 1 to 3).
-static func rect(sprite: String, use_style := 0) -> Rect2:
+## Where one sprite is in the atlas.
+static func rect(sprite: String) -> Rect2:
 	_load()
 	if _atlas == null or not _meta.get("sprites", {}).has(sprite):
 		return Rect2()
-	var options: Array = _meta.sprites[sprite].options
-	var n: int = use_style if use_style > 0 else PINNED.get(sprite, style)
-	var o: Dictionary = options[clampi(n, 1, options.size()) - 1]
+	var o: Dictionary = _meta.sprites[sprite]
 	return Rect2(float(o.x), float(o.y), float(o.w), float(o.h))
 
 
-## The sprite called `sprite` in the current style (or `use_style`, 1 to 3), or null if there's no such
-## sprite, or if the text glyphs are showing.
-static func texture(sprite: String, use_style := 0) -> Texture2D:
+## The sprite called `sprite`, or null if there's no such sprite, or if the text glyphs are showing.
+static func texture(sprite: String) -> Texture2D:
 	_load()
 	if _atlas == null or not _meta.get("sprites", {}).has(sprite):
 		return null
-	if use_style <= 0 and style == 0:
+	if style == 0:
 		return null
-	var n: int = use_style if use_style > 0 else PINNED.get(sprite, style)
-	var key := "%s:%d" % [sprite, n]
-	if not _cache.has(key):
-		_cache[key] = ImageTexture.create_from_image(image(sprite, n))
-	return _cache[key]
+	if not _cache.has(sprite):
+		_cache[sprite] = ImageTexture.create_from_image(image(sprite))
+	return _cache[sprite]
 
 
-## The pixels of one sprite in one style (1 to 3).
-static func image(sprite: String, use_style: int) -> Image:
+## The pixels of one sprite.
+static func image(sprite: String) -> Image:
 	_load()
-	var options: Array = _meta.sprites[sprite].options
-	var o: Dictionary = options[clampi(use_style, 1, options.size()) - 1]
+	var o: Dictionary = _meta.sprites[sprite]
 	var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	img.blit_rect(_atlas, Rect2i(int(o.x), int(o.y), int(o.w), int(o.h)), Vector2i.ZERO)
 	return img
@@ -184,9 +165,10 @@ static func image(sprite: String, use_style: int) -> Image:
 
 # ---------------------------------------------------------------- animals
 
-const ANIMALS := ["deer", "black_bear", "brown_bear", "frog"]   # the order of the 16 x 16 pictures in art/animals.png
+const ANIMALS := ["deer", "black_bear", "brown_bear", "frog"]   # the order of the pictures in art/animals.png: three 16 x 16, then the frog's 32 x 32
 const ANIMALS_PNG := "res://art/animals.png"
 const ANIMAL_SIZE := 16
+const FROG_RECT := Rect2(48, 0, 32, 32)
 static var _animal_cache := {}
 
 
@@ -195,16 +177,18 @@ static func animals_available() -> bool:
 	return picture(ANIMALS_PNG) != null
 
 
-## The whole animals picture as one texture, for the map to draw from (they are not part of the 8 x 8 atlas: they are
-## drawn at their own 16 x 16, one to a tile, and the frog across 2 x 2 tiles).
+## The whole animals picture as one texture, for the map to draw from (they are not part of the atlas: they are
+## drawn at their own size, the deer and bears 16 x 16 on one tile, the frog 32 x 32 across 2 x 2 tiles).
 static func animals_texture() -> Texture2D:
 	return picture(ANIMALS_PNG)
 
 
-## Where an animal's 16 x 16 picture is in that texture, or an empty rectangle for an unknown kind.
+## Where an animal's picture is in that texture, or an empty rectangle for an unknown kind.
 static func animal_rect(kind: String) -> Rect2:
+	if kind == "frog":
+		return FROG_RECT
 	var i := ANIMALS.find(kind)
-	return Rect2(i * ANIMAL_SIZE, 0, ANIMAL_SIZE, ANIMAL_SIZE) if i >= 0 else Rect2()
+	return Rect2(i * ANIMAL_SIZE, 0, ANIMAL_SIZE, ANIMAL_SIZE) if i >= 0 and i < 3 else Rect2()
 
 
 ## One animal's picture as its own texture (for the legend), or null.
@@ -223,9 +207,9 @@ static func animal(kind: String) -> Texture2D:
 
 # ---------------------------------------------------------------- points of interest
 
-const POI_PNG := "res://art/poi_atlas.png"     # one row of 16 x 16 sprites: each is a 2 x 2 tile site
+const POI_PNG := "res://art/poi_atlas.png"     # one row of 32 x 32 sprites: each is a 2 x 2 tile site
 const POI_JSON := "res://art/poi_atlas.json"
-const POI_SIZE := 16
+const POI_SIZE := 32
 static var _poi_meta := {}
 static var _poi_loaded := false
 static var _poi_cache := {}
@@ -252,7 +236,7 @@ static func poi_rect(kind: String) -> Rect2:
 	return Rect2(float(o.x), float(o.y), float(o.w), float(o.h))
 
 
-## One quarter of a site's sprite (`q` is Vector2i(0..1, 0..1)): the 8 x 8 piece one of its four tiles draws.
+## One quarter of a site's sprite (`q` is Vector2i(0..1, 0..1)): the 16 x 16 piece one of its four tiles draws.
 static func poi_quadrant_rect(kind: String, q: Vector2i) -> Rect2:
 	var r := poi_rect(kind)
 	if r.size == Vector2.ZERO:
@@ -293,7 +277,7 @@ static func _load_poi() -> void:
 
 # ---------------------------------------------------------------- buildings (clean look only)
 
-const BUILDING_PNG := "res://art/building_atlas.png"    # one row of 8 x 8 pictures, see tools/make_buildings.gd
+const BUILDING_PNG := "res://art/building_atlas.png"    # one row of 16 x 16 pictures, see tools/make_buildings.gd
 const BUILDING_JSON := "res://art/building_atlas.json"
 static var _building_meta := {}
 static var _building_loaded := false
@@ -304,7 +288,7 @@ static func building_atlas_texture() -> Texture2D:
 	return picture(BUILDING_PNG)
 
 
-## The legend's picture of a road (a pale strip) or of the old highway (grey, with a dash): 8 x 8, drawn here, or null with the text glyphs.
+## The legend's picture of a road (a pale strip) or of the old highway (grey, with a dash): 16 x 16, drawn here, or null with the text glyphs.
 static func road_icon(highway: bool) -> Texture2D:
 	if state() == 0:
 		return null
@@ -314,13 +298,14 @@ static func road_icon(highway: bool) -> Texture2D:
 		var edge := Color("2b2926") if highway else Color("4a4030")
 		var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 		for y in SIZE:
-			img.set_pixel(1, y, edge)
-			img.set_pixel(6, y, edge)
-			for x in range(2, 6):
+			img.set_pixel(3, y, edge)
+			img.set_pixel(12, y, edge)
+			for x in range(4, 12):
 				img.set_pixel(x, y, fill)
 		if highway:
-			for y in [1, 2, 5, 6]:
-				img.set_pixel(3, y, Color("c8c4b8"))
+			for y in [2, 3, 4, 10, 11, 12]:
+				img.set_pixel(7, y, Color("c8c4b8"))
+				img.set_pixel(8, y, Color("c8c4b8"))
 		_cache[key] = ImageTexture.create_from_image(img)
 	return _cache[key]
 
@@ -340,7 +325,7 @@ static func building(id: String) -> Texture2D:
 	return _cache[key]
 
 
-## Where a building's 8 x 8 picture is in that texture, or an empty rectangle if it has none (it is then drawn as its letter).
+## Where a building's 16 x 16 picture is in that texture, or an empty rectangle if it has none (it is then drawn as its letter).
 static func building_rect(id: String) -> Rect2:
 	if id == "ai_airfield":
 		id = "airfield"   # the Rust Kings' airfield is drawn like yours (the map tints it their colour)

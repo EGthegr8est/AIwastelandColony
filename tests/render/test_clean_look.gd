@@ -1,5 +1,5 @@
 extends "res://tests/framework/test_case.gd"
-## The clean look (art style 4) on the map: the ground pictures cover the whole tile and mirror on about half of them,
+## The pixel-art look on the map: the ground pictures cover the whole tile and mirror on about half of them,
 ## height and ownership are faint washes laid over them, a feature (rock, water, ruins...) gets a dark rim where it meets
 ## plainer ground, and camps and buildings stand over the wash. Also the hover label. Most of this is checked on the data the
 ## map collects for a tile, so it runs without a GPU; the pixels themselves are in test_snapshots.
@@ -29,7 +29,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	Sprites.choose(1)
+	Sprites.choose(Sprites.CLEAN)
 	Game.view = Data.PLAYER
 
 
@@ -235,11 +235,11 @@ func test_a_neighbour_you_have_never_seen_gets_no_arm() -> void:
 	assert_eq(_draw(c, Data.NONE, "road", {}, mem).road_fill.size(), 1, "the road beside it is unexplored")
 
 
-func test_the_legend_pictures_of_a_road_and_the_highway_are_8_by_8() -> void:
+func test_the_legend_pictures_of_a_road_and_the_highway_are_16_by_16() -> void:
 	Sprites.choose(Sprites.CLEAN)
 	for highway in [false, true]:
 		var icon := Sprites.road_icon(highway)
-		assert_eq(icon.get_size(), Vector2(8, 8))
+		assert_eq(icon.get_size(), Vector2(16, 16))
 	assert_ne(Sprites.road_icon(false).get_image().get_data(), Sprites.road_icon(true).get_image().get_data())
 	Sprites.choose(0)
 	assert_null(Sprites.road_icon(false), "the text glyphs have none")
@@ -316,11 +316,17 @@ func test_the_rims_of_vertical_sides_stop_short_of_the_corners_a_horizontal_rim_
 	north["t"] = was
 
 
-# ---------------------------------------------------------------- the old looks are left alone
+# ---------------------------------------------------------------- one art pixel
 
-func test_only_the_clean_look_uses_the_extra_passes() -> void:
-	Sprites.choose(1)
-	assert_false(Sprites.clean())
+func test_what_the_code_draws_is_one_art_pixel_wide() -> void:
+	assert_eq(MapView.ART_PIXEL, 1.0, "the pictures are 16 x 16 on a 16 pixel cell")
+	assert_eq(MapView.RIM, MapView.ART_PIXEL)
+	assert_eq(MapView.HOP, MapView.ART_PIXEL)
+
+
+# ---------------------------------------------------------------- the text glyphs are left alone
+
+func test_only_the_pixel_art_uses_the_extra_passes() -> void:
 	Sprites.choose(0)
 	assert_false(Sprites.clean())
 	Sprites.choose(Sprites.CLEAN)

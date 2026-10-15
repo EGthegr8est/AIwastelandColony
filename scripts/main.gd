@@ -5,6 +5,8 @@ const MapView = preload("res://scripts/map_view.gd")
 const Hud = preload("res://scripts/hud.gd")
 const SelfTest = preload("res://scripts/selftest.gd")
 const PAN_SPEED := 700.0
+## The wheel zooms between these, so every art pixel is a whole number of screen pixels (or, below 1, an even half).
+const ZOOM_STEPS := [0.25, 0.5, 1.0, 2.0, 3.0]
 
 var cam := Camera2D.new()
 var _mode_before_fullscreen := Window.MODE_WINDOWED   # what F11 goes back to
@@ -95,12 +97,29 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## The zoom one wheel notch from `zoom`: the next step in or out (the nearest end if it is already there).
+static func zoom_step(zoom: float, in_: bool) -> float:
+	if in_:
+		for s in ZOOM_STEPS:
+			if s > zoom + 0.001:
+				return s
+		return ZOOM_STEPS[ZOOM_STEPS.size() - 1]
+	for i in range(ZOOM_STEPS.size() - 1, -1, -1):
+		if ZOOM_STEPS[i] < zoom - 0.001:
+			return ZOOM_STEPS[i]
+	return ZOOM_STEPS[0]
+
+
+func _zoom_to(z: float) -> void:
+	cam.zoom = Vector2(z, z)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			cam.zoom = (cam.zoom * 1.1).clamp(Vector2(0.25, 0.25), Vector2(3, 3))
+			_zoom_to(zoom_step(cam.zoom.x, true))
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			cam.zoom = (cam.zoom / 1.1).clamp(Vector2(0.25, 0.25), Vector2(3, 3))
+			_zoom_to(zoom_step(cam.zoom.x, false))
 	elif event is InputEventMouseMotion and event.button_mask & (MOUSE_BUTTON_MASK_RIGHT | MOUSE_BUTTON_MASK_MIDDLE):
 		cam.position -= event.relative / cam.zoom.x
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and Game.in_game:

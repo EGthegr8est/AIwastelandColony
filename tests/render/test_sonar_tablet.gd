@@ -28,7 +28,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
-	Sprites.style = 1   # what the other tests start on
+	Sprites.style = Sprites.CLEAN   # what the other tests start on
 	DirAccess.remove_absolute(Music.settings_path)
 
 
@@ -72,7 +72,7 @@ func test_it_is_off_on_the_pixel_art_and_clean_is_what_the_game_starts_on() -> v
 	assert_eq(Sprites.state(), Sprites.CLEAN)
 	assert_false(tablet.is_on)
 	assert_eq(tablet._sprite.animation, &"off")
-	assert_eq(Sprites.style, 4)
+	assert_eq(Sprites.style, Sprites.CLEAN)
 
 
 # ---------------------------------------------------------------- the click
@@ -97,7 +97,7 @@ func test_a_second_click_turns_it_back_to_the_pixel_art() -> void:
 	_click(tablet)
 	await wait_seconds(1.6)
 	_click(tablet)
-	assert_eq(Sprites.state(), Sprites.CLEAN, "the clean pixel art, not an old style")
+	assert_eq(Sprites.state(), Sprites.CLEAN, "the pixel art")
 	assert_false(tablet.is_on)
 	assert_eq(tablet._sprite.animation, &"power_off")
 	await wait_seconds(0.8)
@@ -116,7 +116,7 @@ func test_the_legend_follows_the_map_into_glyphs() -> void:
 	_click(tablet)
 	await wait_frames(3)
 	assert_eq(Sprites.state(), 0)
-	assert_true(hud.boxes["Tile"].find_children("*", "TextureRect", true, false).filter(func(r): return r.texture != null and r.texture.get_size() == Vector2(8, 8)).is_empty(), "the legend has no pictures left")
+	assert_true(hud.boxes["Tile"].find_children("*", "TextureRect", true, false).filter(func(r): return r.texture != null and r.texture.get_size() == Vector2(16, 16) and not (r.texture is AtlasTexture and r.texture.atlas == Sprites.animals_texture())).is_empty(), "the legend has no pictures left")
 
 
 func test_only_the_tablets_own_pixels_are_clickable() -> void:
@@ -144,15 +144,15 @@ func test_the_legends_buttons_move_the_tablet_without_a_sound() -> void:
 	assert_false(tablet._sfx_off.playing)
 
 
-func test_one_of_the_old_styles_counts_as_the_pixel_art_and_the_tablet_is_off() -> void:
-	Sprites.choose(2)
+func test_the_pixel_art_means_the_tablet_is_off() -> void:
+	Sprites.choose(Sprites.CLEAN)
 	hud.refresh()
 	assert_false(tablet.is_on)
 	_click(tablet)
 	assert_eq(Sprites.state(), 0)
 	await wait_seconds(1.6)
 	_click(tablet)
-	assert_eq(Sprites.state(), Sprites.CLEAN, "and back from the glyphs it is the clean look, not style 2")
+	assert_eq(Sprites.state(), Sprites.CLEAN, "and back from the glyphs it is the pixel art")
 
 
 # ---------------------------------------------------------------- the blip
