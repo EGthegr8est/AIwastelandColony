@@ -147,7 +147,7 @@ A tile is 16 pixels wide, so every sprite shows at exactly 1x, crisp, with no ga
   **Buildings have pictures** (22, the two bridges among them), each with a dark outline, as do the units and camps. Roads are drawn from rectangles (see "Roads and the old highway"). The pictures are text rows in
   `tools/make_tiles16.gd` (the grounds, ledges, units and camps) and `tools/make_buildings.gd`: edit the rows and run the tool (the command is in each file's header). The frog and the 10 sites are 2x upscales of
   their 16 x 16 originals in `art/source/` (`tools/upscale_sites.py`, Scale2x): they have the new pixel size but not new detail yet, and are the next pictures to redraw by hand. In the text look a building is its letter.
-- **Zoom.** The wheel steps between 0.25, 0.5, 1, 2 and 3 (`Main.ZOOM_STEPS`), so a pixel is never uneven on screen. Code-drawn marks (rims, dust, camp embers, a hopping party) are one art pixel, `MapView.ART_PIXEL`.
+- **Zoom.** The wheel steps between 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5 and 3 (`Main.ZOOM_STEPS`). At 0.5, 1, 2 and 3 every art pixel is the same size on screen; at the steps between, some are a little wider than others. One wheel notch moves one step. Code-drawn marks (rims, dust, camp embers, a hopping party) are one art pixel, `MapView.ART_PIXEL`.
 - **Hover.** Move the mouse over a tile and a small label names it: what stands there, the ground and its height ("Farm on Ash sand, +5 m"), or "Unexplored". It is drawn at one size whatever the zoom,
   stays inside the window and is hidden while the mouse is over a panel.
 - **Speed.** Every sprite is drawn from one atlas texture, so they batch: an idle frame takes about 100 draw calls where the glyphs took about 380. See `rendering_perf.md`.

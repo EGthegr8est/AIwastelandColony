@@ -21,7 +21,7 @@ Saves live in `%APPDATA%\Godot\app_userdata\Wasteland Colony\saves\` (and the se
 ## Controls and interface
 The layout is designed for 1600 x 900 and scaled to the window (`Main._fit_window`, content scale mode `canvas_items`); **F11** toggles fullscreen.
 
-- **The map:** WASD or arrows pan, the wheel zooms (in whole steps, 0.25x to 3x), right-drag pans. Left-click a tile to inspect, claim or build on it; click one of your scouting parties to pick it. Hover a tile for a label.
+- **The map:** WASD or arrows pan, the wheel zooms (9 steps from 0.25x to 3x, a notch a step), right-drag pans. Left-click a tile to inspect, claim or build on it; click one of your scouting parties to pick it. Hover a tile for a label.
 - **The top bar** (76 px): the status line and the eight resources, a music slider, then three animated pixel-art buttons drawn 20% bigger (`Hud.BAR_ART_SCALE`) and the text buttons:
   - the **radiation meter** (**R**) flips the radiation view; the **field tablet** (**M**) flips the map between pixel art and ASCII; the **END SEASON window** (**E**) ends the season;
   - **Save** (F5), **Load** (F9), **Menu** (Esc).

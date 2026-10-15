@@ -5,8 +5,8 @@ const MapView = preload("res://scripts/map_view.gd")
 const Hud = preload("res://scripts/hud.gd")
 const SelfTest = preload("res://scripts/selftest.gd")
 const PAN_SPEED := 700.0
-## The wheel zooms between these, so every art pixel is a whole number of screen pixels (or, below 1, an even half).
-const ZOOM_STEPS := [0.25, 0.5, 1.0, 2.0, 3.0]
+## The wheel zooms between these. 0.5, 1, 2 and 3 keep every art pixel the same size on screen; the steps between them (0.75, 1.25, 1.5, 2.5) are smoother but make some pixels a little wider than others.
+const ZOOM_STEPS := [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
 
 var cam := Camera2D.new()
 var _mode_before_fullscreen := Window.MODE_WINDOWED   # what F11 goes back to
