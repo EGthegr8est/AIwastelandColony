@@ -5,6 +5,7 @@ extends "res://tests/framework/test_case.gd"
 const Data = preload("res://scripts/data.gd")
 const Daylight = preload("res://scripts/daylight.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
+const KeyHints = preload("res://scripts/key_hints.gd")
 
 
 func before_each() -> void:
@@ -126,12 +127,11 @@ func test_the_switch_is_saved_and_read_back() -> void:
 
 
 func test_saving_the_switch_keeps_the_other_settings_in_the_file() -> void:
-	SeasonReplay.mode = "fast"
-	SeasonReplay.save_mode()
+	KeyHints.set_enabled(false)
 	Daylight.set_enabled(false)
-	SeasonReplay.mode = "normal"
-	SeasonReplay.load_mode()
-	assert_eq(SeasonReplay.mode, "fast", "the walk speed is still there")
+	KeyHints.enabled = true
+	KeyHints.load_setting()
+	assert_false(KeyHints.enabled, "the key hints setting is still there")
 	Daylight.enabled = true
 	Daylight.load_setting()
 	assert_false(Daylight.enabled)

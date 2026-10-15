@@ -68,9 +68,11 @@ warning, where saves live). The zip lands in `..\WastelandColony3-release\`: sen
 - **WASD / arrows**: pan. **Mouse wheel**: zoom. **Right-drag**: pan. **F11**: fullscreen, and back to the window (or maximized) it came from.
 - **Left-click** a tile to inspect, claim or build on it. Click one of your scouting parties to pick it. **Esc** deselects it.
 - **END SEASON** runs gather, upkeep and the AI turn, then autosaves, and the map plays the season's walking back (see "The living map").
-  While that is playing, the button only skips it.
-- **Walk: Normal / Fast / Off** (top bar) is the speed of that replay. A click on the map or Enter skips it too (Space is the die's key).
-- **Map: ...** button (top bar) switches whose knowledge the map shows: yours, the Rust Kings', or no fog (debug).
+  While that is playing, the button only skips it. The button is the **window** in the top bar (`scripts/end_season_button.gd`, `art/end_season_sheet.png`, `tools/make_end_season.py`): it shows
+  the sky the season is in, the day in Spring and Autumn and the night (moon, stars, a campfire) in Summer and Winter, and clicking it (or pressing E) plays the sun setting or the dawn,
+  stretched to the 3 seconds the map takes to fade, so the window and the map turn together. With the Night switch off the sky never changes and the window just takes a press.
+- **The walk always plays at normal speed** (a whole season in 3 seconds; there is no Walk button or setting any more). A click on the map or Enter skips it (Space is the die's key).
+- There is no "Map: ..." button any more (it was a debug tool for seeing the Rust Kings' knowledge, or no fog): `Game.view` and `Game.cycle_view()` are still there for the tests.
 - **Space** is the die's key: with a party at a site and its die on the Tile panel, Space rolls it (the same as clicking the die), and once the number has landed and sat
   for a second it moves on. It does nothing when no die is showing, and it no longer skips the season's walk (Enter and a click do).
 - **R** flips the radiation view from anywhere in the game, whichever tab is up: the same as clicking the radiation meter (the view flips at once, the meter plays its
@@ -79,6 +81,32 @@ warning, where saves live). The zip lands in `..\WastelandColony3-release\`: sen
   one for each number it can land on: the plain 8-bit roll with the chips and cracks a low roll breaks off the die mixed in, a 20 clean, at the animation's 1.25x), the radiation
   meter (`audio/rad_meter_on.wav`, which ends in a hum that loops while the radiation view is on, and `rad_meter_off.wav`) and the map-art tablet's blip
   (`audio/sonar_tablet_blip.wav`, made by `tools/make_sonar_blip.py`). The meter's hum waits while a menu is up and stops when you leave the game.
+
+## The panels and the keys
+The interface was made bigger and thinner (plan: "UI: Cleaner Panels, Bigger Buttons, Hotkeys"; the sizes are constants at the top of `scripts/hud.gd`).
+- **Sizes.** A button in a panel is **40 px tall with 17 px text** (it was 22 and 15); the top bar is **76 px** with **56 px** buttons (it was 58); the side panel is **460 px wide**
+  (it was 404); the log shows **5 lines** until you click it, which gives it the whole strip, and a click shrinks it again.
+- **The Tile tab.** The header is one line (tile, ground, owner, height, with the ground's speed on hover), the radiation, and one travel line from your HQ
+  (`HQ:  On foot 4 d   Horseback 2 d   War rig 1 d`; a way that does not exist says "no way", with why on hover). **A building is one row**: its name on the left, its cost on the
+  right, what it does on hover. A building you cannot build yet is a **dim row in the same place** that says why where the cost was ("Needs upgrade: Palisades"), so its number
+  never moves. Sending a party is a row too ("Scavenge on foot", "3 crew, 3 grain, 82 days there"); a name and reason too long for one line take two.
+- **The Upgrades tab** is one block per branch: a header with a dot for each tier (filled once bought) that you click to open or close, then only the **next upgrade to buy**
+  (and the next vehicle upgrade of a leader branch). What an upgrade does is on hover. About a dozen rows instead of 36 buttons.
+- **The Colony tab** lists the vehicles as rows ("Horses  0 (0 out)", with "Build: 4 wood, 6 grain" on the right and the attack, caravan gold and upkeep on hover).
+- **The "?"** at the right of each tab's first line shows and hides the explanations that used to be paragraphs between the buttons (how scouts and food work, what commits you to
+  a branch, how the colony eats). It is `help_open` in the Hud, and the text is `_tile_help`, `_colony_help` and the Upgrades block in `_refresh_upgrades`.
+- **Keys.** The digits **1 to 9 and 0 press the first ten buttons of the open tab, from the top** (a key cap on each button shows its number; 0 is the tenth); a locked button says
+  why in the log instead. **Backspace** is the leave button of a party's panel (Leave without searching, Back off, Give up the hunt, Head home with the find) and **Del** demolishes
+  the picked tile's building. **Priority letters**, which replace the digit on the cap but leave it working: **F** farm, **P** palisade wall, **O** road (a bridge on a river tile),
+  **L** hunting lodge (they build on the picked tile and say why when they cannot), and **Z, X, C** send a party on foot, on horseback, by war rig, whichever the picked tile calls for: scavengers to a
+  ruin, site or crater, a hunting party to an animal or the Giant Frog, scouts to any other ground that is not yours. **Global keys:** **E** END SEASON, **M** the map art (the tablet: pixel art or ASCII), **N** night, **F5** the save menu, **F9** the load menu,
+  **F1 to F4** open the Tile, Upgrades, Colony and Diplomacy tabs and **Tab** / **Shift+Tab** cycle them (the tabs say so on hover). **?** opens the key sheet, every key on one page
+  (`_build_key_sheet`, `KEY_SHEET`; the legend has an "All the keys (?)" button too), and **?**, **Esc** or a click closes it; no other key answers while it is up.
+  **Esc** lets go of a picked party, then opens the menu, then resumes. With Space (the die), Enter (skip the walk) and R (radiation), that is the whole set. Keys do nothing over a
+  menu, the title, an ending or a picture, and none works with Ctrl, Alt or Meta held.
+- **Key hints.** The caps can be switched off with **Key hints: On / Off** (in the legend, the menus and the title screen; saved as `display/key_hints` in `settings.cfg`, on by
+  default). `scripts/key_hints.gd` holds the setting. The keys work whether or not the caps show.
+- **The walk** always plays at normal speed: there is no Walk button or setting (`SeasonReplay.mode` is only set to "off" by the tests). A click or Enter skips it.
 
 ## The living map
 END SEASON still decides everything at once, but the map then plays the season back so you can watch it (`scripts/season_replay.gd`).
@@ -101,7 +129,6 @@ is 40 days), plus what happened (`Units.replay`, handed to the map by `Game.seas
   fight is decided at the button press as before; the march is only the picture.
 - **Skipping.** The replay and the march are skipped by a click on the map, Enter, or pressing END SEASON (that press does not
   end another season). If a season ends the game, the ending screen waits for the replay to finish or be skipped.
-- **Walk: Off** (top bar, remembered in `settings.cfg`) turns all of this off, camp fires and bobbing included.
 - **Units have a layer of their own.** `MapView.UnitLayer` draws the units and camp fires every frame over the cached map chunks, so a
   moving unit redraws no tiles. `tests/unit/test_season_replay.gd`, `tests/render/test_unit_layer.gd` and
   `tests/render/test_season_replay_map.gd` pin all of it; the test run sets the speed to Off.
@@ -111,7 +138,7 @@ Each season the map fades between daylight and moonlight, so you notice the turn
 night** (two days and two nights a year); the top bar says so ("Year 3, Autumn (day)"). It is looks only: sight, travel, raids and every
 other rule ignore it. The rules are in `scripts/daylight.gd`; `scripts/map_view.gd` draws them.
 - **The fade.** The light follows the season number, so saves hold nothing for it. When END SEASON plays, the light moves from the old
-  season's level to the new one over about 3 seconds (1.2 on the Fast walk setting, and Walk: Off uses that too): slowly, never a snap.
+  season's level to the new one over about 3 seconds (the tests, which run with the walk off, use 1.2): slowly, never a snap.
   Skipping the walk does not cut it short. A new game or a loaded one goes straight to its light.
 - **The dark.** One moon-blue layer is multiplied over the ground and buildings (`Daylight.NIGHT`: dark, but the grounds stay apart). It is a
   single rectangle whose strength is the light, so no tile is redrawn while it fades. The panels, hover label and selection marks stay as
@@ -123,7 +150,7 @@ other rule ignore it. The rules are in `scripts/daylight.gd`; `scripts/map_view.
 - **What is on the ground.** Your own parties keep their colours and carry a small, dim glow. Wild animals (deer, bears, the frog) never glow and go
   dark with the ground, and so do enemy parties (`Daylight.THINGS_SHARE`: a band stays easy to see), except an enemy party standing in ruins, which
   lights the ruins and is lit by them.
-- **Switch.** **Night: On / Off** in the legend, next to the art style buttons; it is saved in `settings.cfg` with the Walk speed. Off keeps it day.
+- **Switch.** **Night: On / Off** in the legend, next to the art style buttons; it is saved in `settings.cfg`. Off keeps it day.
 - **Tuning.** `NIGHT`, `THINGS_SHARE`, the `HALOS` (colour, radius, strength) and `REMEMBERED_GLOW` in `scripts/daylight.gd`; the fade length follows
   `SeasonReplay.SECONDS`. The test setup (`tests/setup.gd`) keeps it day, so no snapshot depends on the season; `tests/unit/test_daylight.gd` and
   `tests/render/test_night.gd` cover the night.
@@ -704,7 +731,7 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/game.gd` | Autoload `Game`. The whole simulation, plus save/load (JSON in `user://saves/`). |
 | `scripts/map_view.gd` | Draws the map: pixel-art sprites, or colored text glyphs. Units and camp fires are drawn by its own layer, it plays the season replay, and it draws the night, the glows and the hover label. |
 | `art/animals.png` | The deer, black bear, brown bear and Giant Frog, four 16 x 16 pictures in a row (made from the SVGs in `Usable Art/ANIMALS`). |
-| `scripts/season_replay.gd` | The season replay: where a unit is on a given day, the replay's length, the troop march, and the Walk speed setting. |
+| `scripts/season_replay.gd` | The season replay: where a unit is on a given day, the replay's length, and the troop march. |
 | `scripts/daylight.gd` | Day and night: which seasons are day, the light, what the ground and the things on it are multiplied by, the halos, and the Night switch. |
 | `tools/make_nuke_sprites.gd` | Adds the scorched ash and bomber pictures to the end of `art/atlas.png` and `art/atlas.json` (run it again and it rewrites those two rows). |
 | `tools/make_style4.gd`, `tools/make_buildings.gd` | Bake the clean look's ground pictures (and the ford) and the 22 building pictures (drawn as text rows in these files) into `art/atlas.png` and `art/building_atlas.png`. |
@@ -713,8 +740,10 @@ both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu musi
 | `scripts/leaders.gd` | The leaders: names, the perks and flaws, making three at random, and finding their pictures in `art/leaders/`. |
 | `scripts/icons.gd` | The small pixel icons for how a party travels. |
 | `scripts/geiger.gd` | The Geiger counter dial. |
+| `scripts/end_season_button.gd` | The END SEASON button in the top bar: the artist's window (`art/end_season_sheet.png`, 64 x 40) that sets into the night and dawns into the day. `tools/make_end_season.py` draws the sheet (needs Python with Pillow). |
 | `scripts/sonar_tablet_button.gd` | The map-art switch in the top bar: the rad meter's script with the field tablet's frames (`art/sonar_tablet_sheet.png`), lying on its side. |
 | `d20_dice/audio/` | The die's 8-bit sounds (a roll for each number 1 to 20, the stems and the chips and cracks; see its README). |
+| `scripts/key_hints.gd` | The "Key hints" setting: whether the buttons show their key caps. |
 | `scripts/rad_meter_button.gd` | The radiation view's switch in the top bar: the animated survey meter (`art/rad_meter_sheet.png`), turned to lie on its side. `tools/make_rad_meter.py` draws the sheet (needs Python with Pillow). |
 | `art/scenes/` | The pictures of the ten points of interest, shown in the bottom right corner when you pick one. |
 | `scripts/fuel_gauge.gd` | The three fuel gauges (war rig, plane, boat). |

@@ -15,7 +15,8 @@ signal switched(is_on: bool)
 signal settled(is_on: bool)
 
 @export var sheet: Texture2D
-@export_range(1, 8) var pixel_scale: int = 3:
+## Screen pixels to a pixel of the art: whole numbers keep every pixel square, a fraction (the top bar draws these buttons at 1.2) makes some of them a little wider.
+@export_range(1.0, 8.0, 0.05) var pixel_scale: float = 3.0:
 	set(value):
 		pixel_scale = value
 		_apply_scale()
@@ -218,7 +219,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _has_point(point: Vector2) -> bool:
-	var p := Vector2i(point / float(pixel_scale))
+	var p := Vector2i(point / pixel_scale)
 	var cell := cell_size()
 	if p.x < 0 or p.y < 0 or p.x >= cell.x or p.y >= cell.y:
 		return false

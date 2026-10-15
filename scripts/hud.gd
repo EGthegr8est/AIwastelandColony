@@ -8,6 +8,8 @@ const Icons = preload("res://scripts/icons.gd")
 const Geiger = preload("res://scripts/geiger.gd")
 const RadMeter = preload("res://scripts/rad_meter_button.gd")
 const SonarTablet = preload("res://scripts/sonar_tablet_button.gd")
+const EndSeasonButton = preload("res://scripts/end_season_button.gd")
+const KeyHints = preload("res://scripts/key_hints.gd")
 const FuelGauge = preload("res://scripts/fuel_gauge.gd")
 const Sprites = preload("res://scripts/sprites.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
@@ -40,8 +42,33 @@ const GREEN := Color("a8d060")
 const BG := Color(0.07, 0.05, 0.03, 0.95)
 const SLOTS := ["slot1", "slot2", "slot3", "autosave"]
 const BOTTOM_HEIGHT := 190
+# The sizes of the bigger UI (docs: "UI: Cleaner Panels, Bigger Buttons, Hotkeys"): a button in a panel is 40 px tall with 17 px text (it was 22 and 15), the top bar is 76 px
+# with 56 px buttons (it was 58), the side panel is 460 px wide (it was 404) and the log shows 5 lines until you click it.
+const BUTTON_HEIGHT := 40
+const BUTTON_FONT := 17
+const BAR_HEIGHT := 76
+const BAR_BUTTON_HEIGHT := 56
+const BAR_FONT := 18
+const SIDE_WIDTH := 460
+const LOG_LINES := 5
+# The keys of the interface (docs: "UI: Cleaner Panels, Bigger Buttons, Hotkeys", decisions 11, 12, 13 and 15). The digits 1 to 9 and 0 press the open tab's first ten buttons from
+# the top, Backspace is the leave button of a party's panel and Del demolishes; these letters build on the picked tile and send a party out on foot, on horseback or by war rig:
+# scavengers to a ruin, site or crater, a hunting party to an animal, scouts to ground that is not yours (see _send_plan).
+const BUILD_KEYS := {"farm": "F", "wall": "P", "road": "O", "bridge": "O", "lodge": "L"}
+const SEND_KEYS := {"foot": "Z", "horse": "X", "car": "C"}
+# The key sheet (the ? key, decision 14): two columns of [key, what it does]; a row with no text is a heading.
+const KEY_SHEET := [
+	[["The game", ""], ["E", "End season"], ["Enter", "Skip the walk"], ["Space", "Roll the die"], ["R", "Radiation view"], ["M", "Map art: pixel art or text"],
+		["N", "Night on or off"], ["F5  F9", "Save, Load"], ["Esc", "Let go, then the menu"], ["F11", "Fullscreen"]],
+	[["The map", ""], ["W A S D  arrows", "Pan"], ["Wheel", "Zoom"], ["Right-drag", "Pan"], ["The panels", ""], ["F1 - F4", "Tile, Upgrades, Colony, Diplomacy"],
+		["Tab", "Next tab (Shift+Tab: back)"], ["1 - 9, 0", "The panel's first ten buttons"], ["Backspace", "Leave / back off / cancel"], ["Del", "Demolish"],
+		["F  P  O  L", "Build: farm, wall, road, hunting lodge"], ["Z  X  C", "Send a party: foot, horse, war rig"], ["?", "This sheet"]],
+]
 const SONAR_TABLET_SHEET := "res://art/sonar_tablet_sheet.png"   # the map-art switch in the top bar: this tablet, laid on its side like the meter
 const SONAR_TABLET_BLIP := "res://audio/sonar_tablet_blip.wav"   # its click: a short 8-bit blip (tools/make_sonar_blip.py)
+const BAR_ART_SCALE := 1.2   # the three animated buttons in the top bar (the meter, the tablet and the END SEASON window) are drawn 20% bigger than the art: 76.8 x 48 each, in the same 76 px bar
+const END_SEASON_CLICK_SOUND := "res://audio/end_season_click.wav"   # a very simple door click, made by tools/make_door_click.py: plays when the window has finished its sunset or dawn
+const END_SEASON_SHEET := "res://art/end_season_sheet.png"   # the END SEASON button: a window on the wasteland that shows the day or the night the season is in, 64 x 40
 const RAD_METER_SHEET := "res://art/rad_meter_sheet.png"   # the radiation view's switch in the top bar: this meter, laid on its side, 64 x 40 at its own pixel size
 
 var root := Control.new()
@@ -54,6 +81,16 @@ var legend_cache: VBoxContainer   # the legend (what the Tile tab shows with not
 var legend_key := ""              # what it was made for: the art style and the Night switch are all that change it
 var strike_armed := Vector2i(-1, -1)   # the tile whose Nuclear strike button has been pressed once: the next press sends the bomber
 var log_text := RichTextLabel.new()
+var log_panel := PanelContainer.new()   # the log's panel: 5 lines tall until you click it, then the height of the strip
+var log_expanded := false
+var help_open := {}                     # tab name -> whether its "?" explanations are showing
+var open_branches := {}                 # upgrade branch -> whether it is open on the Upgrades tab (open unless it says false)
+var numbered := {}                      # tab name -> its numbered buttons, top to bottom: the digit keys press them
+var top_caps := []                      # [button, key] for the top bar's key caps
+var loose_caps := []                    # the key caps that stand beside the meter and the tablet
+var save_button: Button
+var load_button: Button
+var menu_button: Button
 var bottom := HBoxContainer.new()        # the strip along the bottom: selected party, then the log
 var party_panel := PanelContainer.new()  # who you have selected, StarCraft style: a portrait each
 var party_row := HBoxContainer.new()
@@ -68,11 +105,9 @@ var title_screen := ColorRect.new()      # the main menu: the title art, with th
 var title_art := TextureRect.new()
 var title_buttons := HBoxContainer.new()
 var music_sliders: Array = []            # [slider, reading] for each volume slider on screen
-var view_button: Button
 var rad_meter: Control   # the radiation view's switch (a RadMeter): the artist's survey meter, which plays its power-on and power-off animations when clicked
 var sonar_tablet: Control   # the map art's switch (a SonarTablet): off shows the clean pixel-art map, on shows it in text glyphs
-var walk_button: Button
-var end_button: Button
+var end_button: Control   # END SEASON (an EndSeasonButton): the window that sets into the night and dawns into the day as the seasons turn
 var dice: Control                       # the one clickable d20 (see d20_dice/), moved into whichever panel shows it
 var dice_holder := Control.new()         # gives the scaled die its room in a panel
 var dice_sfx := AudioStreamPlayer.new()  # the sound of the roll, chosen by the number it lands on
@@ -88,6 +123,7 @@ var hollow_fit := AspectRatioContainer.new()
 var hollow_art := TextureRect.new()
 var hollow_title := Label.new()          # a title card that stands in for the picture if it can't be read
 var hollow_note := Label.new()
+var key_sheet := ColorRect.new()         # every key on one sheet, over the game: opened and closed with ? (see _build_key_sheet)
 var side_panel: PanelContainer           # the panel of tabs down the right: shorter while a point of interest's picture sits under it
 var scene_panel := PanelContainer.new()  # the picture of the point of interest you have picked, in the bottom right corner (see _sync_scene)
 var scene_art := TextureRect.new()
@@ -116,8 +152,10 @@ func _ready() -> void:
 	_build_dice()
 	_build_ending()
 	_build_hollow_screen()
-	SeasonReplay.load_mode()   # the speed of the season replay you last chose, if you chose one
+	_build_key_sheet()
 	Daylight.load_setting()    # and whether you switched the night off
+	KeyHints.load_setting()    # and whether the buttons show their keys
+	_apply_key_hints()
 	Game.game_ended.connect(_on_game_ended)
 	Game.hollow_mile_found.connect(_on_hollow_found)
 	Game.changed.connect(refresh, CONNECT_DEFERRED)
@@ -146,8 +184,9 @@ func _panel(anchors: Array, offsets: Array) -> PanelContainer:
 
 
 func _build_top_bar() -> void:
-	var p := _panel([0, 0, 1, 0], [0, 0, 0, 58])
+	var p := _panel([0, 0, 1, 0], [0, 0, 0, BAR_HEIGHT])
 	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)   # the bar is full: the resources need every pixel
 	p.add_child(row)
 	top_text.bbcode_enabled = true
 	top_text.fit_content = true
@@ -155,16 +194,19 @@ func _build_top_bar() -> void:
 	top_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(top_text)
 	_music_row(row, false)   # a fixed size: the resource text beside it needs the room
-	view_button = _button(row, "Map: you", Game.cycle_view)
-	view_button.tooltip_text = "Switch whose knowledge the map shows: what you know, what the Rust Kings know, or everything (no fog, for debugging)"
 	_build_rad_meter(row)
+	_corner_cap(rad_meter, "R")
 	_build_sonar_tablet(row)
-	walk_button = _button(row, "Walk: Normal", _cycle_walk)
-	walk_button.tooltip_text = "How fast the map plays back each season's walking: Normal, Fast or Off (no animation at all). A click, Space or Enter skips it."
-	end_button = _button(row, "END SEASON", end_season_pressed)
-	_button(row, "Save", show_save_menu)
-	_button(row, "Load", show_load_menu)
-	_button(row, "Menu", show_main_menu)
+	_corner_cap(sonar_tablet, "M")
+	var end_cap := _cap("E")   # beside the window, not over it: the window's picture is the button
+	end_cap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(end_cap)
+	loose_caps.append(end_cap)
+	_build_end_button(row)
+	save_button = _bar_button(row, "Save", show_save_menu)
+	load_button = _bar_button(row, "Load", show_load_menu)
+	menu_button = _bar_button(row, "Menu", show_main_menu)
+	top_caps = [[save_button, "F5"], [load_button, "F9"], [menu_button, "Esc"]]
 
 
 ## The radiation view's switch: the survey meter lying on its side (a quarter turn clockwise, so its ground shadow still falls downward) to fit the bar. Clicking it flips
@@ -172,7 +214,7 @@ func _build_top_bar() -> void:
 func _build_rad_meter(row: HBoxContainer) -> void:
 	rad_meter = RadMeter.new()
 	rad_meter.turn = 1
-	rad_meter.pixel_scale = 1
+	rad_meter.pixel_scale = BAR_ART_SCALE
 	rad_meter.sheet = Sprites.picture(RAD_METER_SHEET)
 	rad_meter.on_sound = _sound(RAD_METER_ON_SOUND)
 	rad_meter.off_sound = _sound(RAD_METER_OFF_SOUND)
@@ -189,13 +231,13 @@ func _build_rad_meter(row: HBoxContainer) -> void:
 func _build_sonar_tablet(row: HBoxContainer) -> void:
 	sonar_tablet = SonarTablet.new()
 	sonar_tablet.turn = 1
-	sonar_tablet.pixel_scale = 1
+	sonar_tablet.pixel_scale = BAR_ART_SCALE
 	sonar_tablet.sheet = Sprites.picture(SONAR_TABLET_SHEET)
 	var blip := _sound(SONAR_TABLET_BLIP)
 	sonar_tablet.on_sound = blip
 	sonar_tablet.off_sound = blip
 	sonar_tablet.sound_bus = Music.BUS
-	sonar_tablet.tooltip_text = "Map art: the pixel-art map, or text glyphs (the old Dwarf Fortress look)"
+	sonar_tablet.tooltip_text = "Map art (%s): the pixel-art map, or text glyphs (the old Dwarf Fortress look)" % OS.get_keycode_string(KEY_M)
 	sonar_tablet.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	sonar_tablet.switched.connect(_on_sonar_switched)
 	sonar_tablet.settled.connect(func(_on): _sync_sonar_tablet())
@@ -204,6 +246,28 @@ func _build_sonar_tablet(row: HBoxContainer) -> void:
 
 func _on_sonar_switched(on: bool) -> void:
 	_set_art_style(0 if on else Sprites.CLEAN)
+
+
+## END SEASON: the salvaged window over the wasteland. It shows the sky the season is in (the day in a day season, the night in a night one); a click ends the season (see
+## end_season_pressed), and the sun sets or the dawn comes in the window while the map fades to match.
+func _build_end_button(row: HBoxContainer) -> void:
+	end_button = EndSeasonButton.new()
+	end_button.pixel_scale = BAR_ART_SCALE
+	end_button.sheet = Sprites.picture(END_SEASON_SHEET)
+	end_button.latch_sound = _sound(END_SEASON_CLICK_SOUND)
+	end_button.sound_bus = Music.BUS
+	end_button.tooltip_text = "End the season (%s): the window shows whether the new season is day or night" % OS.get_keycode_string(KEY_E)
+	end_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	end_button.clicked.connect(end_season_pressed)
+	end_button.settled.connect(func(_night): _sync_end_button())
+	row.add_child(end_button)
+
+
+## The window shows which sky the season is in: if something else changed it (a new game, a load, the Night switch) while no animation is playing, it jumps to match.
+func _sync_end_button() -> void:
+	var night := Daylight.target_light(Game.season) < 0.5
+	if not end_button.is_busy() and end_button.is_night != night:
+		end_button.set_night(night)
 
 
 ## The tablet shows which art the map has: if something else changed it (the legend's buttons) while no animation is playing, the tablet jumps to match.
@@ -230,7 +294,7 @@ func _sync_rad_meter() -> void:
 
 
 func _build_side_panel() -> void:
-	var p := _panel([1, 0, 1, 1], [-410, 64, -6, -6])
+	var p := _panel([1, 0, 1, 1], [-SIDE_WIDTH - 6, BAR_HEIGHT + 6, -6, -6])
 	side_panel = p
 	p.add_child(tabs)
 	for tab_name in ["Tile", "Upgrades", "Colony", "Diplomacy"]:
@@ -242,6 +306,8 @@ func _build_side_panel() -> void:
 		scroll.add_child(box)
 		tabs.add_child(scroll)
 		boxes[tab_name] = box
+	for i in tabs.get_tab_count():
+		tabs.set_tab_tooltip(i, "%s: F%d (Tab for the next tab)" % [tabs.get_tab_title(i), i + 1])
 	tabs.tab_changed.connect(_on_tab_changed)
 
 
@@ -251,7 +317,7 @@ func _build_log() -> void:
 	bottom.anchor_bottom = 1.0
 	bottom.offset_left = 6
 	bottom.offset_top = -BOTTOM_HEIGHT
-	bottom.offset_right = -416
+	bottom.offset_right = -(SIDE_WIDTH + 12)
 	bottom.offset_bottom = -6
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.add_theme_constant_override("separation", 6)
@@ -268,12 +334,15 @@ func _build_log() -> void:
 	geiger_panel.add_child(geiger_box)
 	geiger_panel.visible = false
 	bottom.add_child(geiger_panel)
-	var p := PanelContainer.new()
-	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_panel.size_flags_vertical = Control.SIZE_SHRINK_END
 	log_text.bbcode_enabled = true
 	log_text.scroll_following = true
-	p.add_child(log_text)
-	bottom.add_child(p)
+	log_text.tooltip_text = "The log shows its last %d lines. Click it to show more, and click again to shrink it." % LOG_LINES
+	log_text.gui_input.connect(_on_log_input)
+	log_panel.add_child(log_text)
+	bottom.add_child(log_panel)
+	_size_log()
 
 
 ## The corner picture: a point of interest's scene in an orange line, as the leader faces have, with the site's name under it. _sync_scene fills it and shows it.
@@ -282,7 +351,7 @@ func _build_scene_panel() -> void:
 	scene_panel.anchor_top = 1.0
 	scene_panel.anchor_right = 1.0
 	scene_panel.anchor_bottom = 1.0
-	scene_panel.offset_left = -410   # the width of the side panel above it
+	scene_panel.offset_left = -(SIDE_WIDTH + 6)   # the width of the side panel above it
 	scene_panel.offset_right = -6
 	scene_panel.offset_top = -6
 	scene_panel.offset_bottom = -6
@@ -349,6 +418,18 @@ func _sync_scene() -> void:
 	side_panel.offset_bottom = -6.0 - height - 6.0
 
 
+## The log is LOG_LINES lines tall (the strip's top is the party cards); a click on it gives it the strip's whole height, and a click again takes it back.
+func _size_log() -> void:
+	var line := log_text.get_theme_default_font().get_height(log_text.get_theme_default_font_size()) + 3.0
+	log_panel.custom_minimum_size.y = (BOTTOM_HEIGHT - 6) if log_expanded else ceilf(LOG_LINES * line + 16.0)
+
+
+func _on_log_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		log_expanded = not log_expanded
+		_size_log()
+
+
 func _build_menu() -> void:
 	menu.color = Color(0, 0, 0, 0.75)
 	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -392,6 +473,13 @@ func _build_title() -> void:
 	title_buttons.add_theme_constant_override("separation", 14)
 	stage.add_child(title_buttons)
 	# The volume slider, in the dark bottom corner beside the credit line
+	var hints := HBoxContainer.new()   # the Key hints switch, in the dark bottom corner opposite the volume
+	hints.anchor_left = 0.02
+	hints.anchor_right = 0.24
+	hints.anchor_top = 0.945
+	hints.anchor_bottom = 0.985
+	stage.add_child(hints)
+	_key_hints_button(hints)
 	var volume := _music_row(stage)
 	volume.anchor_left = 0.74
 	volume.anchor_right = 0.98
@@ -429,6 +517,7 @@ func _header(box: Container, text: String) -> void:
 func _button(box: Container, text: String, action: Callable, blocked := "") -> Button:
 	var b := Button.new()
 	b.text = D20.plain(text)
+	b.custom_minimum_size.y = BUTTON_HEIGHT
 	b.disabled = blocked != ""
 	b.tooltip_text = blocked
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -437,6 +526,67 @@ func _button(box: Container, text: String, action: Callable, blocked := "") -> B
 	b.pressed.connect(action)
 	box.add_child(b)
 	return b
+
+
+## A button in the top bar: taller, with bigger text, than one in a panel.
+func _bar_button(box: Container, text: String, action: Callable, font := BAR_FONT) -> Button:
+	var b := _button(box, text, action)
+	b.custom_minimum_size.y = BAR_BUTTON_HEIGHT
+	b.add_theme_font_size_override("font_size", font)
+	return b
+
+
+## A button for a list of things (buildings, upgrades, vehicles): the name on the left and its cost on the right, with what it does on hover. When `blocked` says why it
+## can't be used, the button is dim and says why where the cost was.
+func _row_button(box: Container, name: String, cost: String, action: Callable, blocked := "", tip := "", letter := "") -> Button:
+	var b := Button.new()
+	if letter != "":
+		b.set_meta("letter", letter)   # the key that does this by itself, shown on the cap instead of the digit
+	b.text = D20.plain(name)
+	b.custom_minimum_size.y = BUTTON_HEIGHT
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.disabled = blocked != ""
+	b.tooltip_text = tip if blocked == "" else (blocked if tip == "" else tip + "\n" + blocked)
+	b.pressed.connect(action)
+	box.add_child(b)
+	var side := Label.new()
+	side.name = "Cost"
+	side.text = D20.plain(blocked if blocked != "" else cost)
+	side.add_theme_font_size_override("font_size", BUTTON_FONT - 3)
+	side.add_theme_color_override("font_color", DIM if blocked != "" else BRIGHT)
+	side.set_anchors_preset(Control.PRESET_FULL_RECT)
+	side.offset_left = 8
+	side.offset_right = -10
+	side.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	side.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	side.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(side)
+	if name.length() * 9.6 + side.text.length() * 7.9 + 76.0 > float(SIDE_WIDTH - 44):
+		b.text += char(10) + " "   # too long for one line: the name above, the cost or the reason below it on the right
+		side.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		side.offset_bottom = -4
+	return b
+
+
+## The first line of a tab, with a "?" at its right: the "?" shows and hides the tab's explanations (`lines`), which used to be paragraphs between the buttons.
+func _head_row(box: VBoxContainer, tab: String, text: String, color: Color, lines: Array) -> Label:
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	var head := _label(row, text, color)
+	head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.mouse_filter = Control.MOUSE_FILTER_PASS   # so its tooltip shows
+	var help := _button(row, "?", func():
+		help_open[tab] = not help_open.get(tab, false)
+		refresh())
+	help.custom_minimum_size = Vector2(44, 32)
+	help.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	help.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help.tooltip_text = "What this panel shows"
+	help.set_meta("unnumbered", true)
+	if help_open.get(tab, false):
+		for line in lines:
+			_label(box, line, DIM)
+	return head
 
 
 func _make_theme() -> Theme:
@@ -492,9 +642,17 @@ func _make_theme() -> Theme:
 		var knob := Image.create(8, 16, false, Image.FORMAT_RGBA8)
 		knob.fill(BRIGHT if icon == "grabber_highlight" else AMBER)
 		th.set_icon(icon, "HSlider", ImageTexture.create_from_image(knob))
-	th.set_stylebox("tab_selected", "TabContainer", hover)
-	th.set_stylebox("tab_unselected", "TabContainer", btn)
-	th.set_stylebox("tab_hovered", "TabContainer", hover)
+	var tab_style: StyleBoxFlat = btn.duplicate()
+	tab_style.content_margin_top = 8
+	tab_style.content_margin_bottom = 8
+	var tab_hover: StyleBoxFlat = hover.duplicate()
+	tab_hover.content_margin_top = 8
+	tab_hover.content_margin_bottom = 8
+	th.set_stylebox("tab_selected", "TabContainer", tab_hover)
+	th.set_stylebox("tab_unselected", "TabContainer", tab_style)
+	th.set_stylebox("tab_hovered", "TabContainer", tab_hover)
+	th.set_font_size("font_size", "TabContainer", BUTTON_FONT)
+	th.set_font_size("font_size", "Button", BUTTON_FONT)
 
 	th.set_color("font_color", "Button", AMBER)
 	th.set_color("font_hover_color", "Button", BRIGHT)
@@ -557,6 +715,7 @@ func _close_menu() -> void:
 ## Without the title art it's the same choices in a plain panel. Before a colony is running it plays the
 ## menu music.
 func show_main_menu() -> void:
+	key_sheet.visible = false
 	rad_meter.set_sound_paused(true)   # the meter's hum waits while the menu is up (and a game that is left has the meter off)
 	if not Game.in_game:
 		Music.play_menu()
@@ -597,6 +756,7 @@ func show_new_colony() -> void:
 		_leader_card(row, leader)
 	menu_box.add_child(HSeparator.new())
 	_music_row(menu_box)
+	_key_hints_button(menu_box)
 	var bottom := HBoxContainer.new()
 	bottom.add_theme_constant_override("separation", 12)
 	menu_box.add_child(bottom)
@@ -713,6 +873,7 @@ func show_load_menu(from_title := false) -> void:
 		_button(menu_box, "%s  [%s]" % [slot, info], func(): Game.load_game(slot); _close_menu(),
 			"No save here" if info == "empty" else "")
 	_music_row(menu_box)
+	_key_hints_button(menu_box)
 	_button(menu_box, "Back", show_main_menu if from_title or not Game.in_game else _close_menu)
 
 
@@ -746,6 +907,7 @@ func _refresh_tab(index: int) -> void:
 			_refresh_colony()
 		"Diplomacy":
 			_refresh_diplomacy()
+	_number_buttons(tab_name)
 	stale_tabs.erase(tab_name)
 
 
@@ -772,16 +934,14 @@ func _season_text() -> String:
 
 
 func _refresh_top() -> void:
-	var t := "[color=#ffd88a]%s[/color]   Pop [b]%d[/b]/%d   Troops %d   Prisoners %d   Leader: %s\n" % [
+	var t := "[color=#ffd88a]%s[/color]   Pop [b]%d[/b]/%d   Troops %d   Prisoners %d   Leader: %s\n" % [
 		_season_text(), Game.pop, Game.pop_cap(), Game.troops, Game.prisoners, Leaders.label(Game.leader_info)]
 	for r in Data.RESOURCES:
 		t += "%s [color=#ffd88a]%d[/color]%s " % [r, Game.res[r], _resource_icon(r)]   # name, amount, picture; one space before the next
 	top_text.text = t
-	var views := {Data.PLAYER: "Map: you", Data.AI: "Map: Rust Kings", Data.NONE: "Map: no fog"}   # short: the top bar is full
-	view_button.text = views[Game.view]
 	_sync_rad_meter()
+	_sync_end_button()
 	_sync_sonar_tablet()
-	walk_button.text = "Walk: " + SeasonReplay.mode_text()
 
 
 ## The parties of yours standing on the selected tile, each with a portrait per survivor.
@@ -1023,7 +1183,7 @@ func _music_row(box: Control, fill_width := true) -> HBoxContainer:
 	slider.max_value = 1.0
 	slider.step = 0.05
 	slider.set_value_no_signal(Music.volume)
-	slider.custom_minimum_size = Vector2(110 if fill_width else 64, 0)
+	slider.custom_minimum_size = Vector2(110 if fill_width else 52, 0)
 	if fill_width:
 		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1032,7 +1192,7 @@ func _music_row(box: Control, fill_width := true) -> HBoxContainer:
 	row.add_child(slider)
 	var reading := _label(row, Music.volume_text(), DIM)
 	reading.autowrap_mode = TextServer.AUTOWRAP_OFF
-	reading.custom_minimum_size = Vector2(44 if fill_width else 40, 0)
+	reading.custom_minimum_size = Vector2(44 if fill_width else 36, 0)
 	reading.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	reading.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	music_sliders.append([slider, reading])
@@ -1090,20 +1250,14 @@ func _set_art_style(n: int) -> void:
 	Game.changed.emit()   # redraws the map (and, a moment later, every panel)
 
 
-## Normal, Fast or Off for the season replay.
-func _cycle_walk() -> void:
-	SeasonReplay.cycle()
-	walk_button.text = "Walk: " + SeasonReplay.mode_text()
-	Game.skip_replay()
-
-
 ## END SEASON. While the map is still playing the last season (or a march) back, the press only skips that: it does not
 ## end another season behind your back.
 func end_season_pressed() -> void:
 	if Game.replaying:
 		Game.skip_replay()
-	else:
-		Game.end_season()
+		return
+	Game.end_season()
+	end_button.go_to(Daylight.target_light(Game.season) < 0.5, Daylight.fade_seconds())   # the window takes as long to set or to dawn as the map takes to fade
 
 
 ## The legend: what each picture on the map means. It stays the same until the art style or the Night switch changes (they are all that does,
@@ -1121,6 +1275,8 @@ func _legend() -> VBoxContainer:
 	var box := legend_cache
 	_legend_style_row(box)
 	_legend_night_row(box)
+	_key_hints_button(box)
+	_keys_button(box)
 	for id in Data.TERRAIN:
 		var t: Dictionary = Data.TERRAIN[id]
 		var slow := Game.speed_text(id)
@@ -1168,9 +1324,9 @@ func _refresh_tile() -> void:
 		_header(box, "Legend")
 		box.add_child(_legend())
 		return
-	_label(box, "Tile %d,%d" % [c.x, c.y], BRIGHT)
 	# The panel always shows what YOUR colony knows about the tile
 	if not Game.knows_tile(Data.PLAYER, c):
+		_head_row(box, "Tile", "Tile %d,%d" % [c.x, c.y], BRIGHT, _tile_help())
 		_label(box, "Unexplored wasteland. Anything could be out there.")
 		_scout_travel_line(box, c)
 		_scout_orders(box, c)
@@ -1180,16 +1336,15 @@ func _refresh_tile() -> void:
 	var seen := Game.in_sight(Data.PLAYER, c)
 	var terrain: Dictionary = Data.TERRAIN[Game.tile(c)["t"]]
 	var owners := ["Nobody", "You", "The Rust Kings", "Dustwell"]
-	_label(box, Game.terrain_name(c) + ("" if seen else "  (out of sight, last seen)"))
+	var ground_speed := Game.speed_text(Game.tile(c)["t"]) if not Game.is_ford(c) else ""
+	var head := _head_row(box, "Tile", "Tile %d,%d   %s   %s   %+d m%s" % [c.x, c.y, Game.terrain_name(c), owners[known[0]], Game.tile(c)["z"],
+		"" if seen else "   (out of sight, last seen)"], BRIGHT, _tile_help())
+	if ground_speed != "":
+		head.tooltip_text = "Ground: " + ground_speed
 	if Game.is_ford(c):
 		_label(box, Data.FORD.desc, DIM)
 	elif Game.tile(c)["t"] == "water":
 		_label(box, "Deep water: only boats and planes cross it. Foot, horseback and war rigs need a ford or a bridge.", DIM)
-	_label(box, "Owner: %s" % owners[known[0]])
-	_label(box, "Height: %+d m" % Game.tile(c)["z"])
-	var ground_speed := Game.speed_text(Game.tile(c)["t"]) if not Game.is_ford(c) else ""
-	if ground_speed != "":
-		_label(box, "Ground: " + ground_speed, DIM)
 	_label(box, "Radiation: " + Game.reading_text(c), Game.rad_band(Game.radiation(c))[1] if Game.is_measured(c) else DIM)
 	var slope: String = Game.slopes[Game.idx(c)]
 	if slope == "steep":
@@ -1198,8 +1353,7 @@ func _refresh_tile() -> void:
 		_label(box, "Gentle slope: slows everyone a little.", DIM)
 	_scout_travel_line(box, c)
 	if not Game.preview.is_empty():
-		_label(box, "Travel from your HQ:")
-		_travel_lines(box, Game.preview)
+		_travel_summary(box, Game.preview)
 	if not terrain.yield.is_empty():
 		_label(box, "Yields: %s per season" % Game.cost_text(terrain.yield))
 	var cat := Game.catastrophe_at(c)
@@ -1216,7 +1370,10 @@ func _refresh_tile() -> void:
 		if known[0] == Data.PLAYER and known[1] == "drug_factory":
 			_drug_factory_block(box)
 		if known[0] == Data.PLAYER and known[1] != "hq" and not b.has("poi") and b.get("buildable", true):
-			_button(box, "Demolish", func(): Game.demolish(c))
+			var demolish := _button(box, "Demolish", func(): Game.demolish(c))
+			demolish.set_meta("demolish", true)   # the Del key
+			demolish.set_meta("unnumbered", true)
+			_add_cap(demolish, "Del")
 	for u in Units.units_at(c):
 		if u.owner == Data.PLAYER or seen:
 			var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
@@ -1270,9 +1427,7 @@ func _refresh_tile() -> void:
 	if t["o"] != Data.PLAYER:
 		var why := Game.claim_status(c)
 		if t["b"] != "old_bridge":
-			_button(box, "Claim tile (%s)" % Game.cost_text(Game.claim_cost(c)), func(): Game.claim(c), why)
-			if why != "":
-				_label(box, why, DIM)
+			_row_button(box, "Claim tile", Game.cost_text(Game.claim_cost(c)), func(): Game.claim(c), why, "Land you own gives its yield, and you can build on it.")
 		if t["b"] == "" and t["o"] == Data.NONE:
 			# free ground beside your land (or a road that reaches it): a bridge over water, a road over land
 			var options := []
@@ -1284,8 +1439,7 @@ func _refresh_tile() -> void:
 				_header(box, "Build")
 				for option in options:
 					var span: Dictionary = Data.BUILDINGS[option[0]]
-					_button(box, "%s %s (%s)" % [span.glyph, span.name, Game.cost_text(span.cost)], func(): Game.build(option[0], c), option[1])
-					_label(box, "   " + (span.desc if option[1] == "" else option[1]), DIM)
+					_row_button(box, "%s %s" % [span.glyph, span.name], Game.cost_text(span.cost), func(): Game.build(option[0], c), option[1], span.desc, BUILD_KEYS.get(option[0], ""))
 	elif t["b"] == "":
 		_header(box, "Build")
 		for id in Data.BUILDINGS:
@@ -1293,8 +1447,7 @@ func _refresh_tile() -> void:
 			var why := Game.build_status(id, c)
 			if why in ["Can't be built", "Wrong terrain", "Can't build on water", "Must stand on the riverbank"]:
 				continue
-			_button(box, "%s %s (%s)" % [b.glyph, b.name, Game.cost_text(b.cost)], func(): Game.build(id, c), why)
-			_label(box, "   " + (b.desc if why == "" else why), DIM)
+			_row_button(box, "%s %s" % [b.glyph, b.name], Game.cost_text(b.cost), func(): Game.build(id, c), why, b.desc, BUILD_KEYS.get(id, ""))
 
 
 ## A point of interest: scavenged as one tile whichever of its four tiles you click. Its picked-clean state is
@@ -1320,8 +1473,8 @@ func _poi_block(box: VBoxContainer, c: Vector2i) -> void:
 ## The old highway can be repaired into a road for a little stone: the ambushes there end, and the tile is quicker.
 func _repair_controls(box: VBoxContainer, c: Vector2i) -> void:
 	var why := Game.repair_status(c)
-	_button(box, "Repair into a road (%s)" % Game.cost_text(Data.HIGHWAY.repair), func(): Game.repair(c), why)
-	_label(box, "   " + ("Ends the ambushes on this tile and makes it 0.6 times as long, for everyone." if why == "" else why), DIM)
+	_row_button(box, "Repair into a road", Game.cost_text(Data.HIGHWAY.repair), func(): Game.repair(c), why,
+		"Ends the ambushes on this tile and makes it 0.6 times as long, for everyone.")
 
 
 ## A refinery's switch: whether it's running, and the button that turns it on or off.
@@ -1507,7 +1660,11 @@ func _ending_next() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == RADIATION_KEY and not (event.ctrl_pressed or event.alt_pressed or event.meta_pressed) and _hotkeys_live():
+	if key_sheet.visible and event is InputEventKey and event.pressed:
+		if not event.echo and (event.keycode == KEY_ESCAPE or _is_question(event)):
+			key_sheet.visible = false
+		get_viewport().set_input_as_handled()   # no other key answers while the sheet is up
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == RADIATION_KEY and not (event.ctrl_pressed or event.alt_pressed or event.meta_pressed) and _hotkeys_live():
 		rad_meter.toggle()   # whatever has the focus, and whichever tab is up; it flips the view, plays the animation and the sound, and does nothing while it is still powering up
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_ESCAPE]:
@@ -1520,6 +1677,11 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_SPACE and _die_is_up():
 			_on_dice_clicked()   # Space is a click on the die: it rolls, and once the number has landed it moves on
 			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_ESCAPE and Game.in_game and not ending_screen.visible and not stats_screen.visible and not hollow_screen.visible:
+			_escape()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo and not (event.ctrl_pressed or event.alt_pressed or event.meta_pressed) and _hotkeys_live() and _hotkey(event):
+		get_viewport().set_input_as_handled()
 
 
 ## From the stats screen back to the main menu: no game is running, and the menu music takes over from the ending's.
@@ -1647,7 +1809,11 @@ func _visit_panel(box: VBoxContainer, u: Dictionary) -> void:
 		if b.id == "roll":
 			continue
 		var bid: String = b.id
-		_button(box, b.label, func(): _visit_press(uid, bid))
+		var choice := _button(box, b.label, func(): _visit_press(uid, bid))
+		if bid == "home":   # leaving without searching, backing off, giving up the hunt, heading home with the find: the Backspace key
+			choice.set_meta("back", true)
+			choice.set_meta("unnumbered", true)
+			_add_cap(choice, "Bksp")
 
 
 func _visit_press(uid: int, id: String) -> void:
@@ -1656,6 +1822,342 @@ func _visit_press(uid: int, id: String) -> void:
 	else:
 		Units.visit_do(uid, id)
 	Game.changed.emit()
+
+
+## Esc: over a menu or the title it resumes the game; otherwise it lets go of a picked party, or with none picked opens the menu.
+func _escape() -> void:
+	if menu.visible or title_screen.visible:
+		_close_menu()
+	elif Game.selected_scout >= 0:
+		Game.deselect_scout()
+	else:
+		show_main_menu()
+
+
+## A key of the interface that is not Space, Enter, Esc or R: the digits and the priority letters, Backspace and Del, and the global keys. True if the key did something.
+func _hotkey(event: InputEventKey) -> bool:
+	var key: Key = event.keycode
+	if key >= KEY_0 and key <= KEY_9:
+		return _press_numbered((key - KEY_0 + 9) % 10)   # 1 is the first button and 0 the tenth
+	if _is_question(event):
+		key_sheet.visible = true
+		return true
+	match key:
+		KEY_F1, KEY_F2, KEY_F3, KEY_F4:
+			tabs.current_tab = key - KEY_F1   # Tile, Upgrades, Colony, Diplomacy
+		KEY_TAB:
+			tabs.current_tab = posmod(tabs.current_tab + (-1 if event.shift_pressed else 1), tabs.get_tab_count())
+		KEY_BACKSPACE:
+			return boxes["Tile"].is_visible_in_tree() and _press_flagged("back")
+		KEY_DELETE:
+			return boxes["Tile"].is_visible_in_tree() and _press_flagged("demolish")
+		KEY_E:
+			end_season_pressed()
+		KEY_M:
+			sonar_tablet.toggle()   # the map art: pixel art or ASCII
+		KEY_N:
+			_set_night(not Daylight.enabled)
+		KEY_F5:
+			show_save_menu()
+		KEY_F9:
+			show_load_menu()
+		KEY_F:
+			return _priority_build("F")
+		KEY_P:
+			return _priority_build("P")
+		KEY_O:
+			return _priority_build("O")
+		KEY_L:
+			return _priority_build("L")
+		KEY_Z:
+			return _priority_send("foot")
+		KEY_X:
+			return _priority_send("horse")
+		KEY_C:
+			return _priority_send("car")
+		_:
+			return false
+	return true
+
+
+## The digit keys: the nth numbered button of the open tab, pressed. A button that cannot be pressed says why in the log instead.
+func _press_numbered(index: int) -> bool:
+	var list: Array = numbered.get(tabs.get_tab_title(tabs.current_tab), [])
+	if index >= list.size() or not is_instance_valid(list[index]):
+		return false
+	_press_button(list[index])
+	return true
+
+
+func _press_button(b: Button) -> void:
+	if not b.disabled:
+		b.pressed.emit()
+		return
+	var why := b.tooltip_text
+	var cost := b.get_node_or_null("Cost")
+	if cost != null and (cost as Label).text != "":
+		why = (cost as Label).text   # a row says why where its cost was
+	if why != "":
+		Game.add_log("%s: %s" % [b.text.strip_edges(), why])
+		Game.changed.emit()
+
+
+## The button in the Tile tab marked `flag` ("back" or "demolish"), pressed. False if the tab has none.
+func _press_flagged(flag: String) -> bool:
+	for b in boxes["Tile"].find_children("*", "Button", true, false):
+		if b.has_meta(flag):
+			_press_button(b)
+			return true
+	return false
+
+
+## F, P, O and L: build a farm, a wall, a road (a bridge over a river tile) or a hunting lodge on the picked tile. When it cannot be built there the log says why.
+func _priority_build(letter: String) -> bool:
+	var c := Game.selected
+	if not Game.in_bounds(c):
+		Game.add_log("Pick a tile to build on first.")
+		Game.changed.emit()
+		return true
+	var id := ""
+	for candidate in BUILD_KEYS:
+		if BUILD_KEYS[candidate] == letter and (letter != "O" or (candidate == "bridge") == (Game.tile(c)["t"] == "water")):
+			id = candidate
+			break
+	var b: Dictionary = Data.BUILDINGS[id]
+	var why := Game.build_status(id, c)
+	if why == "":
+		Game.build(id, c)
+		return true
+	if why in ["Wrong terrain", "Can't build on water"] and not b.get("on", []).is_empty():
+		why = "needs " + " or ".join(b.on.map(func(t): return Data.TERRAIN[t].name))
+	Game.add_log("%s: %s." % [b.name, why])
+	Game.changed.emit()
+	return true
+
+
+## What Z, X and C send to a tile, which is also the set of rows that wear their key caps: scavengers to a ruin, a site or a crater, a hunting party to the animal (or the Giant Frog) you
+## can see on it, and scouts to any other tile that is not yours, explored or not. {"job": "", "why": ...} when nothing can be sent there.
+func _send_plan(c: Vector2i) -> Dictionary:
+	var nothing := {"job": "", "why": "Pick a ruin, a site, a crater, an animal or ground outside your land to send a party to."}
+	if not Game.in_bounds(c):
+		return nothing
+	if Game.knows_tile(Data.PLAYER, c):
+		var building: String = Game.memory[Data.PLAYER][Game.idx(c)][1]
+		var target := Vector2i(-1, -1)
+		if Game.tile(c)["t"] in ["ruins", "crater"]:
+			target = c
+		elif building != "" and Data.BUILDINGS[building].has("poi"):
+			target = Game.poi_anchor(c)
+		if target != Vector2i(-1, -1):
+			if Game.tile(target)["r"] == "picked":
+				return {"job": "", "why": "Picked clean: there is nothing left to scavenge."}
+			return {"job": "scav", "target": target, "dest": -1}
+		if Game.in_sight(Data.PLAYER, c):
+			var animal := Units.animal_at(c)
+			if not animal.is_empty():
+				return {"job": "hunters", "target": animal.pos, "dest": animal.id}
+			if Units.frog_at(c):
+				return {"job": "hunters", "target": Units.frog.pos, "dest": Units.FROG_ID}
+	if Game.tile(c)["o"] == Data.PLAYER:
+		return nothing
+	return {"job": "scout", "target": c, "dest": -1}
+
+
+## Z, X and C: send what the picked tile is for (see _send_plan) on foot, on horseback or by war rig, as the Tile tab's buttons do. When it cannot go, the log says why.
+func _priority_send(mover: String) -> bool:
+	var plan := _send_plan(Game.selected)
+	var job: String = plan.job
+	if job == "":
+		Game.add_log(plan.why)
+		Game.changed.emit()
+		return true
+	var why := Units.send_status(job, mover, plan.target, plan.dest)
+	if why == "":
+		Units.send(job, mover, plan.target, plan.dest)
+	else:
+		Game.add_log("%s %s: %s." % [{"scav": "Scavengers", "hunters": "A hunting party", "scout": "Scouts"}[job], Data.MOVERS[mover].by, why])
+		Game.changed.emit()
+	return true
+
+
+## Numbers the open tab's buttons: the first ten, from the top, answer the digits 1 to 9 and 0 and wear a key cap with the digit (or with their letter, which works too).
+## The "?", the branch headers, Demolish, the leave buttons and the legend's switches have keys of their own or none, and are not numbered.
+func _number_buttons(tab: String) -> void:
+	var list := []
+	for b in boxes[tab].find_children("*", "Button", true, false):
+		if b.has_meta("unnumbered") or (legend_cache != null and legend_cache.is_ancestor_of(b)):
+			continue
+		list.append(b)
+	numbered[tab] = list
+	for i in list.size():
+		var cap := ""
+		if list[i].has_meta("letter"):
+			cap = list[i].get_meta("letter")
+		elif i < 10:
+			cap = str((i + 1) % 10)
+		_add_cap(list[i], cap)
+
+
+## A small key cap: the key in a rounded box.
+func _cap(key: String) -> PanelContainer:
+	var cap := PanelContainer.new()
+	cap.name = "KeyCap"
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("3a2a14")
+	style.border_color = AMBER
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(3)
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	cap.add_theme_stylebox_override("panel", style)
+	var label := Label.new()
+	label.text = key
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", BRIGHT)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cap.add_child(label)
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return cap
+
+
+## Puts a key cap at the left of a button and makes room for it (the button's text starts after it). Nothing when the key hints are off or there is no key.
+func _add_cap(b: Button, key: String) -> void:
+	_remove_cap(b)
+	if not KeyHints.enabled or key == "":
+		return
+	var cap := _cap(key)
+	cap.anchor_top = 0.5
+	cap.anchor_bottom = 0.5
+	cap.grow_vertical = Control.GROW_DIRECTION_BOTH
+	b.add_child(cap)
+	var width := cap.get_combined_minimum_size().x
+	cap.offset_left = 6
+	cap.offset_right = 6 + width
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var style := b.get_theme_stylebox(state)
+		if style is StyleBoxFlat:
+			var roomy: StyleBoxFlat = style.duplicate()
+			roomy.content_margin_left = 6.0 + width + 6.0
+			b.add_theme_stylebox_override(state, roomy)
+
+
+func _remove_cap(b: Button) -> void:
+	var old := b.get_node_or_null("KeyCap")
+	if old != null:
+		b.remove_child(old)
+		old.queue_free()
+		for state in ["normal", "hover", "pressed", "disabled"]:
+			b.remove_theme_stylebox_override(state)
+
+
+## A key cap in the corner of the meter or the tablet, which draw themselves and are not buttons.
+func _corner_cap(control: Control, key: String) -> void:
+	var cap := _cap(key)
+	cap.anchor_top = 1.0
+	cap.anchor_bottom = 1.0
+	cap.offset_top = -19   # in the bottom left corner of the picture, over it: the bar has no room for a cap beside each
+	cap.offset_left = 0
+	cap.offset_right = 24
+	control.add_child(cap)
+	loose_caps.append(cap)
+
+
+## Shows or hides the top bar's key caps to match the Key hints switch. (The panels' caps are made as each tab is built.)
+func _apply_key_hints() -> void:
+	for pair in top_caps:
+		_add_cap(pair[0], pair[1])
+	for cap in loose_caps:
+		cap.visible = KeyHints.enabled
+
+
+## The Key hints switch: one button that says what it is and flips.
+func _key_hints_button(box: Container) -> Button:
+	var holder := []
+	var flip := func():
+		KeyHints.set_enabled(not KeyHints.enabled)
+		holder[0].text = "Key hints: " + ("On" if KeyHints.enabled else "Off")
+		_apply_key_hints()
+		Game.changed.emit()
+	var b := _button(box, "Key hints: " + ("On" if KeyHints.enabled else "Off"), flip)
+	holder.append(b)
+	b.tooltip_text = "Show the key on each button"
+	b.set_meta("unnumbered", true)
+	return b
+
+
+## "All the keys": opens the key sheet for those who would rather click than press ?.
+func _keys_button(box: Container) -> Button:
+	var b := _button(box, "All the keys (?)", func(): key_sheet.visible = true)
+	b.tooltip_text = "Every key in the game on one sheet"
+	b.set_meta("unnumbered", true)
+	return b
+
+
+## A label that never wraps: the sheet sits in a box that has no width of its own to wrap to.
+func _sheet_label(box: Container, text: String, color: Color) -> Label:
+	var l := _label(box, text, color)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return l
+
+
+## ? on any keyboard: the question mark itself, or Shift with the slash key.
+func _is_question(event: InputEventKey) -> bool:
+	return event.keycode == KEY_QUESTION or event.unicode == 63 or (event.keycode == KEY_SLASH and event.shift_pressed)
+
+
+## Every key on one sheet over the game (decision 14): a dimmed screen with the list in the middle. ?, Esc or a click closes it, and no other key does anything while it is up.
+func _build_key_sheet() -> void:
+	key_sheet.color = Color(0, 0, 0, 0.6)
+	key_sheet.set_anchors_preset(Control.PRESET_FULL_RECT)
+	key_sheet.visible = false
+	key_sheet.mouse_filter = Control.MOUSE_FILTER_STOP   # nothing under it can be clicked
+	key_sheet.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed:
+			key_sheet.visible = false)
+	root.add_child(key_sheet)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	key_sheet.add_child(center)
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style: StyleBoxFlat = root.theme.get_stylebox("panel", "PanelContainer").duplicate()
+	style.bg_color = Color("120d07")   # solid: the legend must not show through the list
+	panel.add_theme_stylebox_override("panel", style)
+	center.add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+	var head := HBoxContainer.new()
+	box.add_child(head)
+	_sheet_label(head, "KEYS", BRIGHT).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sheet_label(head, "? or Esc to close", DIM)
+	box.add_child(HSeparator.new())
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 40)
+	box.add_child(columns)
+	for column in KEY_SHEET:
+		var side := VBoxContainer.new()
+		side.add_theme_constant_override("separation", 4)
+		columns.add_child(side)
+		for entry in column:
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			side.add_child(row)
+			if entry[1] == "":
+				_sheet_label(row, String(entry[0]).to_upper(), DIM)
+				continue
+			var holder := Control.new()
+			holder.custom_minimum_size = Vector2(170, 28)
+			holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.add_child(holder)
+			var cap := _cap(entry[0])
+			cap.position = Vector2(0, 4)
+			holder.add_child(cap)
+			_sheet_label(row, entry[1], AMBER)
 
 
 ## Whether the game is being played, so a key means something: a colony is running and no menu, title, ending, stats or picture is over it.
@@ -1758,8 +2260,6 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 	if Game.tile(c)["o"] == Data.PLAYER:
 		return
 	_header(box, "Scouting")
-	_label(box, "Scouts stay and keep watch until you move them or recall them. They set out with %d food and each eats %d a season, so a party can only stay out so long." % [
-		Data.SCOUT_PACK, Data.SCOUT_RATION], DIM)
 	_salt_toggle(box)
 	for u in Units.units:
 		if u.owner == Data.PLAYER and u.job == "scout" and not (u.pos == c and u.stage == "station"):
@@ -1768,10 +2268,11 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 			var trip := ""
 			if why == "":
 				trip = ", %d days" % ceili(_party_trip_days(u, c))
-			_button(box, "Send %s here%s" % [Units.names_text(u), trip], func(): Units.order_scouts(uid, c), why)
+			_row_button(box, "Send %s here" % Units.names_text(u), trip.trim_prefix(", "), func(): Units.order_scouts(uid, c), why)
 			if why == "":
 				_food_warning(box, u, c)
 	var e: Dictionary = Data.EXPEDITIONS["scout"]
+	var keyed: bool = _send_plan(c).job == "scout"   # Z, X and C send scouts here
 	for mover in Data.SCOUT_MOVERS:
 		if mover in Data.VEHICLES and Game.vehicles[mover] == 0:
 			continue
@@ -1779,8 +2280,8 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 		var trip := ""
 		if why == "":
 			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), c)))
-		_button(box, "%s %s (%d crew, %s%s)" % [e.verb, Data.MOVERS[mover].by, e.crew, Units.send_cost_text("scout", mover), trip],
-			func(): Units.send("scout", mover, c), why)
+		_row_button(box, "%s %s" % [e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [e.crew, Units.send_cost_text("scout", mover), trip],
+			func(): Units.send("scout", mover, c), why, "", SEND_KEYS.get(mover, "") if keyed else "")
 	_label(box, "   Parties out: %d/%d" % [Units.scouts_out(), Game.scout_parties()], DIM)
 
 
@@ -1854,6 +2355,8 @@ func _strike_block(box: VBoxContainer, c: Vector2i) -> void:
 ## One button per way of travel you own, with how long the trip out takes.
 func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest := -1, verb := "") -> void:
 	var e: Dictionary = Data.EXPEDITIONS[job]
+	var plan := _send_plan(Game.selected)
+	var keyed: bool = plan.job == job and plan.get("target") == target and plan.get("dest") == dest   # the rows Z, X and C press
 	_salt_toggle(box)
 	for mover in Data.TRAVEL_PREVIEW:
 		if mover in Data.VEHICLES and Game.vehicles[mover] == 0:
@@ -1865,8 +2368,8 @@ func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest
 		var cost_text := Game.cost_text(Units.send_cost(job, mover) if job == "deal" else e.cost)
 		if Units.salt_doses(job) > 0:
 			cost_text = ("%d Salt" if cost_text == "free" else cost_text + ", %d Salt") % Units.salt_doses(job)
-		_button(box, "%s %s (%d crew, %s%s)" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by, e.crew, cost_text, trip],
-			func(): Units.send(job, mover, target, dest), why)
+		_row_button(box, "%s %s" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [e.crew, cost_text, trip],
+			func(): Units.send(job, mover, target, dest), why, "", SEND_KEYS.get(mover, "") if keyed else "")
 
 
 ## The Drug Factory you clicked: how many raw frog hides and how much Salt the colony holds (they have no line in the top bar).
@@ -1958,6 +2461,31 @@ func _scout_travel_line(box: VBoxContainer, c: Vector2i) -> void:
 		_label(box, "  ● %d days, but their food runs out after %d (%d days short)." % [ceili(days), int(food), ceili(days - food)], RED)
 
 
+## What the "?" on the Tile tab says.
+func _tile_help() -> Array:
+	return ["Click a tile to see what is there. Hover a building or a button for what it does.",
+		"Scouts stay and keep watch until you move them or recall them. They set out with %d food and each eats %d a season, so a party can only stay out so long." % [
+			Data.SCOUT_PACK, Data.SCOUT_RATION]]
+
+
+## The travel times from your HQ on one line ("On foot 4 d   Horseback 2 d   War rig 1 d"); a way that does not exist says so, and why is on hover.
+func _travel_summary(box: VBoxContainer, routes: Dictionary) -> void:
+	var bits := []
+	var why := []
+	for mover in routes:
+		var m: Dictionary = Data.MOVERS[mover]
+		var path: Array = routes[mover]
+		if path.is_empty():
+			bits.append("%s: no way" % m.name)
+			why.append("%s: no way through%s" % [m.name, _no_way_suffix(mover, Game.home(Data.PLAYER), Game.selected)])
+		else:
+			bits.append("%s %d d" % [m.name, ceili(Game.party_route_days(mover, path))])
+	var line := _label(box, "HQ:  " + "   ".join(bits), BRIGHT)
+	if not why.is_empty():
+		line.tooltip_text = "\n".join(why)
+		line.mouse_filter = Control.MOUSE_FILTER_PASS
+
+
 ## One colored line per way of travel: how many days the route takes, or why there isn't one.
 func _travel_lines(box: VBoxContainer, routes: Dictionary) -> void:
 	for mover in routes:
@@ -1976,67 +2504,92 @@ func _routes_between(from: Vector2i, to: Vector2i) -> Dictionary:
 	return out
 
 
-func _upgrade_row(box: VBoxContainer, id: String) -> void:
-	var u: Dictionary = Data.UPGRADES[id]
-	var why := Game.upgrade_status(id)
-	if why == "Owned":
-		_label(box, "[x] T%d %s - %s" % [u.tier, u.name, u.desc], GREEN)
+## The upgrade ids of a branch (or of its vehicle line), lowest tier first.
+func _branch_ids(branch: String, vehicles: bool) -> Array:
+	var ids := []
+	for id in Data.UPGRADES:
+		var u: Dictionary = Data.UPGRADES[id]
+		if u.branch == branch and bool(u.get("vehicle", false)) == vehicles:
+			ids.append(id)
+	ids.sort_custom(func(x, y): return int(Data.UPGRADES[x].tier) < int(Data.UPGRADES[y].tier))
+	return ids
+
+
+## "●●○○○": a dot for each tier, filled once it is bought.
+func _pips(ids: Array) -> String:
+	var dots := ""
+	for id in ids:
+		dots += "●" if Game.upgrade_status(id) == "Owned" else "○"
+	return dots
+
+
+## One branch: its name and a dot a tier (click it to close the branch), then only the next upgrade to buy, and for a leader branch the next vehicle upgrade. What an
+## upgrade does is on hover.
+func _branch_block(box: VBoxContainer, branch: String) -> void:
+	var main_line := _branch_ids(branch, false)
+	var rigs := _branch_ids(branch, true) if branch in Data.BRANCHES else []
+	var open: bool = open_branches.get(branch, true)
+	var title := "%s %s   %s" % ["▾" if open else "▸", branch.to_upper(), _pips(main_line)]
+	if not rigs.is_empty():
+		title += "   vehicles " + _pips(rigs)
+	var head := _button(box, title, func():
+		open_branches[branch] = not open
+		_refresh_upgrades())
+	head.name = "Branch_" + branch
+	head.set_meta("unnumbered", true)
+	head.tooltip_text = "Click to open or close this branch"
+	if open:
+		_next_upgrade(box, main_line, "")
+		if not rigs.is_empty():
+			_next_upgrade(box, rigs, "Vehicles: ")
+
+
+## The first upgrade of a line that is not bought yet, as a row; a line that is all bought says so.
+func _next_upgrade(box: VBoxContainer, ids: Array, prefix: String) -> void:
+	for id in ids:
+		var why := Game.upgrade_status(id)
+		if why == "Owned":
+			continue
+		var u: Dictionary = Data.UPGRADES[id]
+		_row_button(box, "%sT%d %s" % [prefix, u.tier, u.name], Game.cost_text(Game.upgrade_cost(id)), func(): Game.buy_upgrade(id), why, u.desc)
 		return
-	_button(box, "T%d %s (%s)" % [u.tier, u.name, Game.cost_text(Game.upgrade_cost(id))], func(): Game.buy_upgrade(id), why)
-	_label(box, "   " + u.desc + ("" if why == "" else "  [%s]" % why), DIM)
+	_label(box, "   %sall bought" % prefix.to_lower(), GREEN)
 
 
 func _refresh_upgrades() -> void:
 	var box: VBoxContainer = boxes["Upgrades"]
 	_clear(box)
 	var committed := Game.committed_branches()
-	_label(box, "Home branch: %s (25%% off)" % Data.LEADERS[Game.leader].branch)
-	_label(box, "Committed: %s" % (", ".join(committed) if committed.size() > 0 else "none"))
-	_label(box, "Tier 3+ in a branch commits you. Each extra committed branch adds +30% to all tier 4-5 costs.", DIM)
+	_head_row(box, "Upgrades", "Home: %s (25%% off)   Committed: %s" % [Data.LEADERS[Game.leader].branch, ", ".join(committed) if committed.size() > 0 else "none"], AMBER, [
+		"Tier 3+ in a branch commits you. Each extra committed branch adds +30% to all tier 4-5 costs.",
+		"Each branch shows the next upgrade to buy; the dots are its tiers, filled once bought. Click a branch's name to close it, and hover an upgrade for what it does."])
 	for branch in ["core"] + Data.BRANCHES + ["bridge"]:
-		_header(box, branch)
-		for id in Data.UPGRADES:
-			var u: Dictionary = Data.UPGRADES[id]
-			if u.branch == branch and not u.get("vehicle", false):
-				_upgrade_row(box, id)
-		# Each leader branch has its own vehicle line
-		if branch in Data.BRANCHES:
-			_label(box, "-- %s vehicles --" % branch, BRIGHT)
-			for id in Data.UPGRADES:
-				var u: Dictionary = Data.UPGRADES[id]
-				if u.branch == branch and u.get("vehicle", false):
-					_upgrade_row(box, id)
+		_branch_block(box, branch)
 
 
 func _refresh_colony() -> void:
 	var box: VBoxContainer = boxes["Colony"]
 	_clear(box)
 	_leader_block(box)
-	_label(box, "Land: %d tiles   Population: %d / %d" % [Game.owned(Data.PLAYER).size(), Game.pop, Game.pop_cap()])
-	_label(box, "Everyone eats 1 grain/veg a season%s. A surplus of %d+ grows the colony. Prisoners work but must be fed." % [
-		", and 1 more for every 5 colonists" if Game.has_quirk("big_appetites") else "", 6 if Game.has_quirk("big_families") else 10], DIM)
+	_head_row(box, "Colony", "Land: %d tiles   Population: %d / %d" % [Game.owned(Data.PLAYER).size(), Game.pop, Game.pop_cap()], AMBER, _colony_help())
 	_header(box, "Military")
 	_label(box, "Troops: %d (each eats %d meat/season)" % [Game.troops, 2 if Game.has("w3") else 1])
 	_label(box, "Attack %.1f   Defense %.1f (walls %.1f)" % [Game.player_attack(),
 		Game.player_wall_defense() + Game.player_troop_defense(), Game.player_wall_defense()])
-	_button(box, "Train troop (1 pop, %s)" % Game.cost_text(Game.train_troop_cost()), Game.train_troop,
+	_row_button(box, "Train troop", "1 pop, " + Game.cost_text(Game.train_troop_cost()), Game.train_troop,
 		"" if Game.pop > 2 and Game.can_afford(Game.train_troop_cost()) else "Need 3+ pop and " + Game.cost_text(Game.train_troop_cost()))
-	_button(box, "Disband troop (back to pop)", Game.disband_troop, "" if Game.troops > 0 else "No troops")
+	_row_button(box, "Disband troop", "back to pop", Game.disband_troop, "" if Game.troops > 0 else "No troops")
 	if Game.prisoners > Game.troops * Game.guard_ratio():
 		_label(box, "WARNING: too few guards. Prisoners may revolt.", RED)
 	_header(box, "Vehicles")
-	_label(box, "Vehicle upgrades are in each branch on the Upgrades tab.", DIM)
 	for v in Data.VEHICLES:
 		var d: Dictionary = Data.VEHICLES[v]
 		var why := Game.vehicle_status(v)
 		var upkeep := Game.vehicle_upkeep(v)
-		_label(box, "%s: %d, %d out   (+%d attack, +%d caravan gold, upkeep %s each)" % [d.name, Game.vehicles[v], Units.vehicles_out(v),
-			Game.vehicle_attack(v), Game.vehicle_trade(v), Game.cost_text(upkeep) if not upkeep.is_empty() else "none"])
-		_button(box, "Build %s (%s)" % [d.name, Game.cost_text(Game.vehicle_cost(v))], func(): Game.build_vehicle(v), why)
-		if why != "":
-			_label(box, "   " + why, DIM)
-		elif d.has("desc"):
-			_label(box, "   " + d.desc, DIM)
+		var facts := "%d owned, %d out. +%d attack, +%d caravan gold, upkeep %s each." % [Game.vehicles[v], Units.vehicles_out(v), Game.vehicle_attack(v),
+			Game.vehicle_trade(v), Game.cost_text(upkeep) if not upkeep.is_empty() else "none"]
+		_row_button(box, "%s  %d (%d out)" % [d.name, Game.vehicles[v], Units.vehicles_out(v)], "Build: " + Game.cost_text(Game.vehicle_cost(v)),
+			func(): Game.build_vehicle(v), why, facts + ((" " + d.desc) if d.has("desc") else ""))
 	var refineries := Game.count_building(Data.PLAYER, "refinery")
 	if refineries > 0:
 		_header(box, "Refineries")
@@ -2057,9 +2610,16 @@ func _refresh_colony() -> void:
 	_header(box, "Scouting")
 	_label(box, "Parties out: %d/%d. Click a tile to send scouts or move a party there; they stay and keep watch." % [
 		Units.scouts_out(), Game.scout_parties()])
-	_label(box, "A party leaves with %d food from your stores, and each survivor eats %d of it a season. When the pack is empty they starve, so recall them in time: whatever is left comes home with them. Horses and war rigs add parties and range." % [
-		Data.SCOUT_PACK, Data.SCOUT_RATION], DIM)
-	_label(box, "War rigs, planes (recon flights too) and river boats carry a tank, shown as a fuel gauge by the portraits. When it runs dry the vehicle is lost and the crew go on foot. A plane crashes: some aboard may die, and the rest are injured.", DIM)
+
+
+## What the "?" on the Colony tab says.
+func _colony_help() -> Array:
+	return ["Everyone eats 1 grain/veg a season%s. A surplus of %d+ grows the colony. Prisoners work but must be fed." % [
+			", and 1 more for every 5 colonists" if Game.has_quirk("big_appetites") else "", 6 if Game.has_quirk("big_families") else 10],
+		"Vehicle upgrades are in each branch on the Upgrades tab. Hover a vehicle for what it does.",
+		"A scouting party leaves with %d food from your stores, and each survivor eats %d of it a season. When the pack is empty they starve, so recall them in time: whatever is left comes home with them. Horses and war rigs add parties and range." % [
+			Data.SCOUT_PACK, Data.SCOUT_RATION],
+		"War rigs, planes (recon flights too) and river boats carry a tank, shown as a fuel gauge by the portraits. When it runs dry the vehicle is lost and the crew go on foot. A plane crashes: some aboard may die, and the rest are injured."]
 
 
 func _refresh_diplomacy() -> void:

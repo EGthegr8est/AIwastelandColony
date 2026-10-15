@@ -17,8 +17,6 @@ extends RefCounted
 
 const Data = preload("res://scripts/data.gd")
 
-const MODES := ["normal", "fast", "off"]
-const NAMES := {"normal": "Normal", "fast": "Fast", "off": "Off"}
 ## Real seconds a whole season (Data.SEASON_DAYS) takes to play. A walk of half a season takes half as long.
 const SECONDS := {"normal": 3.0, "fast": 1.2}
 const POP_SECONDS := 0.7       # a flash or a puff of smoke lasts this long, whatever the speed
@@ -27,8 +25,6 @@ const DUST_DAYS := 5.0         # how far behind a walking unit its dust trail re
 const FADE_DAYS := 2.0         # a unit that leaves the map (home, wiped out) fades over this many days
 const STILL := -2.0            # gone_day of a unit that stayed on the map
 const AT_END := -1.0           # gone_day or event day meaning "when the walking is done"
-const SETTINGS_SECTION := "display"
-const SETTINGS_KEY := "season_replay"
 
 # A march: up to MARCH_MAX troop markers walk a column from your HQ to the target (a new marker sets off every MARCH_STEP
 # days), the fight flashes, and they come home. They go at MARCH_PACE tiles a day (a party on horseback does two), so the
@@ -45,38 +41,11 @@ const MARCH_BACK_SHARE := 0.85
 const SOLDIER := ["..1111..", ".111111.", "..1221..", "...11...", ".111111.", "1.1111.1", "..1111..", "..1..1.."]
 const SOLDIER_COLORS := {"1": Color("c9e07a"), "2": Color("1d2814")}
 
-static var mode := "normal"   # tests set "off"
+static var mode := "normal"   # the game always plays the walk at normal speed (there is no setting for it any more); tests set "off" so they do not wait for it
 
 
 static func seconds() -> float:
 	return SECONDS.get(mode, 0.0)
-
-
-static func mode_text() -> String:
-	return NAMES[mode]
-
-
-## Normal, then Fast, then Off, then Normal again.
-static func cycle() -> void:
-	mode = MODES[(MODES.find(mode) + 1) % MODES.size()]
-	save_mode()
-
-
-## The saved choice, if there is one (the file Music keeps its volume in, which tests point at a scratch file).
-static func load_mode() -> void:
-	var cfg := ConfigFile.new()
-	if cfg.load(Music.settings_path) != OK or not cfg.has_section_key(SETTINGS_SECTION, SETTINGS_KEY):
-		return
-	var saved := str(cfg.get_value(SETTINGS_SECTION, SETTINGS_KEY))
-	if saved in MODES:
-		mode = saved
-
-
-static func save_mode() -> void:
-	var cfg := ConfigFile.new()
-	cfg.load(Music.settings_path)   # keep anything else in there
-	cfg.set_value(SETTINGS_SECTION, SETTINGS_KEY, mode)
-	cfg.save(Music.settings_path)
 
 
 ## Where a trail has put its unit on `day`, in map cells (fractional between two tiles).

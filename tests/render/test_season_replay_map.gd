@@ -49,7 +49,6 @@ func after_each() -> void:
 	if map != null and map.playing:
 		map.finish_replay()
 	SeasonReplay.mode = "off"
-	SeasonReplay.save_mode()   # a test that changed the speed must not leave it in the scratch settings the next HUD reads
 
 
 func _send_party() -> void:
@@ -205,24 +204,10 @@ func test_loading_a_game_ends_the_replay() -> void:
 
 # ---------------------------------------------------------------- the speed button
 
-func test_the_walk_button_goes_normal_fast_off_and_is_remembered() -> void:
-	hud._refresh_top()
-	assert_eq(hud.walk_button.text, "Walk: Normal")
-	hud.walk_button.pressed.emit()
-	assert_eq(hud.walk_button.text, "Walk: Fast")
-	assert_eq(SeasonReplay.mode, "fast")
-	hud.walk_button.pressed.emit()
-	assert_eq(hud.walk_button.text, "Walk: Off")
-	SeasonReplay.mode = "normal"
-	SeasonReplay.load_mode()
-	assert_eq(SeasonReplay.mode, "off", "it was saved when it changed")
-
-
-func test_changing_the_speed_skips_a_replay_in_progress() -> void:
-	_send_party()
-	hud.end_season_pressed()
-	hud.walk_button.pressed.emit()
-	assert_false(map.playing)
+func test_there_is_no_walk_button_and_the_walk_is_at_normal_speed() -> void:
+	for b in hud.find_children("*", "Button", true, false):
+		assert_false(b.text.begins_with("Walk:"), "the Walk button is gone")
+	assert_null(hud.get("walk_button"))
 
 
 # ---------------------------------------------------------------- what the replay shows

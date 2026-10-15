@@ -221,32 +221,30 @@ func test_the_block_warns_about_what_you_know_is_in_the_square() -> void:
 func test_the_bomber_is_in_the_vehicle_list_with_what_it_needs() -> void:
 	Game.vehicles["bomber"] = 0
 	hud._refresh_colony()
-	var box: VBoxContainer = hud.boxes["Colony"]
-	var text := ""
-	for l in box.find_children("*", "Label", true, false):
-		text += l.text + "\n"
-	assert_has(text, "Bombers: 0, 0 out")
-	assert_has(text, "upkeep 4 fuel, 3 gold each")
-	assert_has(text, "Needs a Airfield")
-	var build: Button
-	for b in box.find_children("*", "Button", true, false):
-		if b.text.begins_with("Build Bombers"):
-			build = b
-	assert_not_null(build)
-	assert_eq(build.text, "Build Bombers (60 metal, 25 fuel, 70 gold)")
-	assert_true(build.disabled)
+	var row: Button
+	for b in hud.boxes["Colony"].find_children("*", "Button", true, false):
+		if b.text.begins_with("Bombers"):
+			row = b
+	assert_not_null(row, "a row for the bomber")
+	assert_has(row.text, "0 (0 out)")
+	assert_has(row.tooltip_text, "upkeep 4 fuel, 3 gold each")
+	assert_eq((row.get_node("Cost") as Label).text, "Needs a Airfield", "the reason is where the cost was")
+	assert_true(row.disabled)
+	assert_eq(Game.cost_text(Game.vehicle_cost("bomber")), "60 metal, 25 fuel, 70 gold")
 
 
 func test_the_upgrade_is_listed_under_warfare() -> void:
 	hud._refresh_upgrades()
+	for b in hud.boxes["Upgrades"].find_children("*", "Button", true, false):
+		assert_false(b.text.contains("Strategic bombers"), "a branch shows only its next upgrade, and this is the fifth tier")
+	for id in ["wv1", "wv2", "wv3", "wv4"]:
+		Game.upgrades.append(id)
+	hud._refresh_upgrades()
 	var found := false
-	for l in hud.boxes["Upgrades"].find_children("*", "Label", true, false):
-		if l.text.contains("Strategic bombers"):
-			found = true
 	for b in hud.boxes["Upgrades"].find_children("*", "Button", true, false):
 		if b.text.contains("Strategic bombers"):
 			found = true
-	assert_true(found, "the upgrades tab lists it")
+	assert_true(found, "the upgrades tab offers it once the four before it are bought")
 
 
 func test_the_legend_shows_the_ash_and_the_bomber() -> void:
@@ -286,7 +284,7 @@ func test_a_trader_camp_with_a_known_warhead_offers_the_run() -> void:
 	var foot := _tile_button("Buy the warhead on foot")
 	assert_not_null(horse)
 	assert_false(horse.disabled)
-	assert_has(horse.text, "500 gold")
+	assert_has((horse.get_node("Cost") as Label).text, "500 gold")
 	assert_true(foot.disabled, "too heavy for a caravan on foot")
 	camp["warhead"] = false
 	Game.changed.emit()

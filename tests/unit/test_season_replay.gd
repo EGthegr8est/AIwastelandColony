@@ -119,27 +119,14 @@ func test_a_whole_season_takes_the_chosen_time_and_half_a_season_half_that() -> 
 	assert_almost_eq(SeasonReplay.length(flash, 3.0), 3.0 + SeasonReplay.POP_SECONDS, 0.0001, "the last flash gets its moment")
 
 
-func test_the_speed_goes_normal_fast_off_and_round_again() -> void:
+func test_the_walk_plays_at_normal_speed_and_has_no_setting() -> void:
 	SeasonReplay.mode = "normal"
-	SeasonReplay.cycle()
-	assert_eq(SeasonReplay.mode, "fast")
-	assert_eq(SeasonReplay.mode_text(), "Fast")
-	SeasonReplay.cycle()
-	assert_eq(SeasonReplay.mode, "off")
-	assert_eq(SeasonReplay.seconds(), 0.0)
-	SeasonReplay.cycle()
-	assert_eq(SeasonReplay.mode, "normal")
-	assert_eq(SeasonReplay.seconds(), 3.0)
-
-
-func test_the_chosen_speed_is_remembered_between_games() -> void:
-	SeasonReplay.mode = "fast"
-	SeasonReplay.save_mode()
-	SeasonReplay.mode = "normal"
-	SeasonReplay.load_mode()
-	assert_eq(SeasonReplay.mode, "fast")
+	assert_eq(SeasonReplay.seconds(), 3.0, "a whole season takes 3 seconds to play")
 	SeasonReplay.mode = "off"
-	SeasonReplay.save_mode()   # leave the scratch settings as the test run wants them
+	assert_eq(SeasonReplay.seconds(), 0.0, "tests turn the walk off so they do not wait for it")
+	var names: Array = SeasonReplay.new().get_method_list().map(func(method): return method.name)
+	for gone in ["cycle", "mode_text", "load_mode", "save_mode"]:
+		assert_false(names.has(gone), "SeasonReplay no longer has %s: the speed is not a setting" % gone)
 
 
 # ---------------------------------------------------------------- a march of troops

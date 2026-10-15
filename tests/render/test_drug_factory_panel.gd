@@ -49,8 +49,9 @@ func _texts(tab := "Tile") -> Array:
 	return hud.boxes[tab].find_children("*", "Label", true, false).map(func(l): return l.text)
 
 
+## The text of every button in a tab: its own, and the cost or reason a row shows on its right.
 func _button_texts(tab := "Tile") -> Array:
-	return hud.boxes[tab].find_children("*", "Button", true, false).map(func(b): return b.text)
+	return hud.boxes[tab].find_children("*", "Button", true, false).map(func(b): return b.text + (" " + (b.get_node("Cost") as Label).text if b.get_node_or_null("Cost") != null else ""))
 
 
 func test_clicking_the_drug_factory_shows_the_hides_and_the_salt_in_the_stores() -> void:

@@ -20,9 +20,8 @@ THE BASICS
 - Pan the map: WASD / arrow keys, or right-drag. Zoom: mouse wheel.
 - F11 goes fullscreen, and F11 again goes back. The game fills whatever size the window is.
 - Left-click a tile to look at it, claim it or build on it.
-- END SEASON (top right) moves time on. The game autosaves every season. The map then plays the
-  season's walking back, so you watch your parties go; a click or Enter skips it, and the
-  WALK button beside END SEASON sets it to Normal, Fast or Off.
+- END SEASON (the little window in the top bar, or E) moves time on, and the sun sets or rises in it as the map fades between day and night. The game autosaves every season. The map then plays the
+  season's walking back, so you watch your parties go; a click or Enter skips it.
 - Menu (top right) goes back to the title screen: Resume, Load, Quit.
 - Click a scouting party to pick it, then click somewhere to see how far its food goes.
   Esc lets go.
@@ -30,7 +29,11 @@ THE BASICS
   the kill shot). Bears attack parties that come too close. Something huge sleeps under the
   biggest ruined city: scavenging near it is a gamble, and its hide makes Salt (build a Drug Factory).
 - The little field tablet in the top bar switches the map between the pixel art (the default) and old-school text.
-- SPACE rolls the die when a party is at a site (ENTER or a click skips the season's walk). R flips the radiation view.
+- Every button shows its key. 1 to 9 and 0 press the open tab's buttons from the top; F builds a farm, P a wall, O a road, L a hunting lodge on the
+  tile you picked; Z, X, C send a party on foot, on horseback, by war rig (scavengers to a ruin, site or crater, hunters to an animal, scouts to other
+  ground outside your land); Backspace leaves a party's panel, Del demolishes. E ends the season, M switches the map art (pixel art or ASCII), N night, F5 and F9 open Save and Load, Esc lets go, then opens the menu.
+  F1 to F4 and Tab switch tabs. SPACE rolls the die, ENTER or a click skips the season's walk, R flips the radiation view.
+  ? shows every key on one sheet. "Key hints" in the menu hides the key caps.
 - Hover the mouse over a tile to see what it is.
 - Every season the map fades between day and night (Spring and Autumn are day). Craters, camps you can see and ruins
   held by raiders keep glowing in the dark. The Legend tab has a Night On/Off switch.

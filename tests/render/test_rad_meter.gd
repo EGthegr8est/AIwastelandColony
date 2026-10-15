@@ -61,15 +61,16 @@ func test_the_meter_stands_where_the_rad_button_was() -> void:
 	for b in main.find_children("*", "Button", true, false):
 		assert_false(b.text.begins_with("Rad:"), "the Rad button is gone")
 	var row: Node = hud.rad_meter.get_parent()
-	assert_true(row.get_child(hud.rad_meter.get_index() - 1).text.begins_with("Map:"), "after the Map button")
+	assert_true(row.get_child(hud.rad_meter.get_index() - 1) is HBoxContainer, "after the music slider, where the Map button was")
 	assert_eq(row.get_child(hud.rad_meter.get_index() + 1), hud.sonar_tablet, "and before the map-art tablet, which took the Art button's place")
 
 
 func test_it_lies_on_its_side_and_fits_the_bar() -> void:
 	var m: Control = hud.rad_meter
-	assert_eq(m.size, Vector2(64, 40), "40 x 64 turned to 64 x 40, at the art's own pixel size")
+	assert_almost_eq(m.size.x, 76.8, 0.5, "40 x 64 turned to 64 x 40, drawn 20% bigger in the bar (the bar rounds it to whole pixels)")
+	assert_eq(m.size.y, 48.0)
 	var bar: Rect2 = hud.game_ui[0].get_global_rect()
-	assert_eq(bar.size.y, 58.0)
+	assert_eq(bar.size.y, float(hud.BAR_HEIGHT), "the top bar is 76 px tall now")
 	assert_true(bar.encloses(m.get_global_rect()), "inside the top bar")
 	assert_gt(m.get_global_rect().position.y, bar.position.y)
 	var middle := m.get_global_rect().get_center().y
@@ -138,12 +139,13 @@ func test_the_view_is_really_on_the_map() -> void:
 
 func test_only_the_meters_own_pixels_are_clickable() -> void:
 	var m: Control = hud.rad_meter
+	var k: float = hud.BAR_ART_SCALE   # the art is drawn 20% bigger in the bar: a point on it is the art's point times k
 	for corner in [Vector2(0, 0), Vector2(63, 0), Vector2(0, 39), Vector2(63, 39)]:
-		assert_false(m._has_point(corner), "the empty corner %s" % str(corner))
-	assert_true(m._has_point(Vector2(32, 20)), "the middle of the meter")
-	assert_false(m._has_point(Vector2(-1, 20)))
-	assert_false(m._has_point(Vector2(64, 20)))
-	assert_false(m._has_point(Vector2(32, 40)))
+		assert_false(m._has_point(corner * k), "the empty corner %s" % str(corner))
+	assert_true(m._has_point(Vector2(32, 20) * k), "the middle of the meter")
+	assert_false(m._has_point(Vector2(-1, 20) * k))
+	assert_false(m._has_point(Vector2(64, 20) * k))
+	assert_false(m._has_point(Vector2(32, 40) * k))
 
 
 func test_it_follows_the_game_when_the_view_is_changed_another_way() -> void:

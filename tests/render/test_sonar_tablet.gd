@@ -56,11 +56,12 @@ func test_the_tablet_took_the_art_buttons_place() -> void:
 		assert_false(b.text.begins_with("Art:"), "the Art button is gone")
 	var row: Node = tablet.get_parent()
 	assert_eq(row.get_child(tablet.get_index() - 1), hud.rad_meter, "after the radiation meter")
-	assert_true(row.get_child(tablet.get_index() + 1).text.begins_with("Walk:"), "before the Walk button")
+	assert_eq(row.get_child(tablet.get_index() + 2), hud.end_button, "then the E cap and the END SEASON window (the Map and Walk buttons are gone)")
 
 
 func test_it_lies_on_its_side_and_fits_the_bar() -> void:
-	assert_eq(tablet.size, Vector2(64, 40), "40 x 64 turned a quarter to 64 x 40, at the art's own pixel size")
+	assert_almost_eq(tablet.size.x, 76.8, 0.5, "40 x 64 turned a quarter to 64 x 40, drawn 20% bigger in the bar")
+	assert_eq(tablet.size.y, 48.0)
 	var bar: Rect2 = hud.game_ui[0].get_global_rect()
 	assert_true(bar.encloses(tablet.get_global_rect()), "inside the top bar")
 	assert_almost_eq(tablet.get_global_rect().get_center().y, bar.get_center().y, 1.5, "in the middle of the bar")
@@ -85,7 +86,7 @@ func test_a_click_turns_the_map_to_text_glyphs_and_plays_the_power_on() -> void:
 	assert_eq(tablet._sprite.animation, &"power_on")
 	assert_eq(flips[0], 1)
 	assert_true(tablet.is_busy())
-	await wait_seconds(1.1)
+	await wait_seconds(1.6)
 	assert_false(tablet.is_busy())
 	assert_eq(tablet._sprite.animation, &"on", "and the sonar sweep idles")
 	assert_true(tablet._sprite.sprite_frames.get_animation_loop(&"on"))
@@ -94,7 +95,7 @@ func test_a_click_turns_the_map_to_text_glyphs_and_plays_the_power_on() -> void:
 
 func test_a_second_click_turns_it_back_to_the_pixel_art() -> void:
 	_click(tablet)
-	await wait_seconds(1.1)
+	await wait_seconds(1.6)
 	_click(tablet)
 	assert_eq(Sprites.state(), Sprites.CLEAN, "the clean pixel art, not an old style")
 	assert_false(tablet.is_on)
@@ -119,10 +120,11 @@ func test_the_legend_follows_the_map_into_glyphs() -> void:
 
 
 func test_only_the_tablets_own_pixels_are_clickable() -> void:
+	var k: float = hud.BAR_ART_SCALE
 	for corner in [Vector2(0, 0), Vector2(63, 0), Vector2(0, 39), Vector2(63, 39)]:
-		assert_false(tablet._has_point(corner), "the empty corner %s" % str(corner))
-	assert_true(tablet._has_point(Vector2(32, 20)), "the middle of it")
-	assert_false(tablet._has_point(Vector2(64, 20)))
+		assert_false(tablet._has_point(corner * k), "the empty corner %s" % str(corner))
+	assert_true(tablet._has_point(Vector2(32, 20) * k), "the middle of it")
+	assert_false(tablet._has_point(Vector2(64, 20) * k))
 
 
 # ---------------------------------------------------------------- it follows the game
@@ -148,7 +150,7 @@ func test_one_of_the_old_styles_counts_as_the_pixel_art_and_the_tablet_is_off() 
 	assert_false(tablet.is_on)
 	_click(tablet)
 	assert_eq(Sprites.state(), 0)
-	await wait_seconds(1.1)
+	await wait_seconds(1.6)
 	_click(tablet)
 	assert_eq(Sprites.state(), Sprites.CLEAN, "and back from the glyphs it is the clean look, not style 2")
 
@@ -170,7 +172,7 @@ func test_a_click_plays_the_blip_either_way() -> void:
 	_click(tablet)
 	assert_true(tablet._sfx_on.playing, "turning on blips")
 	assert_eq(tablet._sfx_on.stream, tablet.on_sound)
-	await wait_seconds(1.1)
+	await wait_seconds(1.6)
 	assert_false(tablet.is_humming(), "a blip is not a hum: it does not go on")
 	_click(tablet)
 	assert_true(tablet._sfx_off.playing, "turning off blips")
