@@ -50,7 +50,7 @@ THE BASICS
   and if your scouts destroy their airfield they cannot launch until they rebuild it.
 - The ruined gas station always stands beside the old highway.
 - Click a point of interest you have found (or a stretch of the old highway) and its picture shows in the bottom right corner.
-- The radiation view's switch in the top bar is now the little yellow survey meter: click it and it powers up (or down).
+- The radiation view's switch in the top bar is the little yellow survey meter (or press R): click it and it powers up (or down).
 - The MUSIC slider is in the top bar (and on the menu screens). All the way down is off.
 
 YOUR SAVES

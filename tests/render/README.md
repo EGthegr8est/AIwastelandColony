@@ -16,15 +16,15 @@ CPU time spent. They pin down rules like these, so an optimization can't quietly
 - A claim redraws at most the 4 chunks around it.
 
 **Smoke test** (`test_main_scene.gd`) runs the real `main.tscn` with its map, camera and HUD. It starts
-a colony, zooms, ends a season and switches views through the HUD's own buttons.
+a colony, zooms and ends a season by clicking the END SEASON window, as a player would.
 
 **Map art tests** (`test_map_art.gd`) check which sprite goes where and that changing the art redraws the map. With a
 GPU they also check the pixels on screen: a ground tile or unit is exactly the atlas sprite at 2x.
 
 **GPU tests** need a window. Headless runs skip them.
 
-- `test_snapshots.gd` renders nine views and compares them with the images in `snapshots/`. These
-  are your home area (in pixel-art style 1, 2 and 3, and in text glyphs), the whole map, contours up close,
+- `test_snapshots.gd` renders the map in a dozen views and compares them with the images in `snapshots/`: your home area
+  (in the clean pixel art, the older sprite styles and text glyphs), the whole map, contours up close, buildings, roads and the highway,
   the selection with routes, remembered enemy land, and units. It also plays through claims, moving units and seasons, and after each step
   checks the live map against a fresh draw, pixel for pixel. That catches chunks that should have
   redrawn but didn't.

@@ -4,14 +4,14 @@ Builds the Windows version of the game and zips it, ready to send to a friend.
     .\tools\build_windows.ps1 -Out D:\Somewhere      put the results somewhere else
 
 Needs Godot's Windows export templates (Godot > Editor > Manage Export Templates, or see the README).
-The folder it makes, and the zip next to it, go in ..\WastelandColony3-release by default:
+The folder it makes, and the zip next to it, go in ..\WastelandColony-release by default:
     WastelandColony\WastelandColony.exe     the game, as a single file (the art and music are inside it)
     WastelandColony\PLAY_ME.txt             how to run it, for your friend
     WastelandColony-Windows.zip             the two above, zipped: send this
 It also runs the game's own self-check on the finished build (art, music and data all there), and stops if it fails.
 Godot is found like tests\run.ps1 does: $env:GODOT, then Godot_v*_console.exe on your Desktop, then `godot` on PATH.
 #>
-param([string]$Out = (Join-Path (Split-Path $PSScriptRoot) "..\WastelandColony3-release"))
+param([string]$Out = (Join-Path (Split-Path $PSScriptRoot) "..\WastelandColony-release"))
 
 # Godot prints harmless warnings on stderr, which PowerShell would treat as fatal errors: judge by exit codes instead
 $ErrorActionPreference = "Continue"
