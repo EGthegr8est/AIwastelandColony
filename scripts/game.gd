@@ -1560,9 +1560,12 @@ func idx(c: Vector2i) -> int:
 	return c.y * w + c.x
 
 
+const _DIRS := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+
+
 func neighbors(c: Vector2i) -> Array:
 	var out := []
-	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+	for d in _DIRS:
 		if in_bounds(c + d):
 			out.append(c + d)
 	return out
@@ -3456,8 +3459,15 @@ func save_game(slot: String) -> void:
 		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost, "leader_info": leader_info,
 		"memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
 	}
-	var f := FileAccess.open(_path(slot), FileAccess.WRITE)
+	# Write beside the save and rename over it, so a failed write never leaves a half-written save.
+	var tmp := _path(slot) + ".tmp"
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		add_log("Could not save to %s." % slot)
+		return
 	f.store_string(JSON.stringify(data))
+	f.close()
+	DirAccess.rename_absolute(tmp, _path(slot))
 	if slot != "autosave":
 		add_log("Game saved to %s." % slot)
 		changed.emit()
