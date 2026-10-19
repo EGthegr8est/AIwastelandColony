@@ -19,6 +19,7 @@ const Data = preload("res://scripts/data.gd")
 const D20Data = preload("res://scripts/d20_data.gd")
 const D20 = preload("res://scripts/d20.gd")
 const Leaders = preload("res://scripts/leaders.gd")
+const Roster = preload("res://scripts/roster.gd")
 const SAVE_DIR := "user://saves/"
 
 var save_dir := SAVE_DIR       # tests point this at their own folder so they never touch real saves
@@ -39,7 +40,12 @@ var refinery_on := {}          # tile index -> true for each refinery you've swi
 var res: Dictionary = {}
 var salt_on := false           # "Take Salt": parties take a dose for each survivor when they leave, if there is enough
 var items: Dictionary = {}     # what the colony keeps that is not a resource (Data.ITEMS): frog hides, Salt. No line in the top bar.
-var pop := 10
+var roster: Array = []         # every survivor the colony has had, alive or dead: see roster.gd
+var pop: int:                  # the survivors at home (those out in a party are not counted, as before). Setting it adds or removes people.
+	get:
+		return home_survivors().size()
+	set(value):
+		_set_pop(value)
 var troops := 3
 var prisoners := 0
 var season := 1
@@ -89,7 +95,9 @@ func new_game(leader_id: String, info := {}) -> void:
 	leader = leader_id
 	leader_info = Leaders.fill(leader_id, info)
 	season = 1
-	pop = 10
+	roster = []
+	Roster.reseed()
+	pop = 10   # ten new survivors, each with a name, traits and a face
 	troops = 3
 	prisoners = 0
 	upgrades = []
@@ -2254,7 +2262,8 @@ func train_troop_cost() -> Dictionary:
 
 func train_troop() -> void:
 	if pop > 2 and pay(train_troop_cost()):
-		pop -= 1
+		var s: Dictionary = Roster.pick(home_survivors())
+		s.state = "enlisted"
 		troops += 1
 		note("troops_trained")
 		changed.emit()
@@ -2263,7 +2272,11 @@ func train_troop() -> void:
 func disband_troop() -> void:
 	if troops > 0:
 		troops -= 1
-		pop += 1
+		var back: Array = roster.filter(func(s): return s.state == "enlisted")
+		if back.is_empty():
+			recruit(1)
+		else:
+			back[0].state = "home"
 		changed.emit()
 
 
@@ -2411,7 +2424,7 @@ func _ai_raid() -> void:
 			loot[k] = int(res[k] * (rules.crit_loot if roll.crit == "success" else rules.loot))
 			res[k] -= loot[k]
 		troops -= int(ceil(troops * 0.3))
-		pop = maxi(pop - 1, 1)
+		lose_home(1 if pop > 1 else 0, "killed in the Rust Kings' raid")
 		ai["troops"] -= int(ai["troops"] * 0.2)
 		var land := 0
 		if count_building(Data.PLAYER, "citadel") > 0:
@@ -2900,6 +2913,9 @@ func end_season() -> void:
 	var sight_before: PackedByteArray = sight[Data.PLAYER].duplicate() if sight.has(Data.PLAYER) else PackedByteArray()
 	Units.season_turn()
 	season += 1
+	if (season - 1) % 4 == 0:
+		for s in living_survivors():
+			s["age"] += 1   # a new year
 	raided_this_season = false
 	buildings_lost = 0
 	update_fog()
@@ -2960,8 +2976,8 @@ func _gather() -> void:
 	# Hunting is risky
 	for i in count_building(Data.PLAYER, "lodge"):
 		if randf() < (0.03 if has("hunting") else 0.08) and pop > 1:
-			pop -= 1
-			add_log("A hunting party didn't come back from the wastes.")
+			var gone := lose_home(1, "never came back from the wastes")
+			add_log("%s didn't come back from the wastes." % (gone[0].name if not gone.is_empty() else "A hunting party"))
 
 	if has("c3"):
 		res["gold"] += 3 * ally_count()
@@ -3049,16 +3065,16 @@ func _upkeep() -> void:
 		var surplus := food - eaters
 		if surplus >= (6 if has_quirk("big_families") else 10) and pop < pop_cap():
 			var growth := mini(1 + surplus / 20, pop_cap() - pop)
-			pop += growth
-			add_log("Food surplus: %d new settlers join." % growth)
+			var fresh := recruit(growth)
+			add_log("Food surplus: %d new settlers join: %s." % [growth, Units.list_text(fresh.map(func(s): return s.name))])
 	else:
 		res["grain"] = 0
 		res["veg"] = 0
 		var lost := maxi(1, (eaters - food) / 3)
 		if has_quirk("frugal"):
 			lost = maxi(1, lost / 2)
-		pop = maxi(pop - lost, 1)
-		add_log("STARVATION: %d colonists died or fled." % lost)
+		var fell := lose_home(mini(lost, maxi(pop - 1, 0)), "starved")
+		add_log("STARVATION: %d colonists died or fled%s." % [lost, " (%s)" % Units.list_text(fell.map(func(s): return s.name)) if not fell.is_empty() else ""])
 		starved_now = true
 		note("colonists_starved", lost)
 
@@ -3089,6 +3105,92 @@ func _upkeep() -> void:
 		prisoners -= escaped
 		troops = maxi(troops - 1, 0)
 		add_log("PRISONER REVOLT! %d escaped." % escaped)
+
+
+# ---------------------------------------------------------------- the roster
+
+func home_survivors() -> Array:
+	return roster.filter(func(s): return s.state == "home")
+
+
+## Every survivor who is alive (at home, in a party or enlisted).
+func living_survivors() -> Array:
+	return roster.filter(func(s): return s.state != "dead")
+
+
+func fallen_survivors() -> Array:
+	return roster.filter(func(s): return s.state == "dead")
+
+
+## `n` new survivors join the colony. Returns them.
+func recruit(n: int) -> Array:
+	var fresh := []
+	for i in n:
+		var s := Roster.make(roster, season)
+		roster.append(s)
+		fresh.append(s)
+	return fresh
+
+
+## A survivor dies: they stay on the roster as one of the fallen, with the season and the cause.
+func fall(s: Dictionary, cause: String) -> void:
+	s["state"] = "dead"
+	s["died"] = season
+	s["cause"] = cause
+
+
+## `n` random survivors at home die (never more than there are). Returns them.
+func lose_home(n: int, cause: String) -> Array:
+	var gone := Roster.shuffled(home_survivors()).slice(0, maxi(n, 0))
+	for s in gone:
+		fall(s, cause)
+	return gone
+
+
+## The `n` survivors who leave with a party: ones at home, the uninjured first. They are "away" until they come back.
+func take_crew(n: int) -> Array:
+	var home := home_survivors()
+	home.sort_custom(func(a, b): return int(a.hurt or a.leg) < int(b.hurt or b.leg))
+	if home.size() < n:
+		home.append_array(recruit(n - home.size()))
+	var crew := home.slice(0, n)
+	for s in crew:
+		s["state"] = "away"
+	return crew
+
+
+## A party is home: its people go back to the colony, rested and healed (a trip's injuries, hunger and doses are over).
+## People a test or an older save put in a party without the roster join it now. `crew` people with no names are made up.
+func welcome_home(party: Array, crew: int) -> void:
+	for s in party:
+		if not roster.has(s):
+			s["sid"] = _next_sid()
+			roster.append(s)
+		s["state"] = "home"
+		s["injury"] = "none"
+		s["hunger"] = 0
+		s["hp"] = Data.SURVIVOR_HP
+		s["dose"] = 0.0
+		s["hurt"] = false
+		s["leg"] = false
+		s["salted"] = 0
+	if crew > party.size():
+		recruit(crew - party.size())
+
+
+func _next_sid() -> int:
+	var top := 0
+	for s in roster:
+		top = maxi(top, int(s.sid))
+	return top + 1
+
+
+func _set_pop(value: int) -> void:
+	var home := home_survivors().size()
+	if value < home:
+		lose_home(home - value, "gone")
+	elif value > home:
+		recruit(value - home)
 
 
 ## Mouths to feed: the colonists and the prisoners, and for Big appetites 1 more for every 5 colonists.
@@ -3457,7 +3559,7 @@ func save_game(slot: String) -> void:
 		"units": Units.to_save(), "raided": raided_this_season, "ai": ai, "town": town,
 		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts, "hollow_found": hollow_found,
 		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost, "leader_info": leader_info,
-		"memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
+		"roster": roster, "memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
 	}
 	# Write beside the save and rename over it, so a failed write never leaves a half-written save.
 	var tmp := _path(slot) + ".tmp"
@@ -3484,7 +3586,6 @@ func load_game(slot: String) -> bool:
 	leader = data["leader"]
 	leader_info = Leaders.fill(leader, data.get("leader_info", {}))   # none in saves from before named leaders
 	season = int(data["season"])
-	pop = int(data["pop"])
 	troops = int(data["troops"])
 	prisoners = int(data["prisoners"])
 	w = int(data.get("w", 60))   # saves from before the bigger map were 60 x 36
@@ -3545,7 +3646,11 @@ func load_game(slot: String) -> bool:
 	refinery_on = {}
 	for i in data.get("refineries_on", []):   # saves from before the switch have every refinery off
 		refinery_on[int(i)] = true
+	roster = []
+	for s in data.get("roster", []):
+		roster.append(Roster.load_one(s, 0, "home", season))
 	Units.load_from(data.get("units", {}))
+	_link_parties(data)
 	selected = Vector2i(-1, -1)
 	selected_scout = -1
 	scout_route = {}
@@ -3554,6 +3659,30 @@ func load_game(slot: String) -> bool:
 	changed.emit()
 	focus.emit(home(Data.PLAYER))
 	return true
+
+
+## Puts the people of the parties on the map back on the roster (the same Dictionaries), and in an older save, with no roster,
+## makes up one: the people in parties, and enough at home to make `pop`.
+func _link_parties(data: Dictionary) -> void:
+	var by_sid := {}
+	for s in roster:
+		by_sid[s.sid] = s
+	for u in Units.units:
+		var linked := []
+		for s in u.survivors:
+			if s.state == "troop":
+				linked.append(s)   # a hunting party's troops are not on the roster
+			elif s.sid != 0 and by_sid.has(s.sid):
+				linked.append(by_sid[s.sid])
+			else:
+				s["sid"] = _next_sid()
+				s["state"] = "away"
+				roster.append(s)
+				by_sid[s.sid] = s
+				linked.append(s)
+		u["survivors"] = linked
+	if not data.has("roster"):
+		pop = int(data["pop"])
 
 
 func _pack_catastrophe(cat: Dictionary) -> Dictionary:

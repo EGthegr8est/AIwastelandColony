@@ -18,5 +18,6 @@ func _initialize() -> void:
 
 func _main() -> void:
 	await process_frame   # the root viewport only joins the tree after _initialize() returns
+	preload("res://scripts/roster.gd").fixed_seed = 4242   # the same survivors in every test run
 	var runner := Runner.new(self, OS.get_cmdline_user_args())
 	quit(await runner.run())

@@ -27,6 +27,7 @@ const D20Data = preload("res://scripts/d20_data.gd")
 const D20 = preload("res://scripts/d20.gd")
 const D20Visit = preload("res://scripts/d20_visit.gd")
 const Dice = preload("res://scripts/dice.gd")
+const Roster = preload("res://scripts/roster.gd")
 const SeasonReplay = preload("res://scripts/season_replay.gd")
 
 const FROG_ID := 1        # the Giant Frog's id as a hunting target (a unit's id is never below 2)
@@ -296,12 +297,10 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 	Game.note_sent(job)
 	if job == "hunters":
 		Game.troops -= e.crew
-	else:
-		Game.pop -= e.crew
 	var path := outbound_route(job, mover, from, target)
 	var u := _make_unit(job, Data.PLAYER, mover, from, path[-1])
 	u.crew = e.crew
-	u.survivors = _make_crew(e.crew, job == "hunters")
+	u.survivors = _make_crew(e.crew, true) if job == "hunters" else Game.take_crew(e.crew)
 	var doses := salt_doses(job)
 	if doses > 0:
 		Game.items["salt"] = int(Game.items["salt"]) - doses
@@ -326,31 +325,28 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 
 # ---------------------------------------------------------------- survivors
 
-## `n` new survivors with names nobody else in the field is using.
+## `n` survivors who are not on the roster (a hunting party's troops, and the crews tests make): names nobody else in the colony or the
+## field has. A party you send is made of roster people instead (Game.take_crew).
 func _make_crew(n: int, trained := false) -> Array:
-	var used := []
+	var known: Array = Game.roster.duplicate()
 	for other in units:
-		for s in other.survivors:
-			used.append(s.name)
-	var pool: Array = Data.SURVIVOR_NAMES.filter(func(x): return not x in used)
-	if pool.size() < n:
-		pool = Data.SURVIVOR_NAMES.duplicate()
-	pool.shuffle()
+		known.append_array(other.survivors)
 	var crew := []
-	var trait_ids: Array = D20Data.TRAITS.keys()
 	for i in n:
-		trait_ids.shuffle()
-		var mine: Array = trait_ids.slice(0, randi_range(1, 3))   # 1 to 3 traits each, no repeats
-		if trained:   # troops are Veterans, and then one or two more of their own
-			var others: Array = trait_ids.filter(func(id): return id != "veteran")
-			mine = ["veteran"] + others.slice(0, randi_range(0, 2))
-		crew.append({"name": pool[i], "age": randi_range(17, 58), "traits": mine,
-			"salted": 0,   # seasons of Salt left: the radiation they take in is halved while this is above 0
-			"injury": "none",   # from this expedition's rolls: none, light or severe, until the party is home
-			"hunger": 0, "hp": Data.SURVIVOR_HP, "dose": 0.0, "hurt": false,   # hurt: injured in a crash, until they heal
-			"leg": false,   # a broken leg (or a lame horse): slows the party until it gets home or this person dies
-			"face": randi() & 0x7fffffff})   # the seed for their portrait
+		var s := Roster.make(known, Game.season, trained)
+		s["sid"] = 0   # no number until they join the roster (Game.welcome_home)
+		s["state"] = "troop" if trained else "away"
+		known.append(s)
+		crew.append(s)
 	return crew
+
+
+## Every survivor still in the party dies, and the party has no crew.
+func _wipe(u: Dictionary, cause: String) -> void:
+	for s in u.survivors:
+		Game.fall(s, cause)
+	u.crew = 0
+	u.survivors = []
 
 
 ## "Mara", "Mara and Dex", "Mara, Dex and Odo"; "the crew" if nobody is named.
@@ -392,13 +388,14 @@ func survivor_line(s: Dictionary) -> String:
 
 
 ## Takes one survivor out of the party (a random one, or `who`) and returns their name.
-func _casualty(u: Dictionary, who := {}) -> String:
+func _casualty(u: Dictionary, who := {}, cause := "lost in the wastes") -> String:
 	u.crew = maxi(u.crew - 1, 0)
 	Game.note("survivors_lost")
 	if u.survivors.is_empty():
 		return ""
 	var s: Dictionary = who if not who.is_empty() else u.survivors.pick_random()
 	u.survivors.erase(s)
+	Game.fall(s, cause)
 	return s.name
 
 
@@ -466,7 +463,7 @@ func _feed(u: Dictionary) -> void:
 			continue
 		s.hunger += 1
 		if s.hunger >= Data.STARVE_DEATH:
-			_casualty(u, s)
+			_casualty(u, s, "starved in the field")
 			Game.add_log("%s starved to death at %d,%d." % [s.name, u.pos.x, u.pos.y])
 		elif s.hunger >= Data.STARVING_AT:
 			Game.add_log("%s is starving at %d,%d! Bring the party home before it's too late." % [s.name, u.pos.x, u.pos.y])
@@ -779,7 +776,7 @@ func _expose(u: Dictionary) -> void:
 			s.dose = 0.0
 		s.hp -= s.dose * Data.POISON_DAMAGE
 		if s.hp <= 0.0:
-			_casualty(u, s)
+			_casualty(u, s, "died of radiation sickness")
 			Game.add_log("%s died of radiation sickness at %d,%d." % [s.name, u.pos.x, u.pos.y])
 			continue
 		if s.dose < Data.DOSE_ILL:
@@ -866,7 +863,7 @@ func _crash(u: Dictionary, where: String) -> void:
 			s.hurt = true
 			walked.append("%s (%d hp)" % [s.name, ceili(s.hp)])
 		else:
-			died.append(_casualty(u, s))
+			died.append(_casualty(u, s, "killed in a crash"))
 	var text := "OUT OF FUEL: the plane crashed at %s." % where
 	if not died.is_empty():
 		text += " %s died in the wreck." % list_text(died)
@@ -988,8 +985,7 @@ func blast_kills(cells: Array, spare: Array, day := -1.0) -> Dictionary:
 			out.yours += 1
 			out.people += u.crew
 			Game.note("survivors_lost", u.crew)
-			u.crew = 0
-			u.survivors = []
+			_wipe(u, "wiped out at the ruins")
 			u.erase("visit")
 			_lost(u)
 		else:
@@ -1105,12 +1101,12 @@ func _come_home(u: Dictionary) -> void:
 			Game.items[k] = int(Game.items.get(k, 0)) + int(u.carry[k])
 		else:
 			Game.res[k] += u.carry[k]
+	var legs := broken_legs(u)   # counted before they are home and healed
 	if u.job == "hunters":
 		Game.troops += u.crew   # troops go back to being troops
 	else:
-		Game.pop += u.crew
+		Game.welcome_home(u.survivors, u.crew)
 	var name: String = Data.EXPEDITIONS[u.job].name
-	var legs := broken_legs(u)
 	if u.carry.is_empty():
 		Game.add_log("%s came home." % name)
 	else:
@@ -1277,8 +1273,7 @@ func visit_finish(uid: int) -> void:
 	u.erase("visit")
 	if v.wiped:
 		Game.note("survivors_lost", u.crew)
-		u.crew = 0
-		u.survivors = []
+		_wipe(u, "wiped out at the ruins")
 		_lost(u)
 		Game.add_log("The party was wiped out at the %s at %s." % [place, where])
 		Game.changed.emit()
@@ -1380,8 +1375,7 @@ func begin_strike(uid: int, cell: Vector2i) -> bool:
 func _strike_aftermath(u: Dictionary, v: Dictionary, what: String, where: String) -> bool:
 	if v.wiped:
 		Game.note("survivors_lost", u.crew)
-		u.crew = 0
-		u.survivors = []
+		_wipe(u, "killed attacking the Rust Kings")
 		_lost(u)
 		Game.add_log("The party was wiped out attacking the %s at %s." % [what, where])
 		Game.changed.emit()
@@ -1496,7 +1490,7 @@ func _trade(u: Dictionary) -> void:
 	if u.dest == -1:   # the Rust Kings
 		var armored: bool = Game.has("cv2") and u.mover == "car"
 		if Game.ai["relations"] < 0 and not armored and randf() < 0.35:
-			u.crew -= 1
+			_casualty(u, {}, "killed by Rust Kings robbers")
 			Game.add_log("The Rust Kings robbed your caravan at their gates! One trader was killed.")
 			return
 		var goods := {"gold": Game.trade_gold(8 + (2 * Game.vehicle_trade(u.mover) if u.mover in Data.VEHICLES else 0) + (Data.CONTRACT_GOLD if Game.has("c2") else 0))}
@@ -1651,8 +1645,7 @@ func _fight(band: Dictionary, u: Dictionary) -> void:
 func _after_field_fight(band: Dictionary, u: Dictionary, name: String, r: Dictionary) -> void:
 	if r.wiped:
 		Game.note("survivors_lost", u.crew)
-		u.crew = 0
-		u.survivors = []
+		_wipe(u, "killed by raiders")
 		Game.add_log("A raider band wiped out your %s." % name)
 		_lost(u, true)
 		return
@@ -1675,7 +1668,7 @@ func _after_field_fight(band: Dictionary, u: Dictionary, name: String, r: Dictio
 		if not split.lost.is_empty():
 			stolen = ", and took " + Game.cost_text(split.lost)
 	band.strength += 1
-	var who := _casualty(u) if int(r.d20) == D20Data.NAT_FAIL else ""
+	var who := _casualty(u, {}, "killed by raiders") if int(r.d20) == D20Data.NAT_FAIL else ""
 	var toll := "Nobody was killed"
 	if int(r.d20) == D20Data.NAT_FAIL:
 		toll = who + " was killed" if who != "" else "One killed"
@@ -1829,8 +1822,7 @@ func _bear_fight(bear: Dictionary, u: Dictionary) -> void:
 		Game.add_log(line)
 	if r.wiped:
 		Game.note("survivors_lost", u.crew)
-		u.crew = 0
-		u.survivors = []
+		_wipe(u, "killed by a wild animal")
 		Game.add_log("A %s killed your %s." % [kind, name])
 		_lost(u, true)
 		return
@@ -1846,7 +1838,7 @@ func _bear_fight(bear: Dictionary, u: Dictionary) -> void:
 			stolen = ", and lost " + Game.cost_text(split.lost)
 	var toll := "Nobody was killed"
 	if int(r.d20) == D20Data.NAT_FAIL:
-		var who := _casualty(u)
+		var who := _casualty(u, {}, "killed by a bear")
 		toll = (who + " was killed") if who != "" else "One killed"
 	Game.add_log("A %s mauled your %s! %s%s." % [kind, name, toll, stolen])
 	if u.crew <= 0:
@@ -2200,7 +2192,7 @@ func _frog_slams(fighters: Array, lead: Dictionary) -> void:
 		if result.tier == D20Data.SUCCESS or result.tier == D20Data.CRITICAL_SUCCESS:
 			lead.visit.last.append("The frog slams at %s: d20 %d, dodged." % [s.name, result.d20])
 		elif result.tier == D20Data.CRITICAL_FAILURE:
-			_casualty(p, s)
+			_casualty(p, s, "killed by the Giant Frog")
 			lead.visit.last.append("The frog slams at %s: d20 %d. %s is killed." % [s.name, result.d20, s.name])
 			if p.crew <= 0:
 				p.visit["wiped"] = true
@@ -2484,12 +2476,7 @@ func _unpack(d: Dictionary) -> Dictionary:
 				if not r in Data.RESOURCES and not r in Data.ITEMS:
 					v.erase(r)   # scrap and silver are gone from older saves
 		elif k == "survivors":
-			v = v.map(func(s): return {"name": s["name"], "age": int(s["age"]),
-				"traits": s.get("traits", []).filter(func(id): return D20Data.TRAITS.has(id)),   # none in saves from before the d20 rolls
-				"injury": s.get("injury", "none"),
-				"hunger": int(s["hunger"]), "hp": float(s.get("hp", Data.SURVIVOR_HP)), "dose": float(s.get("dose", 0.0)),
-				"hurt": bool(s.get("hurt", false)), "salted": int(s.get("salted", 0)), "leg": bool(s.get("leg", false)),
-				"face": int(s["face"]) if s.has("face") else hash(s["name"]) & 0x7fffffff})
+			v = v.map(func(s): return Roster.load_one(s, 0, "away", Game.season))
 		out[k] = v
 		if k == "visit":
 			out[k] = D20Visit.normalize(d[k])
