@@ -76,9 +76,35 @@ static func clean() -> bool:
 
 
 static func unit(id: String) -> Texture2D:
+	if state() != 0 and UNITS32.has(id) and units32_available():
+		var key := "unit32:" + id
+		if not _cache.has(key):
+			var t := AtlasTexture.new()
+			t.atlas = picture(UNITS32_PNG)
+			t.region = unit32_rect(id)
+			_cache[key] = t
+		return _cache[key]
 	if id == "soldier":
 		return soldier()
 	return texture(UNITS.get(id, ""))
+
+
+## The units drawn at twice the detail (32 x 32 pixels in one tile's space), one row left to right: see tools/make_units32.gd.
+const UNITS32_PNG := "res://art/units32.png"
+const UNITS32 := {"scav": 0, "scout": 1, "car": 2, "soldier": 3, "band": 4}
+const UNIT32_SIZE := 32
+
+
+## False if the 32 x 32 unit pictures can't be read: the map then draws these units from the 16 x 16 atlas.
+static func units32_available() -> bool:
+	return picture(UNITS32_PNG) != null
+
+
+## Where a unit's 32 x 32 picture is in art/units32.png, or an empty rectangle if it has none (or the file is missing).
+static func unit32_rect(kind: String) -> Rect2:
+	if not UNITS32.has(kind) or not units32_available():
+		return Rect2()
+	return Rect2(UNITS32[kind] * UNIT32_SIZE, 0, UNIT32_SIZE, UNIT32_SIZE)
 
 
 ## The troop marker (and a hunting party): a 16 x 16 picture drawn from the rows in season_replay.gd, since it is not in the atlas.

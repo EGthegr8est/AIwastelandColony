@@ -165,6 +165,27 @@ func _wrong_pixels(shot: Image, sprite: String, origin: Vector2i, shade := Color
 	return wrong
 
 
+## Like _wrong_pixels for a unit drawn from its 32 x 32 picture shrunk onto one tile: each screen pixel must be one of the four picture pixels it covers.
+func _wrong_pixels_from_32(shot: Image, unit: String, origin: Vector2i) -> int:
+	var art := Sprites.picture(Sprites.UNITS32_PNG).get_image().get_region(Rect2i(Sprites.unit32_rect(unit)))
+	var wrong := 0
+	for sy in Sprites.SIZE:
+		for sx in Sprites.SIZE:
+			var got := shot.get_pixel(origin.x + sx, origin.y + sy)
+			var opaque := 0
+			var found := false
+			for p in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+				var want := art.get_pixel(sx * 2 + p.x, sy * 2 + p.y)
+				if want.a < 1.0:
+					continue
+				opaque += 1
+				if absf(got.r - want.r) <= 0.02 and absf(got.g - want.g) <= 0.02 and absf(got.b - want.b) <= 0.02:
+					found = true
+			if opaque == 4 and not found:
+				wrong += 1
+	return wrong
+
+
 func test_a_ground_tile_on_screen_is_its_sprite_at_exactly_its_size() -> void:
 	if _needs_gpu():
 		return
@@ -190,7 +211,7 @@ func test_a_unit_on_screen_is_its_sprite() -> void:
 	await fx.view_cell(c, 1.0)
 	var shot: Image = await fx.capture()
 	var origin := Vector2i(fx.screen_pos(c) - Vector2(8, 8))
-	assert_eq(_wrong_pixels(shot, "war_rig", origin), 0)
+	assert_eq(_wrong_pixels_from_32(shot, "car", origin), 0)
 	Units.units.erase(u)
 
 

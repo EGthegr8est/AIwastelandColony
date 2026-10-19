@@ -67,7 +67,17 @@ func test_every_sprite_lies_inside_the_atlas_picture() -> void:
 
 func test_the_pictures_are_what_you_get_for_a_ground_or_a_unit() -> void:
 	assert_eq(Sprites.terrain("sand").get_image().get_data(), Sprites.image("ash_sand").get_data())
-	assert_eq(Sprites.unit("car").get_image().get_data(), Sprites.image("war_rig").get_data())
+	assert_eq(Sprites.unit("boat").get_image().get_data(), Sprites.image("boat").get_data())
+
+
+func test_the_scavenger_scout_war_rig_and_troop_have_32_pixel_pictures() -> void:
+	for kind in Sprites.UNITS32:
+		var r := Sprites.unit32_rect(kind)
+		assert_eq(r.size, Vector2(32, 32), kind)
+		var img := Sprites.picture(Sprites.UNITS32_PNG).get_image().get_region(Rect2i(r))
+		assert_false(img.get_used_rect().size == Vector2i.ZERO, "%s is drawn" % kind)
+		assert_eq(Sprites.unit(kind).get_size(), Vector2(32, 32), kind)
+	assert_eq(Sprites.unit32_rect("boat"), Rect2(), "the others keep their 16 x 16 picture")
 
 
 func test_the_art_switches_between_the_pixel_art_and_the_text_glyphs() -> void:

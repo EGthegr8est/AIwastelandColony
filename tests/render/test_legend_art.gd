@@ -34,7 +34,7 @@ func after_each() -> void:
 
 ## The pictures in the legend (16 x 16 sprites, not the animals, the sites, the portraits and icons elsewhere).
 func _sprites() -> Array:
-	return tile_box.find_children("*", "TextureRect", true, false).filter(func(r): return r.texture.get_size() == Vector2(16, 16) and not (r.texture is AtlasTexture and r.texture.atlas == Sprites.animals_texture()))
+	return tile_box.find_children("*", "TextureRect", true, false).filter(func(r): return (r.texture.get_size() == Vector2(16, 16) or (r.texture is AtlasTexture and r.texture.atlas == Sprites.picture(Sprites.UNITS32_PNG))) and not (r.texture is AtlasTexture and r.texture.atlas == Sprites.animals_texture()))
 
 
 func _labels() -> Array:

@@ -835,6 +835,10 @@ func _draw_unit(layer: CanvasItem, kind: String, at: Vector2, hop: float, tint: 
 		return
 	layer.draw_rect(Rect2(at + Vector2(2, 2), CELL - Vector2(4, 4)), Color(PATCH.r, PATCH.g, PATCH.b, PATCH.a * tint.a))
 	var up := Vector2(0, -hop)
+	var big := Sprites.unit32_rect(kind)   # the scavengers, scouts, war rigs and troops have a 32 x 32 picture
+	if art and big.size != Vector2.ZERO:
+		layer.draw_texture_rect_region(Sprites.picture(Sprites.UNITS32_PNG), Rect2(at + up, CELL), big, tint)
+		return
 	if kind == "soldier":
 		if art:
 			layer.draw_texture_rect(_soldier(), Rect2(at + up, CELL), false, tint)
