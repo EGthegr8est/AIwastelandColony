@@ -457,6 +457,15 @@ func _farm_east(dx: int) -> Vector2i:
 	return c
 
 
+## A citadel on your land: nothing can bring your hearth down while it stands, so a raid rolls at ordinary buildings only. (What a raid does about the hearth
+## is in test_hearths and test_ai_raid_party.)
+func _keep_the_hearth_safe() -> void:
+	var c := Vector2i(hq.x, hq.y + 2)
+	Game.tile(c)["o"] = Data.PLAYER
+	Game.tile(c)["t"] = "sand"
+	Game.tile(c)["b"] = "citadel"
+
+
 ## Seeds the random numbers so the next randf() is (or is not) under the scouts' strike chance.
 func _seed_scout_chance(fires: bool) -> void:
 	for s in range(1, 500):
@@ -479,6 +488,7 @@ func test_a_winning_rust_kings_raid_rolls_once_at_the_building_nearest_their_for
 
 func test_double_your_defense_gets_them_a_second_roll_each_at_a_different_building() -> void:
 	Game.season = 10
+	_keep_the_hearth_safe()
 	var a := _farm_east(2)
 	var b := _farm_east(1)
 	var c := _farm_east(-2)
@@ -489,6 +499,7 @@ func test_double_your_defense_gets_them_a_second_roll_each_at_a_different_buildi
 
 func test_their_planes_add_a_roll_unless_you_have_flak_towers() -> void:
 	Game.season = 10
+	_keep_the_hearth_safe()
 	Game.ai["plane"] = 1
 	var farms := [_farm_east(3), _farm_east(2), _farm_east(1), _farm_east(-2)]
 	Units.dice = ForcedDice.new([20, 20, 20])
@@ -524,6 +535,7 @@ func test_the_season_cap_stops_their_raid_too() -> void:
 
 func test_a_real_winning_raid_destroys_a_building_and_a_lost_one_does_not() -> void:
 	Game.season = 10
+	_keep_the_hearth_safe()
 	var farm := _farm_east(2)
 	Game.ai["troops"] = 1000   # their raid wins
 	Units.dice = ForcedDice.new([15, 20, 20])   # their raid's d20, then two rolls at your buildings

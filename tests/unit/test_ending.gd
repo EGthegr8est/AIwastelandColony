@@ -87,12 +87,11 @@ func test_leaving_the_rust_kings_almost_no_land_ends_the_game() -> void:
 
 # ---------------------------------------------------------------- you lose
 
-func test_an_overwhelming_rust_kings_raid_overruns_the_colony() -> void:
+func test_an_overwhelming_rust_kings_raid_that_finds_your_hearth_open_overruns_the_colony() -> void:
+	Game.season = 10
 	Game.ai["troops"] = 400
-	for i in 40:
-		if Game.ended():
-			break
-		Game._ai_raid()
+	Units.dice = load("res://tests/helpers/forced_dice.gd").new([20, 20])   # the guards' roll, then the roll at your hearth
+	Game._ai_raid()
 	assert_eq(Game.ending.kind, "defeat")
 	assert_eq(Game.ending.why, "overrun")
 	assert_eq(fired, ["defeat"])
@@ -101,10 +100,12 @@ func test_an_overwhelming_rust_kings_raid_overruns_the_colony() -> void:
 func test_a_citadel_stops_the_colony_being_overrun() -> void:
 	var spot: Vector2i = Game.owned(Data.PLAYER).filter(func(c): return Game.tile(c)["b"] == "")[0]
 	Game.tile(spot)["b"] = "citadel"
+	Game.season = 10
 	Game.ai["troops"] = 400
+	Units.dice = load("res://tests/helpers/forced_dice.gd").new([20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20])
 	for i in 20:
 		Game._ai_raid()
-	assert_false(Game.ended())
+	assert_false(Game.ended(), "there is nothing they can roll at but the citadel, and it cannot be hit")
 
 
 func test_a_colony_that_starves_to_almost_nobody_is_finished() -> void:

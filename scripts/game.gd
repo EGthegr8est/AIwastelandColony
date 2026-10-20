@@ -124,7 +124,7 @@ func new_game(leader_id: String, info := {}) -> void:
 	for v in Data.VEHICLES:
 		vehicles[v] = 0
 	ai = {"name": "The Rust Kings", "troops": 6, "walls": 0, "food": 20, "wood": 20, "stone": 10,
-		"metal": 5, "gold": 10, "relations": 0, "truce": 0, "raid_planned": false,
+		"metal": 5, "gold": 10, "relations": 0, "truce": 0, "raid_progress": 0.0,
 		"horse": 0, "car": 0, "boat": 0, "plane": 0, "salt_stock": 0,
 		"bomber": 0, "nukes": 0, "airfield_wait": 0, "airfield_x": -1, "airfield_y": -1, "airfield_seen": 0, "nuke_x": -1, "nuke_y": -1, "last_strike": -99}
 	town = {"name": "Dustwell", "status": "neutral", "relations": 20}
@@ -2059,8 +2059,13 @@ func _ai_strikes(att: float, def: float) -> void:
 	if ai["plane"] > 0 and not has("fv4"):
 		rolls += 1
 	var mod := raid_modifier(att, def)
-	for c in buildings_of(Data.PLAYER, home(Data.AI)).slice(0, mini(rolls, Data.AI_RAID_ROLLS)):
+	var targets := buildings_of(Data.PLAYER, home(Data.AI))
+	if att >= def * float(Data.AI_RAID.hearth_ratio) and can_hit(home(Data.PLAYER)):
+		targets.push_front(home(Data.PLAYER))   # a strong raid that finds your hearth unguarded goes for it first
+	for c in targets.slice(0, mini(rolls, Data.AI_RAID_ROLLS)):
 		attack_building(c, mod, "The Rust Kings")
+		if not ending.is_empty():
+			return   # your hearth fell: the rest does not matter
 
 
 ## A Rust Kings scout that has just ended its move at `at`: if one of your buildings is within AI_SCOUT_REACH tiles of it
@@ -2394,9 +2399,14 @@ func _take_land(from: int, to: int, count: int, keep_buildings: bool) -> int:
 	return taken
 
 
-func _ai_raid() -> void:
-	var att := ai_attack()
-	if ai["car"] > 0 and route("car", home(Data.AI), home(Data.PLAYER)).is_empty():
+## A Rust Kings raid reaches your land: the guards' roll, then, if it won, loot, losses, land and rolls at your buildings (and at your hearth when
+## nothing guards it). `att` is the raid's strength (their whole strength when it is called straight, as the tests do) and `party` the raiding
+## party that made it (Units._raid_turn), whose troops pay the losses; with none the losses are the fort's.
+func _ai_raid(att := -1.0, party := {}) -> void:
+	if att < 0.0:
+		att = ai_attack()
+	var side: Dictionary = party if not party.is_empty() else ai   # whose troops this costs
+	if party.is_empty() and ai["car"] > 0 and route("car", home(Data.AI), home(Data.PLAYER)).is_empty():
 		add_log("The Rust Kings' war rigs couldn't get past the steep inclines. Only riders and foot soldiers came.")
 	var walls := player_wall_defense()
 	if ai["plane"] > 0 and not has("fv4"):
@@ -2411,7 +2421,7 @@ func _ai_raid() -> void:
 			res[k] -= loot[k]
 		troops -= int(ceil(troops * 0.3))
 		lose_home(1 if pop > 1 else 0, "killed in the Rust Kings' raid")
-		ai["troops"] -= int(ai["troops"] * 0.2)
+		side["troops"] -= int(side["troops"] * 0.2)
 		var land := 0
 		if count_building(Data.PLAYER, "citadel") > 0:
 			pass
@@ -2422,11 +2432,8 @@ func _ai_raid() -> void:
 		add_log("The Rust Kings RAIDED you! They took %s and %d tiles." % [cost_text(loot), land])
 		note("raids_suffered")
 		_ai_strikes(att, def)
-		if att >= def * Data.ENDINGS.decisive_loss and count_building(Data.PLAYER, "citadel") == 0:
-			add_log("Their attack was overwhelming: the colony is overrun.")
-			_end("defeat", "overrun")
 	else:
-		ai["troops"] -= int(ceil(ai["troops"] * (rules.crit_their_troops_lost if roll.crit == "fail" else rules.their_troops_lost)))
+		side["troops"] -= int(ceil(side["troops"] * (rules.crit_their_troops_lost if roll.crit == "fail" else rules.their_troops_lost)))
 		troops -= int(troops * 0.1)
 		var caught: int = rules.crit_caught if roll.crit == "fail" else rules.caught
 		prisoners += caught
@@ -2555,7 +2562,8 @@ func buy_salt() -> void:
 func bribe() -> void:
 	if has("c4") and pay({"gold": 20}):
 		ai["truce"] = 3
-		ai["raid_planned"] = false
+		ai["raid_progress"] = 0.0
+		Units.recall_raids()
 		ai["relations"] = mini(ai["relations"] + 30, 100)
 		add_log("The Rust Kings take your gold. No raids for 3 seasons.")
 		changed.emit()
@@ -3234,15 +3242,22 @@ func _ai_turn() -> void:
 
 	if ai["truce"] > 0:
 		ai["truce"] -= 1
-	if ai["raid_planned"]:
-		ai["raid_planned"] = false
-		_ai_raid()
-	elif ai["truce"] == 0 and season >= 4 and knows(Data.AI, Data.PLAYER):
-		var chance := clampf(0.2 - ai["relations"] / 200.0, 0.05, 0.7)
-		if randf() < chance:
-			ai["raid_planned"] = true
-			if has("f3"):
-				add_log("WATCHTOWER: Rust Kings war party massing. Raid coming next season!")
+	if ai["truce"] == 0 and season >= Data.AI_RAID.min_season and knows(Data.AI, Data.PLAYER):
+		_ai_raid_readiness()
+
+
+## The Rust Kings' raid readiness (Data.AI_RAID): it grows each season by their troops times how much they dislike you, and a raiding party sets out
+## when it is full: it takes time to make a raid, and then the party has to walk to you.
+func _ai_raid_readiness() -> void:
+	var rules: Dictionary = Data.AI_RAID
+	if ai["troops"] < int(rules.min_troops):
+		return
+	var hostility := clampf(1.0 - float(ai["relations"]) / 100.0, float(rules.hostility_min), float(rules.hostility_max))
+	var gain: float = ai["troops"] * hostility * randf_range(float(rules.luck_low), float(rules.luck_high))
+	ai["raid_progress"] = minf(float(ai.get("raid_progress", 0.0)) + gain, float(rules.threshold) * 1.5)
+	if ai["raid_progress"] >= float(rules.threshold) and Units.raid_parties_out() < int(rules.max_parties):
+		ai["raid_progress"] -= float(rules.threshold)
+		Units.launch_raid()
 
 
 # ---------------------------------------------------------------- the Rust Kings' nukes
@@ -3545,6 +3560,8 @@ func load_game(slot: String) -> bool:
 		if not vehicles.has(v):
 			vehicles[v] = 0
 	ai = _ints(data["ai"])
+	ai["raid_progress"] = float(data["ai"].get("raid_progress", 0.0))   # the one number here that has a fraction
+	ai.erase("raid_planned")   # saves from before a raid took a party to make
 	ai.merge({"horse": 0, "car": 0, "boat": 0, "plane": 0})   # saves from before enemy vehicles
 	ai.merge({"bomber": 0, "nukes": 0, "airfield_wait": 0, "airfield_x": -1, "airfield_y": -1, "airfield_seen": 0, "nuke_x": -1, "nuke_y": -1, "last_strike": -99})   # and before nukes
 	town = _ints(data["town"])

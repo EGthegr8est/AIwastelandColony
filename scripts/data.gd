@@ -344,6 +344,16 @@ const AI_RAID_ROLLS := 3
 const AI_SCOUT_STRIKE := 0.1
 const AI_SCOUT_REACH := 2
 const AI_SCOUT_HOME_GAP := 3
+# The Rust Kings raid you with a party that has to be made and then has to walk to you (Game._ai_raid_readiness, Units.launch_raid). Every season
+# their raid readiness grows by their troops times how much they dislike you (hostility: 1 at relations 0, more as relations fall, between
+# hostility_min and hostility_max) with a little luck (luck_low to luck_high), up to threshold * 1.5; each time it reaches `threshold` and fewer
+# than max_parties are out, a party of party_share of their troops sets out with that share of their strength, riding if they have war rigs or
+# horses and a way for them. It is a raider band of theirs: it walks 40 days a season, fights your parties it meets (the same fight as any
+# band), and where it reaches your land it attacks (Game._ai_raid): the guards' roll, then up to AI_RAID_ROLLS rolls at your buildings, the first
+# at your hearth if nothing guards it and the party is hearth_ratio times your defence. What is left of it walks home and rejoins their troops
+# (max_age seasons at most). They raid no sooner than min_season and never with fewer than min_troops, and a bribe or a truce stops it all.
+const AI_RAID := {"threshold": 40.0, "min_season": 4, "min_troops": 4, "party_share": 0.75, "max_parties": 2, "hearth_ratio": 2.0,
+	"luck_low": 0.7, "luck_high": 1.3, "hostility_min": 0.3, "hostility_max": 3.0, "max_age": 24}
 
 const LEADERS := {
 	"raider":  {"name": "Raider",  "branch": "warfare",       "attack": 1.25, "defense": 1.0,  "caravans": 1, "desc": "Best attack. 25% off Warfare upgrades.",
@@ -589,16 +599,15 @@ const MARKET := {
 
 # ---------------------------------------------------------------- how the game ends
 # There are three endings, each shown once, then a stats screen, then the main menu:
-#   raiders_defeated  you win by force: a raid of yours that wins with attack at least decisive_win times their
-#                     defense storms their fort, or they are left with broken_land tiles or fewer.
-#   defeat            you lose: a raid of theirs that wins with attack at least decisive_loss times your defense
-#                     overruns the colony (a Citadel stops that), your land falls to lose_land tiles or fewer, or the
-#                     colony starves down to lose_pop people.
+#   raiders_defeated  you win by force: your parties bring down the Rust Kings' fort (its hearth: see D20Data.HEARTHS, once its defences are
+#                     down), or they are left with broken_land tiles or fewer.
+#   defeat            you lose: your own hearth, the colony HQ, is brought down (a Citadel stops that), your land falls to
+#                     lose_land tiles or fewer, or the colony starves down to lose_pop people.
 #   colony_prospers   the long game, and rare: from season "season" on, the Rust Kings' raid strength stays under "ratio"
 #                     of your defense for "streak" seasons in a row, after at least "battles" raids between the two
 #                     of you, with the colony healthy ("pop" people, "land" tiles, nobody starving).
 const ENDINGS := {
-	"decisive_win": 2.5, "decisive_loss": 3.0, "broken_land": 6, "lose_land": 6, "lose_pop": 2,
+	"broken_land": 6, "lose_land": 6, "lose_pop": 2,
 	"prosper": {"season": 80, "ratio": 0.25, "streak": 6, "battles": 2, "pop": 20, "land": 30},
 }
 # The picture shown for each ending (they carry their own title text), whether it is a win (which music plays),

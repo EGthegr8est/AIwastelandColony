@@ -2651,6 +2651,9 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary) -> void:
 	_travel_lines(box, _routes_between(Game.home(Data.PLAYER), Game.home(Data.AI)))
 	_label(box, "Their raid strength ~%.1f vs your defense %.1f" % [Game.ai_attack(),
 		Game.player_wall_defense() + Game.player_troop_defense()], DIM)
+	if Game.has("f3"):   # the Watchtower sees them muster
+		_label(box, "Raid readiness %d%% (a war party sets out at 100%%). On the march now: %d." % [
+			int(100.0 * float(ai.get("raid_progress", 0.0)) / float(Data.AI_RAID.threshold)), Units.raid_parties_out()], AMBER)
 	if ai["truce"] > 0:
 		_label(box, "Bribed: no raids for %d seasons." % ai["truce"], GREEN)
 	var guards := Game.hearth_guards(Game.home(Data.AI)).size()

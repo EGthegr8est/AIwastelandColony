@@ -1002,7 +1002,10 @@ func season_turn() -> void:
 			continue   # a blast earlier in this very season took it
 		u.age += 1
 		if u.job == "band":
-			_band_turn(u)
+			if u.owner == Data.AI:
+				_raid_turn(u)
+			else:
+				_band_turn(u)
 		elif u.job in PARTY_JOBS:
 			_scout_turn(u)
 		elif u.stage == "site":
@@ -1747,6 +1750,81 @@ func _band_turn(u: Dictionary) -> void:
 		_mark_gone(u)
 
 
+# ---------------------------------------------------------------- the Rust Kings' raiding parties
+
+## The Rust Kings' raiding parties on the map (Data.AI_RAID).
+func raid_parties_out() -> int:
+	return units.filter(func(p): return p.job == "band" and p.owner == Data.AI and not p.get("gone", false)).size()
+
+
+## A raiding party sets out from their fort for your colony: party_share of their troops, with that share of their strength, on a war rig or horses if
+## they have them and the way allows, and on foot otherwise. They are away from the fort until it is back. It is one of the raider bands, owned by them
+## (_raid_turn walks it). With the Watchtower upgrade you are told, and for how long it has to walk.
+func launch_raid() -> void:
+	var rules: Dictionary = Data.AI_RAID
+	var from := Game.home(Data.AI)
+	var to := Game.home(Data.PLAYER)
+	if Game.route("foot", from, to).is_empty():
+		return
+	var home_troops := maxi(int(Game.ai["troops"]), 1)
+	var sent := clampi(ceili(float(home_troops) * float(rules.party_share)), 1, home_troops)
+	var strength := Game.ai_attack() * float(sent) / float(home_troops)
+	var mover := "foot"
+	if Game.ai["car"] > 0 and not Game.route("car", from, to).is_empty():
+		mover = "car"
+	elif Game.ai["horse"] > 0 and not Game.route("horse", from, to).is_empty():
+		mover = "horse"
+	Game.ai["troops"] -= sent
+	var party := _make_unit("band", Data.AI, mover, from, to)
+	party.strength = maxi(roundi(strength), 1)
+	party["troops"] = sent
+	party["raid"] = true
+	units.append(party)
+	if Game.has("f3"):
+		var seasons := ceili(arrival_days(mover, Game.route(mover, from, to))[-1] / float(Data.SEASON_DAYS))
+		Game.add_log("WATCHTOWER: a Rust Kings war party of %d has set out for your colony. It should reach your land in about %d season%s." % [
+			sent, seasons, "" if seasons == 1 else "s"])
+
+
+## A bribe turns every raiding party that is still on its way out back.
+func recall_raids() -> void:
+	for p in units:
+		if p.job == "band" and p.owner == Data.AI and p.stage == "out":
+			p.stage = "back"
+			Game.add_log("The Rust Kings' war party turns back.")
+
+
+## A raiding party's season. Out, it walks toward your colony and attacks where it reaches your land (Game._ai_raid), then turns for home with what is
+## left of it. A truce turns it back. Home again, its troops rejoin the fort's. One that cannot get anywhere for Data.AI_RAID.max_age seasons goes home.
+func _raid_turn(p: Dictionary) -> void:
+	var fort := Game.home(Data.AI)
+	if p.age > int(Data.AI_RAID.max_age):
+		Game.ai["troops"] += int(p.troops)
+		_mark_gone(p)
+		return
+	if p.stage == "out" and Game.ai["truce"] > 0:
+		p.stage = "back"
+	if p.stage == "back":
+		p.path = Game.route(p.mover, p.pos, fort).slice(1)
+		_advance(p)
+		if p.path.is_empty():
+			Game.ai["troops"] += int(p.troops)
+			_mark_gone(p)
+		return
+	p.target = Game.home(Data.PLAYER)
+	p.path = Game.route(p.mover, p.pos, p.target).slice(1)
+	_advance(p)
+	if not p.get("spotted", false) and Game.in_sight(Data.PLAYER, p.pos):
+		p["spotted"] = true
+		Game.add_log("A Rust Kings war party of %d is marching on your colony: it is at %d,%d." % [int(p.troops), p.pos.x, p.pos.y])
+	if ([p.pos] + Game.neighbors(p.pos)).any(func(c): return Game.tile(c)["o"] == Data.PLAYER):
+		_note_event("clash", p.pos, _walk_day(p))
+		Game._ai_raid(float(p.strength), p)
+		p.stage = "back"
+		if int(p.troops) <= 0:
+			_mark_gone(p)
+
+
 func _ambushes() -> void:
 	for band in units:
 		if band.job != "band" or band.get("gone", false):
@@ -1792,7 +1870,11 @@ func _after_field_fight(band: Dictionary, u: Dictionary, name: String, r: Dictio
 			for k in r.loot:
 				goods[k] = goods.get(k, 0) + r.loot[k]
 			_haul(u, goods)
-		Game.add_log("Your %s fought off a raider band and caught one of them." % name)
+		if band.owner == Data.AI:
+			Game.note("raids_beaten_back")
+			Game.add_log("Your %s fought off a Rust Kings war party and caught one of them." % name)
+		else:
+			Game.add_log("Your %s fought off a raider band and caught one of them." % name)
 		return
 	var stolen := ""
 	if float(r.carried_loss) > 0.0 and not u.carry.is_empty():
