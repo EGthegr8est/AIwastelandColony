@@ -149,10 +149,11 @@ behind) and a food pack.
   panel, with a hunger bar under it. Faces are drawn in code (`scripts/portrait.gd`) from a per-survivor seed, so the same person
   always looks the same, and they go grey and gaunt as they age or starve. The card lists each survivor on one short line (`Units.survivor_brief`: name, traits,
   and how they are doing only when that is more than fed); hover the line or the portrait for the whole thing (`Units.survivor_line`, with the age).
-- **Food pack**: every party leaves with `SCOUT_PACK` (10, what one survivor can carry) food taken from your stores (grain, then veg, then meat), whatever it is
-  sent to do, and each survivor eats 1 a season from that pack, so a party of three lasts about 3 seasons. The **Inventory** column beside the portraits shows what's in the pack
-  and how many days it will last. Nothing resupplies them in the field: when the pack is empty they go hungry, then starve, and die
-  after 3 hungry seasons in a row. Whatever is left goes back into your stores when they come home, so recall them in time.
+- **Food pack**: every party leaves with `SCOUT_PACK` (10, what one survivor can carry) food taken from your stores, whatever it is sent to do. It can be any food
+  you have, grain, veg or meat, in any mix (grain first, then veg, then meat: `Units._pack_food`); a colony with less than 10 food in all cannot send one. Each survivor eats 1 a season from
+  the pack, so a party of three lasts about 3 seasons. The **Inventory** column beside the portraits shows what's in the pack and how many days it will last. **Food a party finds
+  joins its pack** (the veg from a ruin, the meat from a hunt: `Units._haul`), so scavenging and hunting keep it out longer; nothing else resupplies it in the field. When the pack is
+  empty they go hungry, then starve, and die after 3 hungry seasons in a row. Whatever is left, found or not, goes back into your stores when they come home, so recall them in time.
 - **Picking a party**: click a party, press **Shift** and its number (or **Pick** on its card) and the map draws its route from where it stands, not from
   your HQ: click any tile to see the way there. The dots fade **white** (plenty of food) to **yellow** (running low, from 75% eaten,
   `FOOD_WARN`) to **red**, and a red ring marks the tile where the pack runs out. Red dots mean not enough food for that stretch of

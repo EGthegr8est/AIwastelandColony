@@ -91,7 +91,8 @@ func test_a_war_party_hunts_what_it_is_sent_after() -> void:
 	Units.visit_do(u.id)
 	Units.visit_do(u.id)
 	Units.visit_finish(u.id)
-	assert_eq(u.carry, {"meat": 21})
+	assert_eq(u.carry, {}, "the meat is food: it went in the pack")
+	assert_eq(int(u.food.get("meat", 0)), 21)
 	assert_eq(u.stage, "station")
 
 

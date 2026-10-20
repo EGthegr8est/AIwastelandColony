@@ -5,7 +5,7 @@ raider kingdom across the river, and try not to get nuked. Pixel-art tiles at 16
 
 **Status (2026-10-20): the turn overhaul is built.** Your parties walk on your orders with a days-per-turn budget and are numbered; the colony's people are named survivors who stay the same people
 (and are remembered when they fall); raids are made by parties on both sides, through the building attack rolls, down to the hearths. What is left is under "What's next". The commit history
-since `2ecf5b5` has one commit for each step. Tests: headless 1502 passed and 27 skipped (they need a GPU), windowed render 477, snapshots 12; a long soak of three
+since `2ecf5b5` has one commit for each step. Tests: headless 1507 passed and 27 skipped (they need a GPU), windowed render 477, snapshots 12; a long soak of three
 unattended games (one defended) ran with no errors.
 
 - [How the game works](docs/GAME_REFERENCE.md): every system, with the code that does it and the tests that pin it.

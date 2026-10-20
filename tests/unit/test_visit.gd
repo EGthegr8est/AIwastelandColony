@@ -576,3 +576,15 @@ func test_a_save_from_before_traits_still_loads() -> void:
 	DirAccess.remove_absolute(path)
 	assert_eq(Units.units[0].survivors[0].traits, [])
 	assert_eq(u.crew, Units.units[0].crew)
+
+
+func test_food_found_at_the_ruins_goes_into_the_pack_and_the_log_still_says_so() -> void:
+	var u := _party_at_ruin("safe", [], ForcedDice.new([17, 10, 13], [6]))
+	Units.visit_do(u.id)
+	Units.visit_do(u.id)
+	u.food = {"grain": 4}
+	u.visit.loot = {"veg": 6, "fuel": 2}
+	Units.visit_finish(u.id)
+	assert_eq(u.food, {"grain": 4, "veg": 6}, "the vegetables feed the party")
+	assert_eq(u.carry, {"fuel": 2}, "the fuel is hauled home")
+	assert_true(Game.log_lines.any(func(l): return l.contains("stripped the ruins") and l.contains("6 veg")), "it is not reported as 'no loot'")

@@ -94,7 +94,7 @@ func test_form_status_says_why_not() -> void:
 	Game.pop = 30
 	for k in Data.FOOD_KINDS:
 		Game.res[k] = 0
-	assert_eq(Units.form_status("foot"), "Need %d food for the pack" % Data.SCOUT_PACK)
+	assert_eq(Units.form_status("foot"), "Need %d food for the pack (grain, veg or meat)" % Data.SCOUT_PACK)
 	assert_true(Units.form_party("foot").is_empty(), "and nothing is formed")
 
 

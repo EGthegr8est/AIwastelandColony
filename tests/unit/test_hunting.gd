@@ -193,7 +193,8 @@ func test_a_deer_pays_a_medium_package_of_meat_at_the_loot_scale() -> void:
 	Units.visit_do(u.id)
 	assert_eq(u.visit.loot, {"meat": 21}, "2d6 came to 7, times the loot scale of 3")
 	Units.visit_finish(u.id)
-	assert_eq(u.carry, {"meat": 21})
+	assert_eq(u.carry, {}, "the meat is food: it went in the pack")
+	assert_eq(int(u.food.get("meat", 0)), 21)
 	assert_eq(u.stage, "station", "a scavenger party waits for orders with it")
 	assert_true(Units.animals.is_empty(), "the deer is gone")
 	assert_true(_log_has("brought down the deer"))
@@ -350,7 +351,8 @@ func test_a_scouting_party_can_hunt_what_is_beside_it_and_goes_back_to_keeping_w
 	Units.visit_do(u.id)
 	Units.visit_finish(u.id)
 	assert_eq(u.stage, "station", "a scouting party stays where it is")
-	assert_eq(u.carry, {"meat": 21})
+	assert_eq(u.carry, {}, "the meat is food: it went in the pack")
+	assert_eq(int(u.food.get("meat", 0)), 21)
 
 
 func test_planes_and_boats_cannot_hunt_and_animals_out_of_reach_are_not_targets() -> void:

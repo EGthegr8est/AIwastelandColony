@@ -472,7 +472,7 @@ const UNITS := {
 
 # Expeditions you can send out. Crew leave your population until they come home.
 const EXPEDITIONS := {
-	"scav":    {"name": "Scavenger Party", "verb": "Scavenge", "crew": 3, "cost": {}},   # a party takes a food pack from the stores (SCOUT_PACK), whatever it is sent to do
+	"scav":    {"name": "Scavenger Party", "verb": "Scavenge", "crew": 3, "cost": {}},   # a party takes a food pack from the stores (SCOUT_PACK: grain, veg or meat, whatever you have), whatever it is sent to do
 	"caravan": {"name": "Trade caravan",   "verb": "Send caravan", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 	"boat":    {"name": "River trader",    "verb": "Send boat downriver", "crew": 2, "cost": {"grain": 3}},
 	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {}},   # the tank it fills is its cost
@@ -486,10 +486,10 @@ const EXPEDITIONS := {
 }
 
 # Scouting parties stay where you send them until you give new orders. They leave with a pack of
-# SCOUT_PACK food taken from your stores (FOOD_KINDS, in that order) and each survivor eats
-# SCOUT_RATION of it a season, so a pack feeds a party of two for SCOUT_PACK / 2 seasons. Once it's
-# empty they go hungry: a survivor who goes hungry for STARVE_DEATH seasons in a row dies, and at
-# STARVING_AT they are starving. Unspent food goes back to your stores when they come home.
+# SCOUT_PACK food taken from your stores (FOOD_KINDS, in that order: whatever mix of them you have) and each survivor eats
+# SCOUT_RATION of it a season, so a pack feeds a party of two for SCOUT_PACK / 2 seasons. Food they find while scavenging or
+# hunting goes in the pack too. Once it's empty they go hungry: a survivor who goes hungry for STARVE_DEATH seasons in a row
+# dies, and at STARVING_AT they are starving. Unspent food goes back to your stores when they come home.
 const SCOUT_RATION := 1
 const SCOUT_PACK := 10   # what one survivor can carry (CARRY_PER_PERSON): a party down to its last person still moves at full speed
 const FOOD_KINDS := ["grain", "veg", "meat"]

@@ -20,8 +20,8 @@ extends Node
 ##               "injury" (none, light or severe, until the party is home), "hunger", "face", ...}. crew is their count ("face" seeds their
 ##               portrait, see portrait.gd). The party's traits combine in a roll, and a trait two of them share counts once.
 ##   fuel     a party in a war rig or plane only: what's left in the tank
-##   food     a party's pack: {"grain": 5, "veg": 3}. Filled from your stores when it leaves and emptied by the survivors a season at a
-##            time. What's left goes back to your stores on arrival.
+##   food     a party's pack: {"grain": 5, "veg": 3}. Filled from your stores when it leaves (grain, veg or meat, whatever you have), topped up by food
+##            the party finds, and emptied by the survivors a season at a time. What's left goes back to your stores on arrival.
 ##   carry    resources being brought home; strength: how hard a band hits
 ##   dest     tribe id for caravans to a tribe, -1 for the Rust Kings; for a party, the animal it was sent after (-1 for none)
 ##   path     the cells still to walk (not saved; rebuilt on load)
@@ -278,7 +278,7 @@ func send_status(job: String, mover: String, target: Vector2i, dest := -1, from 
 	if not Game.can_afford(cost):
 		return "Need " + Game.cost_text(cost)
 	if job in PARTY_JOBS and food_stock() < Data.SCOUT_PACK:
-		return "Need %d food for the pack" % Data.SCOUT_PACK
+		return "Need %d food for the pack (grain, veg or meat)" % Data.SCOUT_PACK
 	if outbound_route(job, mover, from, target).is_empty():
 		return Game.no_way_text(mover, from, target)
 	return ""
@@ -348,7 +348,7 @@ func form_status(mover: String, crew_ids := []) -> String:
 	if not Game.can_afford(cost):
 		return "Need " + Game.cost_text(cost)
 	if food_stock() < Data.SCOUT_PACK:
-		return "Need %d food for the pack" % Data.SCOUT_PACK
+		return "Need %d food for the pack (grain, veg or meat)" % Data.SCOUT_PACK
 	return ""
 
 
@@ -621,7 +621,7 @@ func _feed(u: Dictionary) -> void:
 
 # ---------------------------------------------------------------- food packs
 
-## Everything you could put in a pack.
+## Everything you could put in a pack: grain, veg and meat, any mix.
 func food_stock() -> int:
 	var n := 0
 	for k in Data.FOOD_KINDS:
@@ -629,7 +629,7 @@ func food_stock() -> int:
 	return n
 
 
-## Takes `n` food out of your stores (grain first, then veg, then meat) and returns it as a pack.
+## Takes `n` food out of your stores and returns it as a pack: grain first, then veg, then meat, so it is whatever you have (see food_stock).
 func _pack_food(n: int) -> Dictionary:
 	var pack := {}
 	for k in Data.FOOD_KINDS:
@@ -878,10 +878,20 @@ func fit_load(u: Dictionary, goods: Dictionary) -> Dictionary:
 	return kept
 
 
-## Loads the goods a party has just picked up (what fits, see fit_load) and sets off with them.
-func _haul(u: Dictionary, goods: Dictionary) -> void:
+## Loads the goods a party has just picked up (what fits, see fit_load) and sets off with them. Food a party finds (grain, veg, meat) goes in its pack, where it
+## feeds them on the way and comes home if it is not eaten; the rest is carried. Returns everything that was loaded, the food too.
+func _haul(u: Dictionary, goods: Dictionary) -> Dictionary:
 	u.carry = {}
-	u.carry = fit_load(u, goods)
+	var loaded := fit_load(u, goods)
+	u.carry = loaded.duplicate()
+	if u.job in PARTY_JOBS:
+		var pack: Dictionary = u.get("food", {})
+		for k in Data.FOOD_KINDS:
+			if u.carry.has(k):
+				pack[k] = int(pack.get(k, 0)) + int(u.carry[k])
+				u.carry.erase(k)
+		u["food"] = pack
+	return loaded
 
 
 ## 0 healthy, 1 ill, 2 radiation sick, 3 critical: how far gone a survivor's dose is.
@@ -1523,10 +1533,11 @@ func visit_finish(uid: int) -> void:
 		_site_rewards(v, Game.poi_anchor(u.target))
 	if v.outcome != "left" and v.outcome != "slipped" and v.outcome != "lost_fight":
 		Game.note("sites_scavenged" if poi != "" else ("craters_searched" if v.ruin == "crater" else "ruins_scavenged"))
+	var loaded := {}
 	if v.loot.is_empty():
 		u.carry = {}
 	else:
-		_haul(u, v.loot.duplicate())
+		loaded = _haul(u, v.loot.duplicate())
 	var found := int(v.loot.get("nuke", 0))
 	if found > 0:
 		Game.note("nukes_found", found)
@@ -1538,11 +1549,11 @@ func visit_finish(uid: int) -> void:
 			Game.add_log("The party could not lift %d of the %d nukes. They are lost." % [left, found])
 	if v.outcome == "left":
 		Game.add_log("The scavengers left the %s at %s untouched. Waiting for orders." % [place, where])
-	elif u.carry.is_empty():
+	elif loaded.is_empty():
 		Game.add_log("The scavengers searched the %s at %s and carry no loot. Waiting for orders." % [place, where] if D20Visit.has_rewards(v)
 			else "The scavengers came away from the %s at %s with nothing. Waiting for orders." % [place, where])
 	else:
-		Game.add_log("Scavengers stripped the %s at %s: %s. Waiting for orders." % [place, where, Game.cost_text(u.carry)])
+		Game.add_log("Scavengers stripped the %s at %s: %s. Waiting for orders." % [place, where, Game.cost_text(loaded)])
 	_turn_back(u)
 	Game.changed.emit()
 

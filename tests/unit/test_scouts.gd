@@ -95,7 +95,7 @@ func test_scouts_cannot_leave_without_enough_food_for_a_pack() -> void:
 	for k in Data.FOOD_KINDS:
 		Game.res[k] = 0
 	Game.res["grain"] = Data.SCOUT_PACK - 1
-	assert_eq(Units.send_status("scout", "foot", target), "Need %d food for the pack" % Data.SCOUT_PACK)
+	assert_eq(Units.send_status("scout", "foot", target), "Need %d food for the pack (grain, veg or meat)" % Data.SCOUT_PACK)
 	Game.res["meat"] = 1   # any mix of food will do
 	assert_eq(Units.send_status("scout", "foot", target), "")
 	assert_has(Units.send_cost_text("scout", "foot"), "%d food" % Data.SCOUT_PACK)
@@ -407,3 +407,56 @@ func test_route_color_fades_from_white_to_yellow_to_red() -> void:
 	var halfway_to_red: Color = MapView.food_color((Data.FOOD_WARN + 1.0) / 2.0)
 	assert_lt(halfway_to_red.g, MapView.FOOD_LOW.g)
 	assert_gt(halfway_to_red.g, MapView.FOOD_OUT.g)
+
+
+# ---------------------------------------------------------------- the pack is any food you have, and food found joins it
+
+func test_the_pack_is_whatever_food_the_colony_has_meat_veg_or_grain() -> void:
+	Game.res["grain"] = 0
+	Game.res["veg"] = 0
+	Game.res["meat"] = 12
+	assert_eq(Units.send_status("scout", "foot", target), "", "meat alone will do")
+	Units.send("scout", "foot", target)
+	var u: Dictionary = Units.units[-1]
+	assert_eq(u.food, {"meat": Data.SCOUT_PACK})
+	assert_eq(Game.res["meat"], 12 - Data.SCOUT_PACK)
+	assert_eq(Units.food_text(u), "%d meat" % Data.SCOUT_PACK)
+	Game.res["grain"] = 3
+	Game.res["veg"] = 4
+	Game.res["meat"] = 20
+	Units.send("scout", "foot", target)
+	var v: Dictionary = Units.units[-1]
+	assert_eq(v.food, {"grain": 3, "veg": 4, "meat": Data.SCOUT_PACK - 7}, "a mix of all three, grain first")
+
+
+func test_food_a_party_finds_joins_its_pack_and_is_eaten_after_what_it_left_with() -> void:
+	var u := _send("foot")
+	var loaded: Dictionary = Units._haul(u, {"veg": 6, "metal": 2})
+	assert_eq(loaded, {"veg": 6, "metal": 2}, "it says what it took, the food too")
+	assert_eq(u.food, {"grain": Data.SCOUT_PACK, "veg": 6})
+	assert_eq(u.carry, {"metal": 2}, "only the rest is hauled")
+	assert_almost_eq(Units.food_days(u), (Data.SCOUT_PACK + 6) * Data.SEASON_DAYS / (3.0 * Data.SCOUT_RATION), 0.001, "it can stay out that much longer")
+	for i in 4:   # three people eat three a season: the grain goes first
+		Units._feed(u)
+	assert_eq(int(u.food.get("grain", 0)), 0)
+	assert_eq(int(u.food.get("veg", 0)), 4)
+	assert_eq(Units.food_total(u), Data.SCOUT_PACK + 6 - 12)
+
+
+func test_a_party_with_an_empty_pack_is_fed_by_what_it_scavenges() -> void:
+	var u := _send("foot")
+	u.food = {}
+	Units.season_turn()
+	assert_eq(u.survivors[0].hunger, 1, "an empty pack means hunger")
+	Units._haul(u, {"meat": 9})
+	Units.season_turn()
+	assert_eq(u.survivors[0].hunger, 0, "food found in the field feeds them")
+	assert_eq(u.food, {"meat": 6})
+
+
+func test_found_food_that_was_not_eaten_comes_home_with_the_party() -> void:
+	var veg: int = Game.res["veg"]
+	var u := _send("foot")
+	Units._haul(u, {"veg": 5})
+	Units._come_home(u)
+	assert_eq(Game.res["veg"], veg + 5)

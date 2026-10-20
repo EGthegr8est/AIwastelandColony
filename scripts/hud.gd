@@ -2830,7 +2830,7 @@ func _roster_block(box: VBoxContainer) -> void:
 		var why := Units.form_status(mover, draft)
 		var party_size: int = draft.size() if not draft.is_empty() else size
 		var row := _row_button(box, "Form a party %s" % Data.MOVERS[mover].by, "%d survivors, %s" % [party_size, Units.send_cost_text("scout", mover)], func(): _form_party(mover), why,
-			"A Scavenger Party that waits at your HQ until you send it somewhere: it can scavenge, scout and hunt.")
+			"A Scavenger Party that waits at your HQ until you send it somewhere: it can scavenge, scout and hunt. It leaves with a food pack from your stores, grain, veg or meat, whatever you have.")
 		row.set_meta("unnumbered", true)
 		if mover == "foot":
 			_add_cap(row, "Q")
@@ -2906,7 +2906,7 @@ func _colony_help() -> Array:
 	return ["Everyone eats 1 grain/veg a season%s. A surplus of %d+ grows the colony. Prisoners work but must be fed." % [
 			", and 1 more for every 5 colonists" if Game.has_quirk("big_appetites") else "", 6 if Game.has_quirk("big_families") else 10],
 		"Vehicle upgrades are in each branch on the Upgrades tab. Hover a vehicle for what it does.",
-		"A scouting party leaves with %d food from your stores, and each survivor eats %d of it a season. When the pack is empty they starve, so recall them in time: whatever is left comes home with them. Horses and war rigs add parties and range." % [
+		"A scouting party leaves with %d food from your stores, any grain, veg or meat you have, and each survivor eats %d of it a season. When the pack is empty they starve, so recall them in time, or scavenge and hunt: food a party finds joins its pack. Whatever is left comes home with them. Horses and war rigs add parties and range." % [
 			Data.SCOUT_PACK, Data.SCOUT_RATION],
 		"War rigs, planes (recon flights too) and river boats carry a tank, shown as a fuel gauge by the portraits. When it runs dry the vehicle is lost and the crew go on foot. A plane crashes: some aboard may die, and the rest are injured."]
 
