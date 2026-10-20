@@ -23,16 +23,20 @@ THE BASICS
 - END SEASON (the little window in the top bar, or E) moves time on, and the sun sets or rises in it as the map fades between day and night. The game autosaves every season. The map then plays the
   season's walking back, so you watch your parties go; a click or Enter skips it.
 - Menu (top right) goes back to the title screen: Resume, Load, Quit.
-- Click a scouting party to pick it, then click somewhere to see how far its food goes.
-  Esc lets go.
+- Your parties are Scavenger Parties, numbered 1, 2, 3 (three survivors each, and you can send as many as you have people for). Send one by clicking a tile, or form one at your HQ on the Colony tab
+  (pick who goes, or let the game) and then click where it should go. A party walks the moment you order it and has 40 days a turn: if the way is longer, press Continue (G) next turn. It stays where it
+  stops until you send it on or recall it (B). Click a party, or press Shift and its number, to pick it, then click somewhere to see how far its food goes. Esc lets go.
+- The colony's people have names and traits and stay the same people. Everyone who dies is remembered on the Colony tab.
+- You raid the Rust Kings, camps and Dustwell by sending parties to attack their buildings: take down the walls round a fort and then the fort itself to win. Protect your own HQ the same way: walls and towers
+  round it, or a Citadel. The Rust Kings take time to make a raid, and then it has to walk to you: you can meet it on the road.
 - Deer and bears wander the wastes. Click one and send hunters (two dice rolls: track it, then
   the kill shot). Bears attack parties that come too close. Something huge sleeps under the
   biggest ruined city: scavenging near it is a gamble, and its hide makes Salt (build a Drug Factory).
 - The little field tablet in the top bar switches the map between the pixel art (the default) and old-school text.
 - Every button shows its key. 1 to 9 and 0 press the open tab's buttons from the top; F builds a farm, P a wall, O a road, L a hunting lodge on the
-  tile you picked; Z, X, C send a party on foot, on horseback, by war rig (scavengers to a ruin, site or crater, hunters to an animal, scouts to other
-  ground outside your land); Backspace leaves a party's panel, Del demolishes. E ends the season, M switches the map art (pixel art or ASCII), N night, F5 and F9 open Save and Load, Esc lets go, then opens the menu.
-  F1 to F4 and Tab switch tabs. SPACE rolls the die, ENTER or a click skips the season's walk, R flips the radiation view.
+  tile you picked; Z, X, C send a party on foot, on horseback, by war rig (to a ruin, site or crater, an animal, or other
+  ground outside your land); Q forms a party at your HQ; Shift+1 to 9 (or the numpad) pick a party, [ and ] the one before or after, G walks it on, B recalls it; Backspace leaves a party's panel, Del demolishes. E ends the season, M switches the map art (pixel art or ASCII), N night, F5 and F9 open Save and Load, Esc lets go, then opens the menu.
+  F1 to F4 and Tab switch tabs. SPACE rolls the die, ENTER or a click skips a walk, R flips the radiation view.
   ? shows every key on one sheet. "Key hints" in the menu hides the key caps.
 - Hover the mouse over a tile to see what it is.
 - Every season the map fades between day and night (Spring and Autumn are day). Craters, camps you can see and ruins

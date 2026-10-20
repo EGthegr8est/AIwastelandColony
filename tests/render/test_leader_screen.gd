@@ -148,7 +148,7 @@ func test_the_colony_panel_shows_the_leaders_face_and_what_every_perk_and_the_fl
 	assert_has(text, leader.name)
 	for line in Leaders.quirk_lines(leader):
 		assert_has(text, "%s %s: %s" % ["+" if line.kind == "perk" else "-", line.name, line.text])
-	var faces: Array = box.find_children("*", "TextureRect", true, false)
+	var faces: Array = box.find_children("*", "TextureRect", true, false).filter(func(r): return r.custom_minimum_size == Vector2(192, 192))   # the survivors' portraits are TextureRects too
 	assert_eq(faces.size(), 1)
 	assert_eq(faces[0].texture.get_size(), Vector2(48, 48), "the small picture")
 	assert_eq(faces[0].custom_minimum_size, Vector2(192, 192))
@@ -175,7 +175,7 @@ func test_a_colony_with_no_named_leader_just_shows_its_class() -> void:
 	await wait_frames(4)
 	await _show_tab("Colony")
 	var box: Control = hud.boxes["Colony"]
-	assert_eq(box.find_children("*", "TextureRect", true, false).size(), 0)
+	assert_eq(box.find_children("*", "TextureRect", true, false).filter(func(r): return r.custom_minimum_size == Vector2(192, 192)).size(), 0, "no leader face")
 	assert_has(_texts(box), "Trader: 2 caravan slots, Commerce upgrades 25% off")
 
 

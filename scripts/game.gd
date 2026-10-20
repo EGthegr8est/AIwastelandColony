@@ -1606,7 +1606,7 @@ func has(upgrade_id: String) -> bool:
 
 
 func season_name() -> String:
-	return "Year %d, %s" % [(season - 1) / 4 + 1, Data.SEASONS[(season - 1) % 4]]
+	return season_text(season)
 
 
 func add_log(text: String) -> void:
@@ -1701,11 +1701,13 @@ func refresh_scout_route() -> void:
 	if u.is_empty():
 		selected_scout = -1
 		return
+	if selected == home(Data.PLAYER):
+		return   # no dotted route line to your settlement: it is not somewhere to send a party
 	var path: Array = [u.pos] + u.path
 	if in_bounds(selected) and selected != u.pos:
 		path = route(u.mover, u.pos, selected)
 	if path.size() > 1:
-		var days := Units.arrival_days(u.mover, path, Units.party_slowdown(u))
+		var days := Units.arrival_days(u.mover, path, Units.party_slowdown(u), float(u.move_left))
 		scout_route ={"mover": u.mover, "path": path, "days": days, "ratio": Units.food_ratios(u, days)}
 
 
@@ -3095,6 +3097,30 @@ func lose_home(n: int, cause: String) -> Array:
 	for s in gone:
 		fall(s, cause)
 	return gone
+
+
+## The survivor with this number (a roster `sid`), or {} if there is none.
+func survivor_by_sid(sid: int) -> Dictionary:
+	for s in roster:
+		if int(s.sid) == sid:
+			return s
+	return {}
+
+
+## Season `n` as "Year 2, Summer".
+func season_text(n: int) -> String:
+	return "Year %d, %s" % [(n - 1) / 4 + 1, Data.SEASONS[(n - 1) % 4]]
+
+
+## The survivors `sids` (numbers from the roster) leave with a party: only people at home can, and they are "away" until they come back.
+func take_chosen(sids: Array) -> Array:
+	var crew := []
+	for sid in sids:
+		var s := survivor_by_sid(int(sid))
+		if not s.is_empty() and s.state == "home" and not crew.has(s):
+			s["state"] = "away"
+			crew.append(s)
+	return crew
 
 
 ## The `n` survivors who leave with a party: ones at home, the uninjured first. They are "away" until they come back.

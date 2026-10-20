@@ -1,25 +1,29 @@
 extends Node
-## Autoload "Units": everything that moves across the map (your expeditions and wild raider
-## bands) plus the tribe camps scattered through the wastes. Game.end_season() calls season_turn().
+## Autoload "Units": everything that moves across the map (your parties and expeditions, raider bands and the Rust Kings' raiding parties)
+## plus the tribe camps scattered through the wastes. Game.end_season() calls season_turn().
 ##
 ## A unit is a Dictionary:
-##   job      "scav", "caravan", "boat", "plane", "scout" (your expeditions) or "band" (wild raiders)
-##   owner    Data.PLAYER, or Data.NONE for wild bands
+##   job      "scav", "scout" or "hunters" (your Scavenger Parties: PARTY_JOBS, one kind of party that only differs in what it was sent for),
+##            "caravan", "boat", "plane", "bomb" or "deal" (your other expeditions), or "band" (raiders: owner NONE for wild ones, owner AI for
+##            the Rust Kings' raiding parties, which also have "troops", "raid" and "spotted")
+##   owner    Data.PLAYER, Data.AI, or Data.NONE for wild bands
 ##   mover    which route finder it uses: "foot", "horse", "car", "boat" or "plane"
-##   pos, target, home   map cells; stage is "out" until the job is done, then "back".
-##                       Scouting parties have a third stage, "station": they stay put until given orders.
-##                       A scavenger party that reaches its ruin is at the "site" and holds a "visit" (see
-##                       d20_visit.gd) that the player rolls through, one button press at a time. A scouting party
-##                       attacking a Rust Kings building does the same, then goes back to "station".
-##   crew     colonists on board (they rejoin the population when they get home)
-##   survivors   the named people on board: {"name", "age", "traits" (ids from d20_data.gd), "injury" (none, light
-##               or severe, until the party is home), "hunger", "face"}. crew is their count ("face" seeds their
+##   pos, target, home   map cells; stage is "out" while it walks to its target and "back" while it walks home.
+##                       A party also has "station": it stays where it is until given orders (and after any visit, hunt or strike).
+##                       A party that reaches its ruin is at the "site" and holds a "visit" (see d20_visit.gd) that the player rolls
+##                       through, one button press at a time; attacking a building, a camp or a hearth does the same.
+##   number   a party's number (Scavenger Party 1, 2, 3...): the lowest free one, see party_label()
+##   move_left   the days a party can still walk this turn (Data.SEASON_DAYS a turn): it walks the moment you order it (_go) and END SEASON gives
+##               the days back. Everything else walks at END SEASON (season_turn).
+##   crew     survivors on board (they rejoin the colony when they get home)
+##   survivors   the people on board: the roster's own entries (see roster.gd): {"sid", "name", "age", "traits" (ids from d20_data.gd),
+##               "injury" (none, light or severe, until the party is home), "hunger", "face", ...}. crew is their count ("face" seeds their
 ##               portrait, see portrait.gd). The party's traits combine in a roll, and a trait two of them share counts once.
-##   fuel     scouts in a war rig or plane only: what's left in the tank
-##   food     scouts only: the pack they eat from, {"grain": 5, "veg": 3}. Filled from your stores when they leave
-##            and emptied by the survivors a season at a time. What's left goes back to your stores on arrival.
+##   fuel     a party in a war rig or plane only: what's left in the tank
+##   food     a party's pack: {"grain": 5, "veg": 3}. Filled from your stores when it leaves and emptied by the survivors a season at a
+##            time. What's left goes back to your stores on arrival.
 ##   carry    resources being brought home; strength: how hard a band hits
-##   dest     tribe id for caravans to a tribe, -1 for the Rust Kings
+##   dest     tribe id for caravans to a tribe, -1 for the Rust Kings; for a party, the animal it was sent after (-1 for none)
 ##   path     the cells still to walk (not saved; rebuilt on load)
 
 const Data = preload("res://scripts/data.gd")
@@ -323,6 +327,58 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 	Game.changed.emit()
 
 
+# ---------------------------------------------------------------- forming a party
+
+## "" if a Scavenger Party can be formed at your HQ now, otherwise why not. `crew_ids` are the roster numbers of the survivors to take (one to the size a
+## party takes), or empty for the best available: the uninjured first.
+func form_status(mover: String, crew_ids := []) -> String:
+	var size := crew_for("scav")
+	var wanted: int = crew_ids.size() if not crew_ids.is_empty() else size
+	if wanted > size:
+		return "A party takes at most %d survivors" % size
+	if mover in Data.VEHICLES and free_vehicles(mover) <= 0:
+		return "No free %s" % Data.VEHICLES[mover].name.to_lower()
+	if Game.pop <= wanted + 1:
+		return "Need %d colonists to spare" % wanted
+	for sid in crew_ids:
+		var s := Game.survivor_by_sid(int(sid))
+		if s.is_empty() or s.state != "home":
+			return "%s is not at home" % (s.name if not s.is_empty() else "Somebody")
+	var cost := send_cost("scout", mover)
+	if not Game.can_afford(cost):
+		return "Need " + Game.cost_text(cost)
+	if food_stock() < Data.SCOUT_PACK:
+		return "Need %d food for the pack" % Data.SCOUT_PACK
+	return ""
+
+
+## Forms a Scavenger Party at your HQ, waiting for orders: the survivors you chose (or the best available), a food pack from the stores, and the
+## next free number. It can scavenge, scout and hunt like any party; send it by clicking where it should go. Returns it, or {} if it could not be made.
+func form_party(mover := "foot", crew_ids := []) -> Dictionary:
+	if form_status(mover, crew_ids) != "":
+		return {}
+	var from := Game.home(Data.PLAYER)
+	Game.pay(send_cost("scout", mover))
+	Game.note_sent("scout")
+	var party := _make_unit("scout", Data.PLAYER, mover, from, from)
+	party.survivors = Game.take_crew(crew_for("scav")) if crew_ids.is_empty() else Game.take_chosen(crew_ids)
+	party.crew = party.survivors.size()
+	party["number"] = _next_party_number()
+	if Game.salt_on and int(Game.items.get("salt", 0)) >= party.crew:
+		Game.items["salt"] = int(Game.items["salt"]) - party.crew
+		for s in party.survivors:
+			s["salted"] = Data.SALT_SEASONS
+	if tank_size("scout", mover) > 0:
+		party.fuel = float(tank_size("scout", mover))
+	party.food = _pack_food(Data.SCOUT_PACK)
+	party.stage = "station"
+	units.append(party)
+	Game.measure(from)
+	Game.add_log("%s (%s) formed at your HQ %s." % [names_text(party), members_text(party), Data.MOVERS[mover].by])
+	Game.changed.emit()
+	return party
+
+
 # ---------------------------------------------------------------- survivors
 
 ## `n` survivors who are not on the roster (a hunting party's troops, and the crews tests make): names nobody else in the colony or the
@@ -579,12 +635,13 @@ func food_days(u: Dictionary) -> float:
 
 
 ## The day each cell of `path` is reached (index 0, where the party stands, is day 0), counting
-## from the start of the next season. This mirrors _advance(): a step that doesn't fit in what is
-## left of the season waits for the next one. `slowdown` is load_slowdown() for an overloaded party.
-func arrival_days(mover: String, path: Array, slowdown := 1.0) -> Array:
+## from now. This mirrors _advance(): a step that doesn't fit in what is left of the turn waits for the
+## next one. `slowdown` is load_slowdown() for an overloaded party, and `first_left` the days this
+## turn still has for the party (a whole season's when it is not given, as for a party yet to be sent).
+func arrival_days(mover: String, path: Array, slowdown := 1.0, first_left := -1.0) -> Array:
 	var days := [0.0]
 	var day := 0.0
-	var left: float = Data.SEASON_DAYS
+	var left: float = Data.SEASON_DAYS if first_left < 0.0 else first_left
 	var days_per_tile: float = Data.MOVERS[mover].days * slowdown * Game.travel_mult()
 	for i in range(1, path.size()):
 		var cost: float = Vector2(path[i] - path[i - 1]).length() * Game.move_mult(mover, path[i]) * days_per_tile

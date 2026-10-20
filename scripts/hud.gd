@@ -42,6 +42,8 @@ const GREEN := Color("a8d060")
 const BG := Color(0.07, 0.05, 0.03, 0.95)
 const SLOTS := ["slot1", "slot2", "slot3", "autosave"]
 const BOTTOM_HEIGHT := 190
+const PARTY_BAR_HEIGHT := 34   # the numbered strip of your parties above the log
+const PARTY_PAD_KEYS := [KEY_KP_1, KEY_KP_2, KEY_KP_3, KEY_KP_4, KEY_KP_5, KEY_KP_6, KEY_KP_7, KEY_KP_8, KEY_KP_9, KEY_KP_0]   # Scavenger Party 1 to 10 from the numpad (Shift and the digits do the same)
 # The sizes of the bigger UI (docs: "UI: Cleaner Panels, Bigger Buttons, Hotkeys"): a button in a panel is 40 px tall with 17 px text (it was 22 and 15), the top bar is 76 px
 # with 56 px buttons (it was 58), the side panel is 460 px wide (it was 404) and the log shows 5 lines until you click it.
 const BUTTON_HEIGHT := 40
@@ -62,7 +64,9 @@ const KEY_SHEET := [
 		["N", "Night on or off"], ["F5  F9", "Save, Load"], ["Esc", "Let go, then the menu"], ["F11", "Fullscreen"]],
 	[["The map", ""], ["W A S D  arrows", "Pan"], ["Wheel", "Zoom"], ["Right-drag", "Pan"], ["The panels", ""], ["F1 - F4", "Tile, Upgrades, Colony, Diplomacy"],
 		["Tab", "Next tab (Shift+Tab: back)"], ["1 - 9, 0", "The panel's first ten buttons"], ["Backspace", "Leave / back off / cancel"], ["Del", "Demolish"],
-		["F  P  O  L", "Build: farm, wall, road, hunting lodge"], ["Z  X  C", "Send a party: foot, horse, war rig"], ["?", "This sheet"]],
+		["F  P  O  L", "Build: farm, wall, road, hunting lodge"], ["Z  X  C", "Send a party: foot, horse, war rig"],
+		["Q", "Form a party at your HQ"], ["Shift+1-9  Numpad", "Pick Scavenger Party 1 to 9 (0: party 10)"], ["[  ]", "The party before / after"],
+		["G  B", "Picked party: walk on, recall"], ["?", "This sheet"]],
 ]
 const SONAR_TABLET_SHEET := "res://art/sonar_tablet_sheet.png"   # the map-art switch in the top bar: this tablet, laid on its side like the meter
 const SONAR_TABLET_BLIP := "res://audio/sonar_tablet_blip.wav"   # its click: a short 8-bit blip (tools/make_sonar_blip.py)
@@ -94,6 +98,9 @@ var menu_button: Button
 var bottom := HBoxContainer.new()        # the strip along the bottom: selected party, then the log
 var party_panel := PanelContainer.new()  # who you have selected, StarCraft style: a portrait each
 var party_row := HBoxContainer.new()
+var parties_bar := HBoxContainer.new()   # a numbered button for each of your parties, along the bottom of the map: click one, or press Shift and its number (or its number on the numpad)
+var draft: Array = []                    # the roster numbers of the survivors picked for the next Scavenger Party you form (empty: the game picks the healthiest)
+var draft_game := -1                     # Game.map_version when the pick was made: a new game or a load starts it again
 var geiger_panel := PanelContainer.new()  # next to the party: the radiation where a scouting party stands
 var geiger := Geiger.new()
 var geiger_note := VBoxContainer.new()
@@ -343,6 +350,17 @@ func _build_log() -> void:
 	log_panel.add_child(log_text)
 	bottom.add_child(log_panel)
 	_size_log()
+	parties_bar.anchor_top = 1.0
+	parties_bar.anchor_right = 1.0
+	parties_bar.anchor_bottom = 1.0
+	parties_bar.offset_left = 6
+	parties_bar.offset_top = -(BOTTOM_HEIGHT + PARTY_BAR_HEIGHT + 10)
+	parties_bar.offset_right = -(SIDE_WIDTH + 12)
+	parties_bar.offset_bottom = -(BOTTOM_HEIGHT + 10)
+	parties_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE   # only the buttons catch the mouse: the map shows between them
+	parties_bar.add_theme_constant_override("separation", 4)
+	root.add_child(parties_bar)
+	game_ui.append(parties_bar)
 
 
 ## The corner picture: a point of interest's scene in an orange line, as the leader faces have, with the site's name under it. _sync_scene fills it and shows it.
@@ -890,6 +908,7 @@ func refresh() -> void:
 	_refresh_tab(tabs.current_tab)
 	_sync_scene()
 	_refresh_party()
+	_refresh_party_bar()
 	log_text.text = "\n".join(Game.log_lines.map(D20.plain))
 
 
@@ -963,6 +982,145 @@ func _refresh_party() -> void:
 	_refresh_geiger(here.filter(func(u): return u.job in Units.PARTY_JOBS))
 
 
+## The numbered strip of your parties along the bottom of the map: one button for each, in the order of their numbers. Click one, or press Shift and its
+## number (or its number on the numpad), to pick that party and look at it. A button is red when somebody in the party is starving or ill, green while it is in
+## the middle of a search, bright for the picked one; the tooltip says who is in it, where it is and how many days it has left this turn.
+func _refresh_party_bar() -> void:
+	_clear(parties_bar)
+	var mine := Units.units.filter(func(u): return u.owner == Data.PLAYER and u.job in Units.PARTY_JOBS and int(u.get("number", 0)) > 0)
+	mine.sort_custom(func(a, b): return int(a.number) < int(b.number))
+	for u in mine:   # with no parties the bar is empty, and shows nothing (it is one of the panels the menus hide and bring back)
+		var id: int = u.id
+		var picked: bool = id == Game.selected_scout
+		var b := Button.new()
+		b.text = str(int(u.number))
+		b.custom_minimum_size = Vector2(36 if int(u.number) < 10 else 44, PARTY_BAR_HEIGHT)
+		b.focus_mode = Control.FOCUS_NONE
+		var tone := BRIGHT if picked else AMBER
+		if u.survivors.any(func(s): return s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2):
+			tone = RED
+		elif u.stage == "site":
+			tone = GREEN
+		b.add_theme_color_override("font_color", tone)
+		b.add_theme_color_override("font_hover_color", BRIGHT)
+		if picked:
+			var style := StyleBoxFlat.new()
+			style.bg_color = Color("3a2a14")
+			style.border_color = BRIGHT
+			style.set_border_width_all(2)
+			style.set_corner_radius_all(3)
+			for state in ["normal", "hover", "pressed"]:
+				b.add_theme_stylebox_override(state, style)
+		b.tooltip_text = "%s (Shift+%d)\n%s\n%s, %s\n%s" % [Units.party_label(u), int(u.number) % 10, Units.members_text(u), Data.MOVERS[u.mover].name,
+			Units.stage_text(u), Units.days_left_text(u)]
+		b.pressed.connect(func(): _pick_party_id(id))
+		parties_bar.add_child(b)
+
+
+## Picks one of your parties and looks at it: the camera goes to it and its panel comes up.
+func _pick_party_id(id: int) -> void:
+	var u := Units.unit_by_id(id)
+	if u.is_empty():
+		return
+	Game.focus.emit(u.pos)
+	Game.select(u.pos)
+	Game.pick_scout(id)
+
+
+## Shift and a digit, or the numpad: pick Scavenger Party `number` (10 is the 0 key).
+func _pick_party_number(number: int) -> bool:
+	for u in Units.units:
+		if u.owner == Data.PLAYER and u.job in Units.PARTY_JOBS and int(u.get("number", 0)) == number:
+			_pick_party_id(u.id)
+			return true
+	Game.add_log("There is no Scavenger Party %d." % number)
+	Game.changed.emit()
+	return true
+
+
+## [ and ]: the party before or after the picked one, by number (the first or the last when none is picked).
+func _cycle_party(step: int) -> bool:
+	var mine := Units.units.filter(func(u): return u.owner == Data.PLAYER and u.job in Units.PARTY_JOBS and int(u.get("number", 0)) > 0)
+	if mine.is_empty():
+		return false
+	mine.sort_custom(func(a, b): return int(a.number) < int(b.number))
+	var at := -1
+	for i in mine.size():
+		if mine[i].id == Game.selected_scout:
+			at = i
+	var next: int = (mine.size() - 1 if step < 0 else 0) if at < 0 else posmod(at + step, mine.size())
+	_pick_party_id(mine[next].id)
+	return true
+
+
+## The picked party of yours ({} if none is picked).
+func _picked_party() -> Dictionary:
+	var u := Units.unit_by_id(Game.selected_scout)
+	return u if not u.is_empty() and u.owner == Data.PLAYER else {}
+
+
+## G: the picked party walks on along its route with the days it has left. When it cannot, the log says why.
+func _continue_picked() -> bool:
+	var u := _picked_party()
+	if u.is_empty():
+		Game.add_log("Pick a Scavenger Party first (Shift and its number).")
+		Game.changed.emit()
+		return true
+	var why := Units.continue_status(u)
+	if why != "":
+		Game.add_log("%s: %s." % [Units.party_label(u), why])
+		Game.changed.emit()
+	else:
+		Units.continue_orders(u.id)
+	return true
+
+
+## B: the picked party turns for home (at home already, it is disbanded: its people and its food come back to the colony).
+func _recall_picked() -> bool:
+	var u := _picked_party()
+	if u.is_empty():
+		Game.add_log("Pick a Scavenger Party first (Shift and its number).")
+		Game.changed.emit()
+		return true
+	if u.stage in ["back", "site"]:
+		Game.add_log("%s: %s." % [Units.party_label(u), "already on its way home" if u.stage == "back" else "in the middle of a search"])
+		Game.changed.emit()
+	else:
+		Units.recall_scouts(u.id)
+	return true
+
+
+## The pick for the next party, without anyone who is no longer at home (and none at all after a new game or a load: the numbers start again).
+func _clean_draft() -> void:
+	if draft_game != Game.map_version:
+		draft = []
+		draft_game = Game.map_version
+	draft = draft.filter(func(sid): return Game.survivor_by_sid(int(sid)).get("state", "") == "home")
+
+
+## Q: forms a Scavenger Party on foot at your HQ from the survivors picked on the Colony tab (or the healthiest), and picks it.
+func _quick_party() -> bool:
+	_clean_draft()
+	var why := Units.form_status("foot", draft)
+	if why != "":
+		Game.add_log("Form a party: %s." % why)
+		Game.changed.emit()
+		return true
+	_form_party("foot")
+	return true
+
+
+func _form_party(mover: String) -> void:
+	_clean_draft()
+	var party := Units.form_party(mover, draft.duplicate())
+	draft = []
+	if party.is_empty():
+		return
+	Game.focus.emit(party.pos)
+	Game.select(party.pos)
+	Game.pick_scout(party.id)
+
+
 ## The Geiger counter shows the radiation of the tile a scouting party is standing on, and
 ## what staying there would do to them.
 func _refresh_geiger(scouts: Array) -> void:
@@ -999,6 +1157,10 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 	var is_picked: bool = u.id == Game.selected_scout
 	_label(info, "%s %s%s" % [kind.glyph, Units.unit_title(u), "  [picked]" if is_picked else ""], BRIGHT)
 	_label(info, "%s, %s" % [Data.MOVERS[u.mover].name, Units.stage_text(u)], DIM)
+	if u.job in Units.PARTY_JOBS:
+		var left := float(u.get("move_left", Data.SEASON_DAYS))
+		info.add_child(_bar(left / Data.SEASON_DAYS, GREEN if left >= 10.0 else (AMBER if left > 0.0 else RED), Units.days_left_text(u)))
+		_small_label(info, Units.days_left_text(u), DIM)
 	for s in u.survivors:
 		var bad: bool = s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2
 		_label(info, Units.survivor_line(s), RED if bad else AMBER)
@@ -1007,8 +1169,10 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 		var buttons := HBoxContainer.new()
 		buttons.add_theme_constant_override("separation", 4)
 		info.add_child(buttons)
+		if Units.continue_status(u) == "":
+			_button(buttons, "Continue", func(): Units.continue_orders(uid)).tooltip_text = "G. Walk on along its route with the days it has left this turn"
 		if u.stage != "back":
-			_button(buttons, "Recall to camp", func(): Units.recall_scouts(uid))
+			_button(buttons, "Recall to camp", func(): Units.recall_scouts(uid)).tooltip_text = "B. Turn for home (at home already: disband the party)"
 		if is_picked:
 			_button(buttons, "Deselect", Game.deselect_scout).tooltip_text = "Esc. Go back to routes from your HQ"
 		else:
@@ -1835,6 +1999,11 @@ func _escape() -> void:
 ## A key of the interface that is not Space, Enter, Esc or R: the digits and the priority letters, Backspace and Del, and the global keys. True if the key did something.
 func _hotkey(event: InputEventKey) -> bool:
 	var key: Key = event.keycode
+	var pad := PARTY_PAD_KEYS.find(key)
+	if pad >= 0:
+		return _pick_party_number(pad + 1)   # the numpad: Scavenger Party 1 to 10
+	if event.shift_pressed and key >= KEY_0 and key <= KEY_9:
+		return _pick_party_number((key - KEY_0 + 9) % 10 + 1)   # Shift and a digit: the same
 	if key >= KEY_0 and key <= KEY_9:
 		return _press_numbered((key - KEY_0 + 9) % 10)   # 1 is the first button and 0 the tenth
 	if _is_question(event):
@@ -1873,6 +2042,16 @@ func _hotkey(event: InputEventKey) -> bool:
 			return _priority_send("horse")
 		KEY_C:
 			return _priority_send("car")
+		KEY_BRACKETLEFT:
+			return _cycle_party(-1)
+		KEY_BRACKETRIGHT:
+			return _cycle_party(1)
+		KEY_G:
+			return _continue_picked()
+		KEY_B:
+			return _recall_picked()
+		KEY_Q:
+			return _quick_party()
 		_:
 			return false
 	return true
@@ -2271,9 +2450,9 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 			var uid: int = u.id
 			var why := Units.order_status(u, c)
 			var trip := ""
-			if why == "":
+			if why == "" and u.pos != c:
 				trip = ", %d days" % ceili(_party_trip_days(u, c))
-			_row_button(box, "Send %s here" % Units.names_text(u), trip.trim_prefix(", "), func(): Units.order_scouts(uid, c), why)
+			_row_button(box, ("Stop %s here" if u.pos == c else "Send %s here") % Units.names_text(u), trip.trim_prefix(", "), func(): Units.order_scouts(uid, c), why)
 			if why == "":
 				_food_warning(box, u, c)
 	var e: Dictionary = Data.EXPEDITIONS["scout"]
@@ -2292,7 +2471,7 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 
 ## Days for a party already in the field to reach `c`, counting the time lost at the end of each season.
 func _party_trip_days(u: Dictionary, c: Vector2i) -> float:
-	return Units.arrival_days(u.mover, Game.route(u.mover, u.pos, c), Units.party_slowdown(u))[-1]
+	return Units.arrival_days(u.mover, Game.route(u.mover, u.pos, c), Units.party_slowdown(u), float(u.move_left))[-1]
 
 
 ## Under a "Send X here" button: a warning when the party's pack won't last the trip.
@@ -2575,6 +2754,7 @@ func _refresh_colony() -> void:
 	_clear(box)
 	_leader_block(box)
 	_head_row(box, "Colony", "Land: %d tiles   Population: %d / %d" % [Game.owned(Data.PLAYER).size(), Game.pop, Game.pop_cap()], AMBER, _colony_help())
+	_roster_block(box)
 	_header(box, "Military")
 	_label(box, "Troops: %d (each eats %d meat/season)" % [Game.troops, 2 if Game.has("w3") else 1])
 	_label(box, "Defense %.1f (walls %.1f)" % [Game.player_wall_defense() + Game.player_troop_defense(), Game.player_wall_defense()])
@@ -2611,6 +2791,91 @@ func _refresh_colony() -> void:
 		_label(box, "   " + Units.members_text(u) + (" (starving!)" if u.survivors.any(func(s): return s.hunger >= Data.STARVING_AT) else ""), DIM)
 	_header(box, "Scouting")
 	_label(box, "Parties out: %d. Click a tile to send scouts or move a party there; they stay and keep watch." % Units.scouts_out())
+
+
+## The colony's people, one by one (Game.roster): who is at home, who is out in which party, and who has fallen. Pick who goes in the next Scavenger Party,
+## or let the game pick the healthiest, and form it at your HQ; then send it by clicking where it should go. These buttons take no digit key.
+func _roster_block(box: VBoxContainer) -> void:
+	_clean_draft()
+	var living := Game.living_survivors()
+	var size := Units.crew_for("scav")
+	_header(box, "Survivors (%d)" % living.size())
+	_label(box, "Pick up to %d to go together in the next Scavenger Party, or let the game choose the healthiest. A party you form waits at your HQ for orders." % size, DIM)
+	for mover in ["foot", "horse", "car"]:
+		if mover in Data.VEHICLES and Game.vehicles[mover] == 0:
+			continue
+		var why := Units.form_status(mover, draft)
+		var party_size: int = draft.size() if not draft.is_empty() else size
+		var row := _row_button(box, "Form a party %s" % Data.MOVERS[mover].by, "%d survivors, %s" % [party_size, Units.send_cost_text("scout", mover)], func(): _form_party(mover), why,
+			"A Scavenger Party that waits at your HQ until you send it somewhere: it can scavenge, scout and hunt.")
+		row.set_meta("unnumbered", true)
+		if mover == "foot":
+			_add_cap(row, "Q")
+	for s in living:
+		box.add_child(_roster_row(s))
+	var fallen := Game.fallen_survivors()
+	if not fallen.is_empty():
+		_header(box, "Fallen (%d)" % fallen.size())
+		fallen.reverse()
+		for s in fallen.slice(0, 12):
+			_label(box, "† %s, %d: %s (%s)" % [s.name, s.age, s.cause, Game.season_text(int(s.get("died", 0)))], DIM)
+		if fallen.size() > 12:
+			_label(box, "and %d more" % (fallen.size() - 12), DIM)
+
+
+## One survivor in the list: portrait, name and age, traits, where they are, and (at home) the button that picks them for the next party.
+func _roster_row(s: Dictionary) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.tooltip_text = Units.survivor_line(s)
+	var pic := TextureRect.new()
+	pic.texture = Portrait.texture(s.face, s.age, s.hunger, Units.sick_level(s), s.get("hurt", false))
+	pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_SCALE
+	pic.custom_minimum_size = Vector2(Portrait.W, Portrait.H) * 0.75
+	row.add_child(pic)
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 0)
+	row.add_child(info)
+	var bad: bool = s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2
+	_label(info, "%s, %d" % [s.name, s.age], RED if bad else BRIGHT)
+	var traits := D20.trait_names(s)
+	_small_label(info, traits if traits != "" else "no traits", DIM)
+	var where := "at home"
+	match s.state:
+		"away":
+			for party in Units.units:
+				if party.owner == Data.PLAYER and party.survivors.has(s):
+					where = "in %s" % Units.names_text(party)
+		"enlisted":
+			where = "enlisted as a troop"
+	if s.get("hurt", false) or s.get("leg", false):
+		where += ", injured"
+	_small_label(info, where, GREEN if s.state == "home" else AMBER)
+	if s.state == "home":
+		var sid: int = s.sid
+		var picked := draft.has(sid)
+		var b := Button.new()
+		b.text = "Picked" if picked else "Pick"
+		b.custom_minimum_size = Vector2(72, BUTTON_HEIGHT - 8)
+		b.tooltip_text = "Take %s in the next party you form" % s.name if not picked else "Leave %s out of the next party" % s.name
+		b.set_meta("unnumbered", true)
+		b.pressed.connect(func(): _toggle_draft(sid))
+		row.add_child(b)
+	return row
+
+
+func _toggle_draft(sid: int) -> void:
+	_clean_draft()
+	if draft.has(sid):
+		draft.erase(sid)
+	elif draft.size() < Units.crew_for("scav"):
+		draft.append(sid)
+	else:
+		Game.add_log("A party takes at most %d survivors." % Units.crew_for("scav"))
+	Game.changed.emit()
 
 
 ## What the "?" on the Colony tab says.

@@ -170,3 +170,12 @@ func test_the_days_left_are_saved_with_the_party() -> void:
 	assert_almost_eq(loaded.move_left, left, 0.001)
 	assert_false(loaded.path.is_empty(), "and its route is rebuilt")
 	assert_eq(Units.days_left_text(loaded), "%d days left this turn" % floori(left))
+
+
+func test_the_preview_starts_from_the_days_a_party_has_left_this_turn() -> void:
+	var path := Game.route("foot", hq, far)
+	var fresh := Units.arrival_days("foot", path)
+	assert_eq(Units.arrival_days("foot", path, 1.0, float(Data.SEASON_DAYS)), fresh, "a whole turn's days is what no argument means")
+	var tired := Units.arrival_days("foot", path, 1.0, 0.5)   # half a day left: the first step waits for the next turn
+	assert_almost_eq(tired[1], 0.5 + fresh[1], 0.0001)
+	assert_almost_eq(tired[-1], fresh[-1] + 0.5, 0.0001, "everything after it is that much later")

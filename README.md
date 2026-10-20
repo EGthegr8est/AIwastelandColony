@@ -3,8 +3,9 @@
 A 2D post-nuclear colony sim for Godot 4.7, coded with AI by Eric B. You lead a band of survivors in the wastes: claim land, build, scout the fog, scavenge ruins with d20 rolls, trade, hunt, fight the
 raider kingdom across the river, and try not to get nuked. Pixel-art tiles at 16 x 16 pixels (or ASCII ones, in the style of Dwarf Fortress) under an amber terminal UI.
 
-**Status (2026-10-14): finished for now and handed over.** Everything below is built and all three test suites pass (headless 1381, windowed render 450, snapshots 12; 0 failures). What comes next
-is under "What's next". Branch `main` is the finished project; `v5` is the same commit.
+**Status (2026-10-20): the turn overhaul is built.** Your parties walk on your orders with a days-per-turn budget and are numbered; the colony's people are named survivors who stay the same people
+(and are remembered when they fall); raids are made by parties on both sides, through the building attack rolls, down to the hearths. What is left is under "What's next". The commit history
+since `2ecf5b5` has one commit for each step.
 
 - [How the game works](docs/GAME_REFERENCE.md): every system, with the code that does it and the tests that pin it.
 - [`tools/PLAY_ME.txt`](tools/PLAY_ME.txt): the player's one-page guide that ships with the Windows build.
@@ -21,15 +22,16 @@ Saves live in `%APPDATA%\Godot\app_userdata\Wasteland Colony\saves\` (and the se
 ## Controls and interface
 The layout is designed for 1600 x 900 and scaled to the window (`Main._fit_window`, content scale mode `canvas_items`); **F11** toggles fullscreen.
 
-- **The map:** WASD or arrows pan, the wheel zooms (9 steps from 0.25x to 3x, a notch a step), right-drag pans. Left-click a tile to inspect, claim or build on it; click one of your scouting parties to pick it. Hover a tile for a label.
+- **The map:** WASD or arrows pan, the wheel zooms (9 steps from 0.25x to 3x, a notch a step), right-drag pans. Left-click a tile to inspect, claim or build on it; click one of your Scavenger Parties to pick it. Hover a tile for a label.
 - **The top bar** (76 px): the status line and the eight resources, a music slider, then three animated pixel-art buttons drawn 20% bigger (`Hud.BAR_ART_SCALE`) and the text buttons:
   - the **radiation meter** (**R**) flips the radiation view; the **field tablet** (**M**) flips the map between pixel art and ASCII; the **END SEASON window** (**E**) ends the season;
   - **Save** (F5), **Load** (F9), **Menu** (Esc).
-- **END SEASON** runs gather, upkeep and the AI turn, then autosaves, and the map plays the season's walking back (3 seconds; a click on the map or Enter skips it, and while it plays END SEASON only
-  skips). The window shows the sky the season is in (day in Spring and Autumn, night in Summer and Winter); ending the season plays the sun setting or the dawn, stretched to the map's fade,
+- **Your parties walk when you order it**, spending the days they have left this turn (40 a turn), and the map plays each walk at once at the normal pace (3 seconds for 40 days); a walk that
+  runs out of days waits for **Continue** (G). A numbered **party bar** along the bottom of the map has a button for each party (Shift+its number or its number on the numpad picks it).
+- **END SEASON** runs gather, upkeep and the AI turn (the Rust Kings' raiding parties, caravans, boats, planes, bands and animals walk now), gives every party its 40 days back, then autosaves, and the map plays
+  that season's walking back (3 seconds; a click on the map or Enter skips it, and while it plays END SEASON only skips; during one of your party's walks it skips it and ends the season). The window shows the sky the season is in (day in Spring and Autumn, night in Summer and Winter); ending the season plays the sun setting or the dawn, stretched to the map's fade,
   with a door click when it settles. With the Night switch off the sky never changes and the window just takes a press.
-- **The side panel** (460 px) has four tabs: **Tile** (what you know about the picked tile, what to build, who to send), **Upgrades** (one block per branch, showing the next tier), **Colony** (people,
-  leader, vehicles) and **Diplomacy**. A **?** at the top of each tab shows or hides its explanations. A building or a send is **one row**: name left, cost right, what it does on hover; one you
+- **The side panel** (460 px) has four tabs: **Tile** (what you know about the picked tile, what to build, who to send), **Upgrades** (one block per branch, showing the next tier), **Colony** (leader, the survivors and the fallen, forming parties, troops, vehicles) and **Diplomacy**. A **?** at the top of each tab shows or hides its explanations. A building or a send is **one row**: name left, cost right, what it does on hover; one you
   cannot use yet is a dim row in the same place that says why. Buttons are 40 px tall with 17 px text. The log under the map shows 5 lines; click it to expand.
 - **Corner pictures:** pick a discovered point of interest, or a seen tile of the old highway, and its picture shows in the bottom right corner (day, night and radiation variants).
 - **Sounds** all go through the Music bus, so the one volume slider covers them (down to 0 is silent): the nuke's boom, the die (one sound per number rolled), the radiation meter, the tablet's blip,
@@ -45,6 +47,10 @@ legend's "All the keys (?)" button); **?**, **Esc** or a click closes it. Keys d
 | **Backspace** / **Del** | leave or back off a party's panel / demolish the picked tile's building |
 | **F**, **P**, **O**, **L** | build a farm, palisade wall, road (a bridge on a river tile), hunting lodge on the picked tile |
 | **Z**, **X**, **C** | send, on foot / on horseback / by war rig, the party the picked tile calls for: scavengers to a ruin, site or crater; a hunting party to an animal or the Giant Frog; scouts to any other ground that is not yours |
+| **Q** | form a Scavenger Party on foot at your HQ from the survivors you picked on the Colony tab (or the healthiest), and pick it |
+| **Shift+1 to 9, 0** / **numpad** | pick Scavenger Party 1 to 9 (0 is the tenth) |
+| **[**, **]** | pick the party before / after the picked one |
+| **G**, **B** | the picked party walks on along its route / turns for home (disbanded, if it is at home) |
 | **Space** / **Enter** | roll the die of the party at a site, and move on once the number has landed / skip the season's walk |
 | **E**, **R**, **M**, **N** | end the season, radiation view, map art (pixel art or ASCII), night on or off |
 | **F1 to F4**, **Tab**, **Shift+Tab** | open the Tile, Upgrades, Colony, Diplomacy tabs; next tab, previous tab |
@@ -71,11 +77,12 @@ game loads), and zips it with `tools/PLAY_ME.txt` into `..\WastelandColony-relea
 | Path | What |
 |---|---|
 | `scripts/game.gd` | Autoload `Game`: the whole simulation (map making, economy, diplomacy, the AI turn, endings), plus save/load (JSON in `user://saves/`). |
-| `scripts/units.gd` | Autoload `Units`: every party on the map (scavengers, scouts, caravans, boats, planes, hunters, bands), animals, the Giant Frog, the season turn. |
+| `scripts/units.gd` | Autoload `Units`: every unit on the map (your Scavenger Parties, caravans, boats, planes, raider bands and the Rust Kings' raiding parties), animals, the Giant Frog, the season turn, party walking (`_go`) and forming. |
+| `scripts/roster.gd` | The colony's people: `Game.roster` makes survivors with a unique name, traits and a face, and remembers the fallen. |
 | `scripts/data.gd`, `d20_data.gd` | Every number in the game: terrain, buildings, leaders, upgrades, vehicles, market, the dice tables. Rebalance here. |
 | `scripts/d20.gd`, `d20_visit.gd`, `dice.gd` | The d20 roll system: the rules, one ruin or site visit as a series of rolls, and the dice. |
 | `scripts/hud.gd` | All the UI, built in code (panels, top bar, key caps, key sheet, menus). Sizes and key tables are constants at the top. |
-| `scripts/map_view.gd` | Draws the map (pixel art or glyphs), plays the season replay, draws the night, glows and hover label. |
+| `scripts/map_view.gd` | Draws the map (pixel art or glyphs), plays the season and party-walk replays, draws the night, glows and hover label. |
 | `scripts/season_replay.gd`, `daylight.gd` | The replay's rules; day and night's rules. |
 | `scripts/sprites.gd` | Finds the pixel art in `art/` (atlas, buildings, animals, sites, the title and logo, button sheets). |
 | `scripts/rad_meter_button.gd`, `sonar_tablet_button.gd`, `end_season_button.gd` | The three animated top-bar buttons (the tablet extends the meter). |
@@ -89,6 +96,7 @@ game loads), and zips it with `tools/PLAY_ME.txt` into `..\WastelandColony-relea
 
 ## Working on it: things that will bite
 - **Engine errors fail a test**, including `push_error`, a null access and a bad dictionary key. If the error is the point, call `expect_error("text")` first.
+- **The roster has its own random numbers** (`Roster`), so making a survivor never moves a seeded map; the test runner pins them (`Roster.fixed_seed`), so tests that depend on a survivor's traits stay the same.
 - **Settings leak into tests.** `Daylight.enabled` (the Night switch), `KeyHints.enabled` and the music volume are saved to `settings.cfg`, and `SeasonReplay.mode` is a static. A test that depends on one sets it
   itself (the tests set the walk to `"off"`; the light still fades, in 1.2 s).
 - `Input.parse_input_event` mouse events do not move the viewport's mouse: use `Input.warp_mouse`. `watch()` on a node that is freed with the scene prints "Lambda capture freed": count in an array from a lambda.
@@ -100,16 +108,18 @@ game loads), and zips it with `tools/PLAY_ME.txt` into `..\WastelandColony-relea
 - Godot keeps only five logs in `%APPDATA%\Godot\app_userdata\Wasteland Colony\logs`.
 
 ## What's next
-Nothing is half-built. The future decisions are kept in two planning docs (private to Eric's claude.ai account; ask him for access), each a checklist of decisions with ticks:
-
-1. **Movement Points: Plan** (https://claude.ai/code/artifact/f699d0ef-877e-4043-a57a-db989d0131ba). Not built. Movable units (scouts, scavenger and hunting parties, troops) would pay a movement cost as they
-   move, from a 40-day budget that resets at season end, so a unit can make several moves a turn; die rolls are never affected. Today the budget exists but is spent only at END SEASON
-   (`Data.SEASON_DAYS`, `Units._advance`, `Units.arrival_days`), so a scavenging trip takes at least two END SEASONs. Ticked (14 of 16): a `move_left` per party, moves carried out at once, scouts first, then
-   scavengers and hunters, then a "raiding column" unit for troops that does not defend home while away, a move bar on party cards, no END SEASON warning. Two decisions conflict in scope (3 and 4: scouts,
-   scavengers and hunters first, or every party at once); the plan is to build in the doc's order and bring caravans, boats, planes and bombers in last. Still to do before building: measure how many
-   ruins and sites lie within a one-turn round trip (out, roll, back) on foot, horse and war rig, and add that table to the doc. About 17 test files call `season_turn` or `end_season` and will need reworking.
-2. **UI: Cleaner Panels, Bigger Buttons, Hotkeys: Plan** (https://claude.ai/code/artifact/eed252ba-a59d-483d-b935-dc481923b526). Built, except two unticked options: folding the locked buildings into one
-   "Locked (n)" row (5b, not recommended: the numbers would shift) and a 125% UI scale in windows taller than 1080 px (18).
+The turn overhaul (days a turn, parties that walk on your orders, the party bar), the survivor roster, the single Scavenger Party, hearths and the raids made by parties are built, in that
+order, one commit each. What they leave to do:
+- **The Warfare upgrades and vehicle attack no longer do anything for you.** `w1` to `w5`, `wv1` to `wv4` and `Game.vehicle_attack` boosted the army raids, which are gone. They should become modifiers on a
+  party's strike and fight rolls (or be reworked); the Rust Kings' own vehicles still count in `Game.ai_attack`.
+- **Balance of the new numbers**, all in `scripts/data.gd` and `d20_data.gd`: `AI_RAID` (readiness 40, three quarters of their troops, two parties at most), the 40-day turn (`Data.SEASON_DAYS`), `SCOUT_PACK` 10, the hearth DCs and
+  `HEARTH_GUARD_RADIUS`. None of it has been played for long.
+- **Caravans, boats, planes and bombers still travel at END SEASON.** They could take the same days-and-Continue treatment as the parties.
+- **Unused art and data.** Every party is drawn as the scavenger now, so the teal scout and lime troop pictures in `art/units32.png`, `Data.UNITS["scout"]` and its legend row, and the `scout` sprite in the 16 x 16 atlas are
+  not used by anything (the war rig and raider band 32 x 32 pictures are).
+- **Parties could be given a name of their own** (the number is all they have), and the roster could show a survivor's history.
+- **UI: Cleaner Panels, Bigger Buttons, Hotkeys: Plan** (https://claude.ai/code/artifact/eed252ba-a59d-483d-b935-dc481923b526), private to Eric's claude.ai account. Built, except two unticked options: folding the
+  locked buildings into one "Locked (n)" row (5b, not recommended: the numbers would shift) and a 125% UI scale in windows taller than 1080 px (18).
 
 Smaller loose ends:
 - A point of interest's corner picture is chosen at random per site (`Game.poi_scene`); a later pass could pick by the surrounding biome.

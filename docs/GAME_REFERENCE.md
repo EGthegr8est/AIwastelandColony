@@ -3,7 +3,7 @@
 How every system of the game works, with the code that does it and the tests that pin it. The numbers themselves live in `scripts/data.gd` and `scripts/d20_data.gd`: rebalance there.
 For how to run, test and ship the project, and what to do next, see the [README](../README.md); for the controls, see "Controls and interface" there.
 
-**Contents:** Menus and music · Leaders · The living map · Day and night · Fog of war · Scouting parties · Pixel art · What a party can carry · Slopes and travel · Expeditions, tribes and raider bands · The map · Vehicle upgrades · Resources and money · Scavenging: the d20 rolls · Points of interest · Nukes, craters and the bomber · Prison breaks · Building raids · Fights between armies: the raiding dice · Wild animals and hunting · The Giant Frog · Frog hide, the Drug Factory and Salt · How the game ends
+**Contents:** Menus and music · Leaders · The living map · Day and night · Fog of war · The survivors · Scavenger Parties · Pixel art · What a party can carry · Slopes and travel · Expeditions, tribes and raider bands · The map · Vehicle upgrades · Resources and money · Scavenging: the d20 rolls · Points of interest · Nukes, craters and the bomber · Prison breaks · Building raids · Fights between armies: the raiding dice · How the Rust Kings raid you · Wild animals and hunting · The Giant Frog · Frog hide, the Drug Factory and Salt · How the game ends
 
 ## Menus and music
 - **Title screen.** The game opens on `art/title.png` with **New colony**, **Load game** and **Quit** over its dark lower edge (and
@@ -49,29 +49,29 @@ keeps the same three.
   can be checked mid game.
 
 ## The living map
-END SEASON still decides everything at once, but the map then plays the season back so you can watch it (`scripts/season_replay.gd`).
-While `Units.season_turn()` walks every unit its season, `Units._advance` notes each tile it reaches and the day it got there (a season
-is 40 days), plus what happened (`Units.replay`, handed to the map by `Game.season_played`). Nothing the game decides depends on it.
-- **The walk.** Every party, caravan, boat, plane and raider band glides along the route it walked, at its real speed (a war rig
-  crosses four times the ground of a party on foot), all in about 3 seconds for the whole 40 days. A party
-  that only walked half a season takes half as long, and a season in which nobody walks plays nothing. A party that gets home or is
-  wiped out fades off the map where it happened; a band that spawned this season appears at its camp and sets off.
+Everything that walks is shown walking, at the same pace (`scripts/season_replay.gd`). The game decides each walk at once, and the map then plays it back so you can
+watch it: `Units._advance` notes each tile a unit reaches and the day it got there (a season is 40 days), plus what happened, and the map plays those notes at 3
+seconds for the 40 days. Nothing the game decides depends on it. Two kinds of walk are played, the same way (`Units.replay`):
+- **A party's walk.** One of your Scavenger Parties walks the moment you order it (see Scavenger Parties), so its walk plays the moment you order it
+  (`Units._go`, handed to the map by `Game.walk_played`), its days counted from the start of that walk: a walk of 10 days takes under a second. A walk that starts
+  while another is still playing joins it, so every party you send is seen walking together, and a party sent on again while its first walk still plays carries on
+  along one trail. Pressing END SEASON during a walk skips it and ends the season.
+- **A season's walk.** At END SEASON every caravan, boat, plane, raider band (the Rust Kings' raiding parties among them) and wandering animal glides along the route it
+  walked that season (`Units.season_turn()`, handed over by `Game.season_played`). Your Scavenger Parties are not among them: they walk when you order it. A season in
+  which nobody walks plays nothing. Pressing END SEASON while one plays only skips it (that press does not end another season).
+- **The walk.** Every unit glides along its route at its real speed (a war rig crosses four times the ground of a party on foot). A party that gets home or is wiped
+  out fades off the map where it happened; a band that spawned this season appears at its camp and sets off.
 - **Fog lifts as they walk.** Ground a party uncovers stays dark until it gets there (`Game.reveal` says which tiles were new).
-- **Bands in the fog stay hidden.** A raider band is drawn while its tile was in your sight when the season began or is now, and fades
-  in and out at the edge of what you see. Your own parties are always drawn.
-- **A little life.** A hop on every step and a few dust dots behind a walking unit, a parked scouting party bobbing one pixel, a flicker
-  at each camp fire. Flashes where things happen once the walking is done: crossed swords where a band catches a party or hits your
-  outskirts, an exclamation mark where a party reaches its ruin, a gold glint when one gets home with loot, smoke where a vehicle is
-  abandoned or a plane crashes.
-- **Troops march.** Troops are only a number, but when you raid the Rust Kings' fort, attack a camp or take Dustwell, up to six troop
-  markers walk from your HQ to the target (two tiles a day, so a far fort is a long march: at most 24 days of the clock), the fight
-  flashes there and they come home (`Game.troops_marched`, `SeasonReplay.march`). The
-  fight is decided at the button press as before; the march is only the picture.
-- **Skipping.** The replay and the march are skipped by a click on the map, Enter, or pressing END SEASON (that press does not
-  end another season). If a season ends the game, the ending screen waits for the replay to finish or be skipped.
-- **Units have a layer of their own.** `MapView.UnitLayer` draws the units and camp fires every frame over the cached map chunks, so a
-  moving unit redraws no tiles. `tests/unit/test_season_replay.gd`, `tests/render/test_unit_layer.gd` and
-  `tests/render/test_season_replay_map.gd` pin all of it; the tests turn the walk off (`SeasonReplay.mode = "off"`).
+- **Bands in the fog stay hidden.** A raider band is drawn while its tile was in your sight when the walk began or is now, and fades in and out at the edge of what
+  you see. Your own parties are always drawn.
+- **A little life.** A hop on every step and a few dust dots behind a walking unit, a waiting party of yours (on station, or paused partway along its route) bobbing
+  one pixel, a flicker at each camp fire. Flashes where things happen once the walking is done: crossed swords where a band catches a party or hits your outskirts, an
+  exclamation mark where a party reaches its ruin, a gold glint when one gets home with loot, smoke where a vehicle is abandoned or a plane crashes.
+- **Skipping.** A click on the map or Enter skips what is playing. If a season ends the game, the ending screen (and the Hollow Mile picture) waits for the replay to
+  finish or be skipped.
+- **Units have a layer of their own.** `MapView.UnitLayer` draws the units and camp fires every frame over the cached map chunks, so a moving unit redraws no tiles.
+  `tests/unit/test_season_replay.gd` and `test_walk_replay.gd`, `tests/render/test_unit_layer.gd`, `test_season_replay_map.gd` and `test_walk_animation.gd` pin all of it;
+  the tests turn the walk off (`SeasonReplay.mode = "off"`) unless they are about it.
 
 ## Day and night
 Each season the map fades between daylight and moonlight, so you notice the turn change. **Spring and Autumn are day, Summer and Winter are
@@ -99,24 +99,60 @@ other rule ignore it. The rules are in `scripts/daylight.gd`; `scripts/map_view.
 Every colony keeps its own memory of the map (`Game.memory`). Black tiles have never been seen.
 Dim tiles were explored but are out of sight, so they show what was there last time.
 Click a black or dim tile and press **Send scouts** to send a party there. You must find the Rust Kings and
-Dustwell before you can raid, trade or befriend them. The Rust Kings scout west toward you, and only
+Dustwell before you can attack, trade with or befriend them. The Rust Kings scout west toward you, and only
 raid once they've found you.
 
-## Scouting parties
-Scouts (`@`) walk to the tile you pick and **stay there, keeping watch**, until you click another tile and
-send them on, or press **Recall to camp**. How many parties you can have out grows with horses and war rigs.
-- Every survivor has a name, age and quirk. Click a party on the map and a **portrait** of each member appears in the bottom
+## The survivors
+The colony's people are named people, not a number (`scripts/roster.gd`, `Game.roster`). Everyone who has ever joined the colony is on the roster with a name nobody
+else has (or had), an age, 1 to 3 traits (the 11 in `d20_data.gd`), a portrait seed (their face) and what has become of them: **home**, **away** (in one of your
+parties), **enlisted** (trained as a troop) or **dead**. `Game.pop` is the number at home, and it is what the top bar and the upkeep count.
+- **They join** when the colony starts (ten of them), when a food surplus brings settlers, when a site's colonists settle in, when a builder tribe joins you and when you
+  disband a troop. Each is a new person with a face and traits. Names come from `Data.SURVIVOR_NAMES`; when they run out a surname is added ("Mara Voss"), and the
+  name of someone who has fallen is never given again.
+- **A party is made of them.** A party you send or form takes real people from the roster (the uninjured first, or the ones you pick) and they come home as the same
+  people, rested and healed: a trip's injuries, hunger and doses end at home. The party rolls with its members' traits, so who you send matters.
+- **They die for a reason.** Starvation, a lost fight, radiation sickness, a crash, a raid on the colony, a hunter who never came back: each death puts the person on the
+  **Fallen** list with the season and the cause ("Mara, 34: starved in the field (Year 2, Summer)"), and the log names them.
+- **They age.** Everyone alive is a year older every Spring.
+- **The Colony tab** lists every survivor (portrait, name and age, traits, where they are) and, below, the fallen. **Pick** chooses who goes in the next party;
+  **Form a party** (Q for one on foot) makes it at your HQ from the ones you picked, or the healthiest. These buttons take no digit key, so the tab's other buttons keep theirs.
+- **Saves** carry the roster, and the parties on the map hold the roster's own entries (`sid`); an older save gets a roster made from its head count.
+- Troops stay a number (`Game.troops`): training one takes a survivor off the roster ("enlisted"), and disbanding one gives a person back.
+- The roster draws its own random numbers (`Roster.reseed`), so who the colony's people turn out to be never changes a seeded map; the test runner pins its seed
+  (`Roster.fixed_seed`). `tests/unit/test_roster.gd` and `test_form_party.gd` and `tests/render/test_party_ui.gd` pin all of it.
+
+## Scavenger Parties
+Scavenging, scouting and hunting are one kind of party, the **Scavenger Party** (`☺`): 3 survivors from the roster, or 4 for a leader with the **Big party** perk on
+scavenging and hunting runs (`Units.crew_for`; a scouting run stays at 3). Each is called by its number: Scavenger Party 1, 2, 3... (the lowest free number, kept until
+the party comes home or is lost, then given to the next). **Nothing limits how many you can send except the survivors at home**: a party needs 3 (and one must stay
+behind) and a food pack.
+- **Making one.** Click a tile and press **Send scouts** (or the send buttons on a ruin, a site, an animal; or Z, X, C): that forms a party at your HQ and walks it off at
+  once. Or form one first, on the Colony tab (**Form a party**, or **Q** for one on foot), from the survivors you pick or the healthiest: it waits at your HQ until you
+  click where it should go and press **Send Scavenger Party 2 here** (`Units.form_party`).
+- **Walking is on your orders and costs days.** A party has 40 days a turn (`move_left`; END SEASON gives them back), and ordering a move walks it right away, as far as its
+  days go (`Units._go`, with the same costs as ever: ground, slopes, roads, load, a broken leg, Trailblazer). A route longer than that stops where the days run out and the
+  rest waits for you to press **Continue** (G) once the days are back. END SEASON does not move your parties: the Rust Kings and the animals move then. The party's card
+  shows its days left (a bar and "17 days left this turn"), and the trip length on "Send ... here" starts from the days it has left. The days it did not walk count as time
+  spent where it stands for radiation, and a vehicle waiting burns its idle fuel.
+- **Acting where it stands.** A party reaching the ruin or the animal it was sent for starts the visit at once; one that reached other ground keeps watch. A waiting party can
+  **Search the ruins here**, **Hunt** an animal on or beside it, **Attack** a camp, a building or a hearth beside it (see Building raids). **Rolls cost no days and there is
+  no limit to them**: only the walk is limited. Afterwards it waits where it is, with what it carries, until you send it on or press **Recall to camp** (B); recalled at home,
+  it is disbanded and its people and food come back.
+- **The party bar**: a numbered button for each party along the bottom of the map (red when somebody is starving or ill, green in the middle of a search, bright for the
+  picked one; the tooltip says who is in it, where it is and its days). Click one, or press **Shift** and its number (0 is the tenth), or its number on the **numpad**; **[** and **]**
+  go through them. Parties past ten keep their numbers and are picked by the bar or the brackets.
+- Click a party on the map and a **portrait** of each member appears in the bottom
   panel, with a hunger bar under it. Faces are drawn in code (`scripts/portrait.gd`) from a per-survivor seed, so the same person
   always looks the same, and they go grey and gaunt as they age or starve.
-- **Food pack**: a party leaves with `SCOUT_PACK` (8) food taken from your stores (grain, then veg, then meat), and each survivor
-  eats 1 a season from that pack, so two scouts last 4 seasons. The **Inventory** column beside the portraits shows what's in the pack
+- **Food pack**: every party leaves with `SCOUT_PACK` (10, what one survivor can carry) food taken from your stores (grain, then veg, then meat), whatever it is
+  sent to do, and each survivor eats 1 a season from that pack, so a party of three lasts about 3 seasons. The **Inventory** column beside the portraits shows what's in the pack
   and how many days it will last. Nothing resupplies them in the field: when the pack is empty they go hungry, then starve, and die
   after 3 hungry seasons in a row. Whatever is left goes back into your stores when they come home, so recall them in time.
-- **Picking a party**: click a scouting party (or **Pick** on its card) and the map draws its route from where it stands, not from
+- **Picking a party**: click a party, press **Shift** and its number (or **Pick** on its card) and the map draws its route from where it stands, not from
   your HQ: click any tile to see the way there. The dots fade **white** (plenty of food) to **yellow** (running low, from 75% eaten,
   `FOOD_WARN`) to **red**, and a red ring marks the tile where the pack runs out. Red dots mean not enough food for that stretch of
   the journey. A party already on the move shows the rest of its path the same way. The tile panel adds the trip length and how many
-  days short the food is. **Esc**, **Deselect**, or clicking your own land lets go and brings the HQ routes back.
+  days short the food is. **Esc**, **Deselect**, or clicking your own land lets go and brings the HQ routes back. No dotted line is drawn to your settlement: it is not somewhere to send a party.
 - **Fuel**: a party in a war rig or plane takes a tank from your fuel stores (8 / 10), and so does a recon flight (10, the whole of its cost: it
   burns what the trip takes and the rest comes home, so a flight further than about 100 tiles out cannot make it back), and a river trader boat (3, enough for a
   round trip of about 75 tiles, so a port more than ~37 tiles from a river mouth will run its boat dry on the way home; the Sail refits
@@ -211,13 +247,13 @@ The map is 120 x 72. Things on the move are drawn over the tile they stand on:
 
 | Symbol | What | |
 |---|---|---|
-| ☺ | Scavenger party | Click pre-war ruins to send one. Ruins may hide a booby trap or a rogue raider. |
+| ☺ | Scavenger Party | Yours, numbered: it scavenges, scouts, hunts and attacks. Form one on the Colony tab or send one from any tile; ruins may hide a booby trap or a rogue raider. |
 | ♦ | Trade caravan | Send from the Diplomacy tab to the Rust Kings or a trader tribe. Gold comes home with it. |
 | Θ | War rig | Any expedition sent by war rig (faster, tougher, hauls 1.5x loot). |
 | ◊ | Boat | Click your port to send a boat downriver to trade. |
 | Ж | Recon plane | Click any tile to fly recon over it; it maps everything it passes. |
-| ☻ | Raider band | Wild raiders. They ambush expeditions and hit colony outskirts. |
-| Δ | Tribe camp | Red: raiders (attack the camp). Yellow: traders (send caravans). Blue: builders (gift food and they join you). |
+| ☻ | Raider band | Wild raiders, and the Rust Kings' raiding parties (see How the Rust Kings raid you). They ambush expeditions and hit colony outskirts. |
+| Δ | Tribe camp | Red: raiders (a Scavenger Party attacks the camp). Yellow: traders (send caravans). Blue: builders (gift food and they join you). |
 
 Crew leave your population while they're out, and vehicles on expeditions can't fight.
 Swap any symbol in `UNITS` in `scripts/data.gd`. `docs/unit_glyph_options.png` shows the alternatives.
@@ -381,8 +417,8 @@ and the number stays up for a second until you click off it. Every roll is one c
 - **The arithmetic is hidden on screen.** The panel shows who rolls, the party's perks ("Traits: ...") and the die, then what came of it; the DC, the modifiers, the sum and
   the "d20 8 +4 = 12 vs DC 11" line are left out, in the panel, on the buttons ("Attack the camp (strength 5)") and in the log ("Mara (Sharp-Eyed) trap: success"). `D20.plain`
   strips them from what is drawn (the Hud's label and button helpers and the log); the game's own log, its saves and its tests keep the full lines, and
-  `D20.show_math = true` puts the numbers back. A raid or conquest button still shows its chance ("55% to win").
-- **The party rolls as one.** Every survivor has 1 to 3 traits (the 11 in `d20_data.gd`, rolled when the party is sent). The traits of
+  `D20.show_math = true` puts the numbers back.
+- **The party rolls as one.** Every survivor has 1 to 3 traits (the 11 in `d20_data.gd`, rolled when they join the colony). The traits of
   the whole party combine, and a trait two survivors share counts once (three Magpies are worth one). The survivor in the best
   condition makes the roll; injuries and fumbles land on them. A Lucky trait gives the party one reroll.
 - **Situation modifiers come from the game:** the ruin's radiation after the vehicle's shield (20 R/h -1, 45 -2, 80 -3), the roller's
@@ -523,56 +559,68 @@ the new rule does not apply, and a season never has both.
 ## Building raids
 Any building can be destroyed with one attack roll: d20 plus a modifier against the building's DC (`BUILDING_DC` in `scripts/d20_data.gd`).
 Farms, lodges, horse farms, salvage yards and trading posts are DC 8; mines, refineries, motor pools, ports and airfields 10; outposts 11;
-walls and watchtowers 12 (14 for your walls with Stone walls); keeps 15. Your HQ, the Rust Kings' fort, Dustwell, the citadel and the points
-of interest cannot be destroyed. A destroyed building leaves its tile bare and with its owner. At most 3 of your buildings fall in a season,
-whoever attacks (`RAID_LOSS_CAP`).
+walls and watchtowers 12 (14 for your walls with Stone walls); keeps 15. The citadel and the points of interest cannot be destroyed. A destroyed building leaves its tile
+bare and with its owner. At most 3 of your buildings fall in a season, whoever attacks (`RAID_LOSS_CAP`).
+- **The three hearths** are attacked the same way: your HQ (DC 16), the Rust Kings' fort (DC 16) and Dustwell's centre (DC 14) (`HEARTHS` in `d20_data.gd`). But a hearth
+  cannot be attacked while a wall, tower, outpost or keep of its owner stands within 4 tiles of it (`HEARTH_GUARD_RADIUS`: bring those down first, one roll each), nor at
+  all while its owner has a citadel. Your own hearth is also safe once 3 of your buildings have fallen that season, and Dustwell is a target only while it is neutral and
+  found (never an ally). Bringing a hearth down ends a colony: **the fort falling is the win** ("Raiders defeated"), **your HQ falling is the defeat** (the colony is
+  overrun), and Dustwell's centre falling conquers it (its land turns yours, with 5 prisoners). `Game.is_hearth`, `Game.hearth_guards`, `Game.can_hit`.
 - **The Rust Kings' walls are tiles now.** Their wall count is still what counts in a raid (2 defense each), but each 4 walls stand as one
   Raider wall tile (`▓`) on their land nearest your HQ. Destroying a tile removes its 4 walls and costs 10 relations with them; a wall tile
   you take with their land takes its 4 walls with it, and you cannot buy one.
-- **Your raid** (the Raid button) also rolls at their walls nearest your HQ when it wins: once, twice if you had double their defense.
-- **Raider bands** that beat your guards at your edge also roll once at the building nearest them.
+- **Your Scavenger Parties attack in person, and this is how you raid.** A waiting party on or next to a building, a camp or a hearth of theirs gets an "Attack the ..."
+  button (a hearth that is still guarded says what stands in the way and its DC). The right panel then shows "Attack" and the clickable die, and the party rolls like a
+  fight at a ruin (its traits, injuries and the radiation all count). A hit pays the usual package for a won fight and the building comes down when you press Continue; a
+  miss injures the roller (light, or severe on a bad miss, which also loses half of what the party carries) and the party can try again or "Back off". A building is
+  attacked like this by a party standing there, so its walk is days and its rolls are free. There is no Raid button.
+- **Raider bands** that beat your guards at your edge also roll once at the building nearest them (never at a hearth).
 - **A raid or band's modifier** comes from its strength against the defense it meets: +4 at double, +2 at 1.5 times, 0 at even, -2 below.
   Each roll is written to the log with its d20, modifier and DC.
-- **Your scouting parties** attack in person: a party keeping watch on or next to a Raider wall gets an "Attack the raider wall" button. The
-  right panel then shows "Attack" and the clickable die, and the party rolls like a fight at a ruin (its traits, injuries and the radiation
-  all count). A hit pays the usual package for a won fight and the wall comes down when you press Continue; a miss injures the roller (light,
-  or severe on a bad miss, which also loses half of what the party carries) and the party can try again or "Back off". Walls are DC 12, so the
-  fatal fumble never applies to them.
-- **The Rust Kings' raids** also roll at your buildings from season 6 on (`AI_BUILDING_ATTACKS_FROM`), but only when the raid wins: once, once more
-  if their attack is at least double your defense, and once more if they have planes (Flak towers cancel that one), each at a different building,
-  the ones nearest their fort first, with the same modifier table as your own raid.
+- **The Rust Kings' raiding parties** (see How the Rust Kings raid you) roll at your buildings from season 6 on (`AI_BUILDING_ATTACKS_FROM`), but only when they win the guards'
+  roll: once, once more if their attack is at least double your defense, and once more if they have planes (Flak towers cancel that one), each at a different building, the
+  ones nearest their fort first, with the same modifier table. When their attack is at least `hearth_ratio` (2) times your defense and nothing guards your hearth, the
+  first roll is at your hearth. Build walls and towers round your HQ, or a citadel, to keep it safe.
 - **The Rust Kings' scouts** (2 a season, up to 4 with horses) each have a 10% chance, also from season 6, to roll once with no bonus at one of
   your buildings, when the spot they stop at is within 2 tiles of it and the building is more than 3 tiles from your HQ.
 Wild bands, escaped prisoners, their raids and their scouts all count toward the same limit of 3 buildings lost a season.
-`tests/unit/test_prison_break.gd` and `test_building_raids.gd` pin all of it.
+`tests/unit/test_prison_break.gd`, `test_building_raids.gd` and `test_hearths.gd` pin all of it.
 
 ## Fights between armies: the raiding dice
-Your attacks on a raider camp, on the Rust Kings' fort and on Dustwell, the Rust Kings' raids on you, and the wild bands that reach your land
-are each one d20 against a DC worked out from the odds (`Game.raid_dc`): `DC = 21 - round(20 x attack / (attack + defense))`, kept between 2 and
-20. That keeps the chance of winning what attack / (attack + defense) always gave, to the nearest 5% (even odds are DC 11, 50%; double the defense
-DC 8, 65%; three times DC 6, 75%; a quarter DC 17, 20%). A natural 20 always wins and a natural 1 never does, and they are the only critical results.
-The roll is made when you press the button and written to the log ("Your attack on the Ash Walkers: d20 14 vs DC 9 (60% to win), won."); the
-camp, fort and Dustwell buttons show the DC and the chance before you commit. Every die goes through `Units.dice`, so tests force them.
-`D20Data.RAID_DICE` holds the numbers:
-- **A raider camp** (Diplomacy tab or its tile): a win is the same loot and 2 prisoners and the camp is gone; a natural 20 brings the loot half
-  again and 3 prisoners. A miss costs 40% of your troops; a natural 1 costs 60% and the camp grows 1 stronger.
-- **The Rust Kings' fort** (the Raid button): a win is what it always was (a quarter of their wood, stone, metal and gold, prisoners, their troops
-  down 30%, yours down 15%, land, then the rolls at their buildings); a natural 20 adds a prisoner and one more roll at their buildings. A miss costs
-  40% of your troops (60% on a natural 1). Relations and the truce suffer whatever the die says, and the 2.5 times rule still decides when the fort falls.
-- **Dustwell:** a win takes its land and 5 prisoners (7 on a natural 20); a miss costs 40% of your troops and Dustwell's trust (60% on a natural 1).
-- **A Rust Kings raid on you** is rolled for them: a win takes 20% of your stores (30% on a natural 20) and may roll at your buildings from season 6;
-  a miss costs them 40% of their troops and you catch a raider (60% and two raiders on a natural 1). The 3 times rule that overruns the colony stays.
+The Rust Kings' raids on you, the wild bands that reach your land and the Giant Frog's raids are each one d20 against a DC worked out from the odds (`Game.raid_dc`):
+`DC = 21 - round(20 x attack / (attack + defense))`, kept between 2 and 20. That keeps the chance of winning what attack / (attack + defense) always gave, to the
+nearest 5% (even odds are DC 11, 50%; double the defense DC 8, 65%; three times DC 6, 75%; a quarter DC 17, 20%). A natural 20 always wins and a natural 1 never
+does, and they are the only critical results. The roll is written to the log ("The Rust Kings' raid on your colony: d20 14 vs DC 9 (60% to win), won."). Every die goes
+through `Units.dice`, so tests force them. Your own attacks are not armies any more: your Scavenger Parties attack with the building rolls (see Building raids), and
+there is no Raid button. `D20Data.RAID_DICE` holds the numbers:
+- **A Rust Kings raid on you** is rolled for them when their raiding party reaches your land: a win takes 20% of your stores (30% on a natural 20), 30% of your troops and a
+  person, a tile of your land if it borders theirs, and may roll at your buildings from season 6; the party loses a fifth of its troops. A miss costs the party 40% of its troops and
+  you catch a raider (60% and two raiders on a natural 1). It is no longer the whole of their troops: only the party's.
 - **A band at your land** is rolled by the band: a win takes 10% of your grain, meat, metal and gold (20% on a natural 20) and rolls at a building; a
   miss gets it driven off with one caught (two on a natural 1).
 - **A band ambushing a party on the road** is a ruin fight (`D20Visit.field_fight`): the party's best fighter rolls d20 plus traits and conditions
   against the band's DC (6 + 2 x its strength), and a hit catches one of the band and pays a package. A plain miss costs a light injury and a
   quarter of the load, a critical miss a severe injury and half the load, and only a natural 1 kills someone (the fatal fumble still applies against
-  a strength 4 or 5 band).
-- **Scouting parties attack camps in person**, like walls: a party keeping watch on or next to a raider camp gets an "Attack the <camp>" button, and the
+  a strength 4 or 5 band). The Rust Kings' raiding parties are bands, so your parties can meet them like this.
+- **Scavenger Parties attack camps in person**, like buildings: a party keeping watch on or next to a raider camp gets an "Attack the <camp>" button, and the
   right panel shows "Attack" and the clickable die against the camp's DC (its strength as at a ruin: 16 for a strength 5 camp, with -2 if the camp
   outnumbers the party). A hit scatters the camp, catches a raider and pays the package for a won fight; a miss injures the roller and costs part of
   the load, and the party can try again or "Back off".
 `tests/unit/test_raid_dice.gd`, `test_field_fight.gd`, `test_camp_strike.gd`, `test_nat20.gd` and `tests/render/test_raid_panel.gd` pin all of it.
+
+## How the Rust Kings raid you
+A raid has to be made and then has to walk to you (`Data.AI_RAID`, `Game._ai_raid_readiness`, `Units.launch_raid`, `Units._raid_turn`):
+- **Readiness.** From season 4 (`min_season`), once they have found you and while there is no truce, their raid readiness grows each season by their troops times how
+  much they dislike you (1 at relations 0, 2 at -100, 0.3 at the least), with a little luck (x0.7 to x1.3), up to 1.5 times the threshold (40). They need at least 4 troops.
+  It keeps growing while a party is out.
+- **A party sets out** when the readiness reaches 40 and fewer than 2 parties are out: three quarters of their troops, with that share of their strength, on a war rig or horses
+  if they have them and a way for them, on foot otherwise. Those troops leave the fort, so it is weaker while the party is away. It is one of the raider bands, theirs.
+- **It walks** 40 days a season (the season replay shows it), fighting any of your parties it meets on the road. You are told when it comes into sight. With the
+  **Watchtower** upgrade you are also told when it sets out and how long it has to walk, and the Diplomacy tab shows their readiness.
+- **It attacks** where it reaches your land: the guards' roll (see Fights between armies), then, if it won, loot, losses, a tile and rolls at your buildings and, when it is
+  strong enough and nothing guards it, at your hearth first. What is left of it walks home and rejoins their troops; a party with none left is gone. Beating one back counts as a raid beaten back.
+- **A bribe or a truce** turns the parties that are still on their way back, and a bribe empties the readiness. Truces also stop it growing.
+- Saves carry the readiness (`ai.raid_progress`) and the parties. `tests/unit/test_ai_raid_party.gd` pins all of it.
 
 ## Wild animals and hunting
 Deer, black bears and brown bears roam the wastes (`Data.ANIMALS`, drawn from `art/animals.png`, one 16 x 16 picture to a tile). A game starts with 8 deer, 3
@@ -581,7 +629,7 @@ wood). Each season an animal may drift a tile or two, never more than 5 from whe
 you can see them, like raider bands, and they walk in the season replay. A killed animal is replaced in time: below the cap there is a chance each season (15% a
 deer, 6% a bear) that one wanders in from 20 or more tiles from your HQ and out of your sight.
 - **Hunting** is two rolls, one die press each, in the panel headed "Hunt" (`D20Visit.begin_hunt`, stages "track" and "kill"). Click an animal's tile and press
-  "Hunt with scavengers on foot / on horseback / by war rig" to send a scavenger party (3 crew, 3 grain) or a hunting party; a scouting party (not in a plane or boat) standing on or beside it gets
+  "Hunt with scavengers on foot / on horseback / by war rig" to send a Scavenger Party after it; a waiting party (not in a plane or boat) standing on or beside it gets
   a "Hunt the ..." button. The party arrives, and the animal may have strayed up to 3 tiles (the track roll is the search for it; farther and the trail is
   cold). The **track roll** (the scavenging traits) is DC 8 for a deer, 11 for a black bear and 13 for a brown bear: a CRITICAL_SUCCESS creeps up unseen (+3 on the
   kill shot), a FAILURE loses the trail (the animal wanders off), a CRITICAL_FAILURE spooks it (a deer bolts, a bear charges: the kill shot is forced at -4). The
@@ -590,10 +638,9 @@ deer, 6% a bear) that one wanders in from 20 or more tiles from your HQ and out 
   for a bear, a small package of gold more for a brown bear's hide, one size more on a critical (`HUNT` and `HUNT_PACKAGE` in `d20_data.gd`, times the loot scale). A
   miss against a deer costs nothing; against a bear it mauls the party like any fight (an injury, a quarter of the load, a fatal fumble at DC 14 and up) and the
   bear lives and runs off.
-- **The hunting party** is the other way to hunt: three of your troops (not colonists) sent out as a party (3 grain), every one a Veteran (`Units._make_crew(n, true)`):
-  +2 on the kill shot, no outnumbered penalty, and a natural 1 is not a fatal one. "Send hunting party" is beside the scavengers' "Hunt with scavengers" on an
-  animal's tile and on the Giant Frog's. The troops leave `Game.troops` while they are out (so they are not there to defend or raid) and come back to it, minus
-  anyone who died. It only hunts, and it counts toward the six survivors it takes to kill the frog. Tests: `tests/unit/test_hunting_party.gd`.
+- **Hunting parties are ordinary parties now.** A party sent after an animal is a Scavenger Party of 3 survivors from the roster (a hunting party no longer takes your
+  troops, and no longer has the Veteran trait for free: a survivor who is a Veteran still is one). "Send hunting party" is beside the scavengers' "Hunt with scavengers" on an
+  animal's tile and on the Giant Frog's. It counts toward the six survivors it takes to kill the frog. Tests: `tests/unit/test_hunting_party.gd`.
 - **Bears attack parties that come too close.** At the end of a season a bear within `BEAR_REACH` (2) tiles of one of your parties (not a plane or boat, standing
   parties included) attacks it as a field fight on the raider-band rules (`Units._bear_attacks`): a win drives the bear 5 tiles away, a miss costs an injury and
   a quarter of the load, and a natural 1 kills someone. A party that is hunting that bear is not also attacked by it. Hunting bears makes the land safe until
@@ -631,12 +678,12 @@ Raw frog hides and Salt are not resources: they live in `Game.items` (`Data.ITEM
 There are three endings (`Data.ENDINGS` holds the numbers), each shown once: the ending picture (click, or press Enter, to continue), then a
 stats screen, then a click on **Return to main menu**. The win or defeat music loops the whole way (`wasteland_OST_lastcall_Victory.wav` for
 both wins, `wasteland_OST_signallost_DEFEAT.wav` for a loss) until the menu music takes over. A finished game is not autosaved.
-- **Raiders defeated** (you win by force): a raid of yours that wins with attack at least 2.5 times the Rust Kings' defense storms their
-  fort, or they are left with 6 tiles of land or fewer.
+- **Raiders defeated** (you win by force): your parties bring down the Rust Kings' fort (its hearth, once its defences are down: see Building raids), or they are
+  left with 6 tiles of land or fewer.
 - **The colony prospers** (the long game, and rare): from season 80, the Rust Kings' raid strength stays under a quarter of your defense for 6
   seasons in a row, after at least 2 raids between you, with 20+ colonists, 30+ tiles and nobody starving.
-- **Defeat:** a raid of theirs that wins with attack at least 3 times your defense overruns the colony (a Citadel stops that), your land falls
-  to 6 tiles or fewer, or the colony starves down to 2 people.
-- **Stats** (`Game.stats`, saved with the game) cover seasons survived, peak colonists and land, buildings, upgrades, vehicles, raids won and
-  lost both ways, bands and tribes beaten, prisoners, survivors lost, buildings lost and Rust Kings buildings destroyed, parties sent, ruins and sites stripped, craters searched, nukes found and dropped and blasts, d20 rolls with natural 20s and
+- **Defeat:** your own hearth, the colony HQ, is brought down (a raid of theirs rolls at it first when it is strong enough and nothing guards it; a Citadel stops that),
+  your land falls to 6 tiles or fewer, or the colony starves down to 2 people.
+- **Stats** (`Game.stats`, saved with the game) cover seasons survived, peak colonists and land, buildings, upgrades, vehicles, their raids beaten
+  back or suffered, bands and tribes beaten, prisoners, survivors lost, buildings lost and Rust Kings buildings destroyed, parties sent, ruins and sites stripped, craters searched, nukes found and dropped and blasts, d20 rolls with natural 20s and
   1s, trade runs and resources gathered.
