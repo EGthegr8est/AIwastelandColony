@@ -178,6 +178,7 @@ func test_a_broken_leg_slows_the_walk_in_the_middle_of_a_season() -> void:
 		_heal(u)
 		u.pos = start
 		u.path = path.slice(1)
+		u.move_left = float(Data.SEASON_DAYS)
 		Units._advance(u)
 		if Units.broken_legs(u) > 0:
 			broke = true

@@ -23,3 +23,13 @@ static func find_tile(pred: Callable) -> Vector2i:
 static func claimable_tile() -> Vector2i:
 	return find_tile(func(c, t): return t["o"] == Data.NONE and t["t"] != "water" \
 		and Game.borders(c, Data.PLAYER))
+
+
+## Walks one of your parties along its whole route, a turn's worth of days at a time, as if the player kept pressing Continue. Stops
+## when it arrives, starts a visit, is lost, or has nowhere left to go.
+static func finish_trip(u: Dictionary, max_turns := 60) -> void:
+	for i in max_turns:
+		if u.get("gone", false) or u.path.is_empty() or not u.stage in ["out", "back"]:
+			break
+		u.move_left = float(Data.SEASON_DAYS)
+		Units._go(u)

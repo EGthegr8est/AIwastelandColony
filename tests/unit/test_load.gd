@@ -145,6 +145,7 @@ func _seasons_to_walk(u: Dictionary, path: Array) -> int:
 	var seasons := 0
 	while seasons < 50:
 		seasons += 1
+		u.move_left = float(Data.SEASON_DAYS)   # a new turn: the party has all its days again
 		if Units._advance(u):
 			break
 	return seasons

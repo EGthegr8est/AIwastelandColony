@@ -51,8 +51,14 @@ func after_each() -> void:
 	SeasonReplay.mode = "off"
 
 
+## Something that walks at END SEASON: a caravan (your Scavenger Parties walk when you order it, so the season has nothing of theirs to replay).
 func _send_party() -> void:
-	Units.send("scout", "foot", far)
+	var u: Dictionary = Units._make_unit("caravan", Data.PLAYER, "foot", hq, far)
+	u.crew = 2
+	u.survivors = Units._make_crew(2)
+	u.stage = "out"
+	u.path = Game.route("foot", hq, far).slice(1)
+	Units.units.append(u)
 
 
 # ---------------------------------------------------------------- starting and ending

@@ -37,6 +37,19 @@ func _actor(id: int) -> Dictionary:
 	return {}
 
 
+## A trade caravan walking toward `to`. Your Scavenger Parties walk when you order it, not at END SEASON, so a caravan is what the
+## season's replay has to show.
+func _walker(mover: String, to: Vector2i, from := Vector2i(-1, -1)) -> Dictionary:
+	var start: Vector2i = hq if from == Vector2i(-1, -1) else from
+	var u: Dictionary = Units._make_unit("caravan", Data.PLAYER, mover, start, to)
+	u.crew = 2
+	u.survivors = Units._make_crew(2)
+	u.stage = "out"
+	u.path = Game.route(mover, start, to).slice(1)
+	Units.units.append(u)
+	return u
+
+
 func _events(kind: String) -> Array:
 	return Units.replay.events.filter(func(e): return e.kind == kind)
 
@@ -164,13 +177,12 @@ func test_a_march_to_where_you_already_are_does_not_divide_by_zero() -> void:
 # ---------------------------------------------------------------- what Units notes while it walks
 
 func test_a_walk_is_noted_tile_by_tile_with_the_day_each_tile_was_reached() -> void:
-	Units.send("scout", "foot", far)
-	var u: Dictionary = Units.units[-1]
+	var u := _walker("foot", far)
 	var start: Vector2i = u.pos
 	Units.season_turn()
 	var a := _actor(u.id)
-	assert_false(a.is_empty(), "the party is in the replay")
-	assert_eq(a.kind, "scav", "every party is drawn as a Scavenger Party")
+	assert_false(a.is_empty(), "the caravan is in the replay")
+	assert_eq(a.kind, "caravan")
 	assert_eq(a.owner, Data.PLAYER)
 	assert_eq(a.trail[0], [start, 0.0], "it starts where it was, on day 0")
 	assert_gt(a.trail.size(), 5, "a season's walk is many tiles")
@@ -183,11 +195,8 @@ func test_a_walk_is_noted_tile_by_tile_with_the_day_each_tile_was_reached() -> v
 
 
 func test_a_war_rig_gets_through_each_tile_faster_than_a_party_on_foot() -> void:
-	Game.vehicles["car"] = 1
-	Units.send("scout", "foot", far)
-	var foot: Dictionary = Units.units[-1]
-	Units.send("scout", "car", far)
-	var rig: Dictionary = Units.units[-1]
+	var foot := _walker("foot", far)
+	var rig := _walker("car", far)
 	Units.season_turn()
 	var on_foot := _actor(foot.id)
 	var in_rig := _actor(rig.id)
@@ -213,13 +222,9 @@ func test_a_party_standing_still_is_in_the_replay_but_does_not_move() -> void:
 
 func test_a_party_that_gets_home_with_loot_leaves_the_map_there_with_a_glint() -> void:
 	var from := hq + Vector2i(6, 0)
-	var u: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", from, hq)
-	u.crew = 2
-	u.survivors = Units._make_crew(2)
+	var u := _walker("foot", hq, from)
 	u.stage = "back"
 	u.carry = {"gold": 5}
-	u.path = Game.route("foot", from, hq).slice(1)
-	Units.units.append(u)
 	Units.season_turn()
 	assert_true(u.get("gone", false), "it got home")
 	var a := _actor(u.id)
@@ -233,12 +238,8 @@ func test_a_party_that_gets_home_with_loot_leaves_the_map_there_with_a_glint() -
 
 func test_a_party_that_comes_home_empty_handed_has_no_glint() -> void:
 	var from := hq + Vector2i(6, 0)
-	var u: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", from, hq)
-	u.crew = 2
-	u.survivors = Units._make_crew(2)
+	var u := _walker("foot", hq, from)
 	u.stage = "back"
-	u.path = Game.route("foot", from, hq).slice(1)
-	Units.units.append(u)
 	Units.season_turn()
 	assert_true(u.get("gone", false))
 	assert_eq(_events("home").size(), 0)
@@ -291,7 +292,7 @@ func test_nothing_is_noted_outside_the_season() -> void:
 
 
 func test_ground_a_party_uncovers_is_noted_with_the_day_it_was_reached() -> void:
-	Units.send("scout", "foot", far)
+	_walker("foot", far)
 	Units.season_turn()
 	var reveals: Array = Units.replay.reveals
 	assert_gt(reveals.size(), 20, "a party walking into the unknown uncovers ground")

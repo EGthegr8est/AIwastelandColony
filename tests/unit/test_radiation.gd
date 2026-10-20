@@ -118,8 +118,7 @@ func test_scouts_measure_every_tile_they_walk() -> void:
 	var path := Game.route("foot", hq, target)
 	var off_path := World.find_tile(func(c, t): return c.distance_to(target) > 6 and not path.has(c) and Game.tile(c)["o"] == Data.NONE)
 	Units.send("scout", "foot", target)
-	for i in 12:
-		Units.season_turn()
+	World.finish_trip(Units.units[-1])
 	for p in path:
 		assert_true(Game.is_measured(p), "the party should have measured %s" % p)
 	assert_false(Game.is_measured(off_path), "tiles they never visited stay unmeasured")

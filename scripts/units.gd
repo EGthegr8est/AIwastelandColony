@@ -66,7 +66,7 @@ func _make_unit(job: String, owner: int, mover: String, pos: Vector2i, target: V
 	next_id += 1
 	return {"id": next_id, "job": job, "owner": owner, "mover": mover, "pos": pos, "target": target,
 		"home": pos, "stage": "out", "crew": 0, "carry": {}, "strength": 0, "age": 0, "dest": -1, "path": [],
-		"survivors": [], "rad_days": 0.0, "moved": false}
+		"survivors": [], "rad_days": 0.0, "moved": false, "move_left": float(Data.SEASON_DAYS)}
 
 
 ## Which entry of Data.UNITS draws this unit: vehicles show as themselves, otherwise the job.
@@ -318,6 +318,8 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 		Game.add_log("%s (%s) set out %s toward %d,%d as scouts." % [names_text(u), members_text(u), Data.MOVERS[mover].by, u.target.x, u.target.y])
 	else:
 		Game.add_log("%s (%s) set out %s toward %d,%d." % [names_text(u) if int(u.get("number", 0)) > 0 else e.name, members_text(u), Data.MOVERS[mover].by, u.target.x, u.target.y])
+	if job in PARTY_JOBS:
+		_go(u)   # it walks as far as its first day's allowance goes
 	Game.changed.emit()
 
 
@@ -475,6 +477,7 @@ func order_scouts(id: int, target: Vector2i) -> void:
 	if u.path.is_empty():
 		u.stage = "station"
 	Game.add_log("%s heads for %d,%d." % [names_text(u), target.x, target.y])
+	_go(u)
 	Game.changed.emit()
 
 
@@ -489,6 +492,7 @@ func recall_scouts(id: int) -> void:
 		units.erase(u)
 	else:
 		Game.add_log("%s is heading back to camp." % names_text(u))
+		_go(u)
 	Game.changed.emit()
 
 
@@ -875,17 +879,17 @@ func _strand(u: Dictionary) -> void:
 	if landing.x < 0:
 		landing = u.home
 	if Game.move_mult("foot", u.pos) <= 0.0:   # they came down in the river: they wade ashore first, on a bank with a way home
-		var shore := Game.nearest_walkable(u.pos, 8, landing if u.job != "scout" else Vector2i(-1, -1))
+		var shore := Game.nearest_walkable(u.pos, 8, landing if not u.job in PARTY_JOBS else Vector2i(-1, -1))
 		if shore.x < 0:
 			shore = Game.nearest_walkable(u.pos)
 		if shore.x >= 0:
 			u.pos = shore
-	if u.job != "scout":
+	if not u.job in PARTY_JOBS:
 		u.stage = "back"   # a trade run is off: they walk home
 	if u.stage == "back":
 		u.path = Game.route("foot", u.pos, landing).slice(1)
 	if u.path.is_empty():
-		if u.job == "scout":
+		if u.job in PARTY_JOBS:
 			u.stage = "station"
 		else:
 			_come_home(u)
@@ -913,17 +917,62 @@ func _crash(u: Dictionary, where: String) -> void:
 	Game.add_log(text)
 
 
+## The end of a season for one of your parties: it eats, its engine idles if it waits (a party in the middle of a visit does not),
+## the days it did not walk were spent where it stands, and it has all its days again. It does not walk: it goes where you send it.
 func _scout_turn(u: Dictionary) -> void:
 	_feed(u)
 	if u.crew <= 0:
 		_lost(u)
 		return
-	if u.stage == "station":
+	if u.stage != "site":
 		_idle(u)
-	elif u.stage == "site":
-		pass   # in the middle of an attack, waiting for the player's roll
-	elif _advance(u):
-		_arrive(u)
+	if u.get("moved", false):
+		u.rad_days += Game.radiation(u.pos) * float(u.move_left)
+	u.move_left = float(Data.SEASON_DAYS)
+
+
+## Walks a party as far as its days allow and does what arriving means (a visit, keeping watch, coming home). True if it got there.
+func _go(u: Dictionary) -> bool:
+	if u.path.is_empty():
+		return false
+	var arrived := _advance(u)
+	if not u.get("gone", false):
+		if arrived:
+			_arrive(u)
+		elif u.crew <= 0:
+			_lost(u)
+	if u.get("gone", false):
+		units.erase(u)
+	Game.update_fog()
+	Game.changed.emit()
+	return arrived
+
+
+## "" if the party can walk on now, otherwise why not.
+func continue_status(u: Dictionary) -> String:
+	if not u.get("job", "") in PARTY_JOBS or u.owner != Data.PLAYER:
+		return "Not one of your parties"
+	if u.stage == "site":
+		return "In the middle of a search"
+	if u.path.is_empty():
+		return "No orders to carry on with"
+	if float(u.move_left) <= 0.0:
+		return "No days left this turn"
+	return ""
+
+
+## Carries on along the route a party was given, with the days it has left this turn.
+func continue_orders(id: int) -> void:
+	var u := unit_by_id(id)
+	if u.is_empty() or continue_status(u) != "":
+		return
+	_go(u)
+
+
+## "17 days left this turn", for the party panel.
+func days_left_text(u: Dictionary) -> String:
+	var days := floori(float(u.get("move_left", Data.SEASON_DAYS)))
+	return "%d day%s left this turn" % [days, "" if days == 1 else "s"]
 
 
 # ---------------------------------------------------------------- the season
@@ -962,7 +1011,7 @@ func _record_start() -> void:
 	_actors = {}
 	for u in units:
 		var actor := {"id": u.id, "kind": glyph_kind(u), "owner": u.owner, "mover": u.mover,
-			"parked": u.job == "scout" and u.stage == "station", "trail": [[u.pos, 0.0]], "gone_day": SeasonReplay.STILL}
+			"parked": u.job in PARTY_JOBS and u.stage == "station", "trail": [[u.pos, 0.0]], "gone_day": SeasonReplay.STILL}
 		replay.actors.append(actor)
 		_actors[u.id] = actor
 	if frog.get("state", "") == "loose":
@@ -1054,7 +1103,8 @@ func _note_event(kind: String, cell: Vector2i, day: float) -> void:
 
 ## Walk the path with one season's worth of travel days. True once the path is done.
 func _advance(u: Dictionary) -> bool:
-	var budget: float = Data.SEASON_DAYS
+	var immediate: bool = u.job in PARTY_JOBS   # your parties walk when you order it, with the days they have left this turn
+	var budget: float = float(u.move_left) if immediate else float(Data.SEASON_DAYS)
 	var days_per_tile: float = Data.MOVERS[u.mover].days * party_slowdown(u)   # a heavy load or a broken leg takes longer
 	if u.owner == Data.PLAYER:
 		days_per_tile *= Game.travel_mult()
@@ -1085,8 +1135,11 @@ func _advance(u: Dictionary) -> bool:
 			u.rad_days += Game.radiation(u.pos) * cost
 			if u.job == "scout":
 				Game.measure(u.pos)   # the party's counter clicks away: that reading is kept for good
+	if immediate:
+		u.move_left = budget   # what is left is spent where it stands, when the season ends (_scout_turn)
 	if u.owner == Data.PLAYER:
-		u.rad_days += Game.radiation(u.pos) * budget   # the rest of the season is spent here
+		if not immediate:
+			u.rad_days += Game.radiation(u.pos) * budget   # the rest of the season is spent here
 		u.moved = true
 	return u.path.is_empty()
 
@@ -2545,8 +2598,8 @@ func _unpack(d: Dictionary) -> Dictionary:
 		var v = d[k]
 		if k in ["pos", "target", "home"]:
 			v = Vector2i(int(v[0]), int(v[1]))
-		elif k == "fuel":
-			v = float(v)   # the one number that can have a fraction
+		elif k == "fuel" or k == "move_left":
+			v = float(v)   # the numbers that can have a fraction
 		elif typeof(v) == TYPE_FLOAT:
 			v = int(v)
 		elif k in ["carry", "food"]:
@@ -2561,6 +2614,8 @@ func _unpack(d: Dictionary) -> Dictionary:
 			out[k] = D20Visit.normalize(d[k])
 	if not out.has("survivors"):
 		out["survivors"] = []   # saves from before named survivors
+	if not out.has("move_left"):
+		out["move_left"] = float(Data.SEASON_DAYS)   # saves from before parties walked on your orders
 	if not out.has("rad_days"):
 		out["rad_days"] = 0.0   # saves from before radiation
 		out["moved"] = false

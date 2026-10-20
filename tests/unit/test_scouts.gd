@@ -28,10 +28,7 @@ func _send(mover: String) -> Dictionary:
 	assert_eq(Units.send_status("scout", mover, target), "")
 	Units.send("scout", mover, target)
 	var u: Dictionary = Units.units[-1]
-	for i in 12:
-		if u.stage == "station":
-			break
-		Units.season_turn()
+	World.finish_trip(u)
 	return u
 
 
@@ -74,9 +71,7 @@ func test_scouts_can_be_sent_elsewhere() -> void:
 	var other := World.find_tile(func(c, t): return t["t"] != "water" and c != target and c.distance_to(target) > 3 \
 		and c.distance_to(target) < 8 and not Game.route("foot", target, c).is_empty())
 	Units.order_scouts(u.id, other)
-	assert_eq(u.stage, "out")
-	for i in 12:
-		Units.season_turn()
+	World.finish_trip(u)
 	assert_eq(u.pos, other)
 	assert_eq(u.stage, "station")
 
@@ -169,9 +164,11 @@ func test_war_rig_that_runs_dry_becomes_a_party_on_foot() -> void:
 	Game.vehicles["car"] = 1
 	Units.send("scout", "car", target)
 	var u: Dictionary = Units.units[-1]
-	assert_eq(u.fuel, float(Data.VEHICLE_FUEL.car.tank))
+	assert_le(u.fuel, float(Data.VEHICLE_FUEL.car.tank), "it has burned some on its first day's walk")
 	assert_eq(Game.res["fuel"], 50 - Data.VEHICLE_FUEL.car.tank)
 	u.fuel = 0.05
+	u.move_left = float(Data.SEASON_DAYS)
+	Units.continue_orders(u.id)
 	Units.season_turn()
 	assert_eq(u.mover, "foot")
 	assert_false(u.has("fuel"))
@@ -282,14 +279,22 @@ func test_the_gauge_goes_low_before_the_tank_is_dry() -> void:
 
 
 func test_stranded_party_on_the_way_home_keeps_walking_home() -> void:
-	var u := _send("car")
+	Game.vehicles["car"] = 1
+	var faraway := _far_tile("car", Game.home(Data.PLAYER), 12.0, 18.0)
+	assert_ne(faraway, Vector2i(-1, -1))
+	var u: Dictionary = Units._make_unit("scout", Data.PLAYER, "car", faraway, faraway)   # keeping watch out in the wastes, with a full tank
+	u.home = Game.home(Data.PLAYER)
+	u.crew = 3
+	u.survivors = Units._make_crew(3)
+	u.food = {"grain": 30}
+	u.stage = "station"
+	u.fuel = 0.0   # the tank runs dry on the first step home
+	Units.units.append(u)
 	Units.recall_scouts(u.id)
-	u.fuel = 0.0
-	Units.season_turn()
-	assert_eq(u.mover, "foot")
-	assert_eq(u.stage, "back")
-	for i in 12:
-		Units.season_turn()
+	assert_eq(u.mover, "foot", "the rig was abandoned")
+	assert_false(u.has("fuel"))
+	assert_eq(u.stage, "back", "and the party keeps walking home")
+	World.finish_trip(u)
 	assert_eq(Units.scouts_out(), 0)
 
 
@@ -348,10 +353,11 @@ func test_route_timing_matches_the_trip_the_party_really_takes() -> void:
 		assert_eq(Units.load_slowdown(u), 1.0, "a light load, so the preview and the real trip agree")
 		for s in u.survivors:
 			s.hp = 100000.0   # radiation on the way mustn't end the test
-		var days := Units.arrival_days(mover, [u.pos] + u.path)
-		var seasons := 0
+		var days := Units.arrival_days(mover, Game.route(mover, hq, far))
+		var seasons := 1   # the walk that set out
 		while u.stage != "station" and seasons < 30:
-			Units.season_turn()
+			u.move_left = float(Data.SEASON_DAYS)
+			Units._go(u)
 			seasons += 1
 		assert_eq(u.pos, far)
 		if mover == "foot":
