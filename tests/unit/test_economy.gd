@@ -187,9 +187,9 @@ func test_a_war_rig_brings_back_half_as_much_again() -> void:
 
 
 func test_a_war_rig_run_costs_a_flat_2_fuel_and_a_foot_party_none() -> void:
-	assert_eq(Units.send_cost("scav", "car"), {"grain": 3, "fuel": Data.SCAV_CAR_FUEL})
-	assert_eq(Units.send_cost("scav", "foot"), {"grain": 3})
-	assert_eq(Units.send_cost("scav", "horse"), {"grain": 3})
+	assert_eq(Units.send_cost("scav", "car"), {"fuel": Data.SCAV_CAR_FUEL})
+	assert_eq(Units.send_cost("scav", "foot"), {}, "the food pack is taken from the stores on top")
+	assert_eq(Units.send_cost("scav", "horse"), {})
 	Game.vehicles["car"] = 1
 	var ruin := hq + Vector2i(1, -2)   # the ruin that every camp starts beside
 	assert_eq(Game.tile(ruin)["t"], "ruins")

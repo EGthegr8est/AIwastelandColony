@@ -462,7 +462,7 @@ const UNITS := {
 
 # Expeditions you can send out. Crew leave your population until they come home.
 const EXPEDITIONS := {
-	"scav":    {"name": "Scavenger Party", "verb": "Scavenge", "crew": 3, "cost": {"grain": 3}},
+	"scav":    {"name": "Scavenger Party", "verb": "Scavenge", "crew": 3, "cost": {}},   # a party takes a food pack from the stores (SCOUT_PACK), whatever it is sent to do
 	"caravan": {"name": "Trade caravan",   "verb": "Send caravan", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 	"boat":    {"name": "River trader",    "verb": "Send boat downriver", "crew": 2, "cost": {"grain": 3}},
 	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {}},   # the tank it fills is its cost
@@ -470,7 +470,7 @@ const EXPEDITIONS := {
 	"scout":   {"name": "Scavenger Party",  "verb": "Send scouts", "crew": 3, "cost": {}},
 	# Scavenging, scouting and hunting are one kind of party: a Scavenger Party of 3 survivors from the roster (see Units.crew_for),
 	# numbered 1, 2, 3... (Units.party_label).
-	"hunters": {"name": "Scavenger Party", "verb": "Send hunting party", "crew": 3, "cost": {"grain": 3}},
+	"hunters": {"name": "Scavenger Party", "verb": "Send hunting party", "crew": 3, "cost": {}},
 	# A caravan sent to buy a trader camp's warhead (Data.TRADERS): the usual caravan's cost, and the price in gold on top (Game.warhead_price).
 	"deal":    {"name": "Warhead run",     "verb": "Buy the warhead", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 }

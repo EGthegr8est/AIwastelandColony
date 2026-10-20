@@ -62,8 +62,8 @@ func test_other_camps_and_other_parties_are_not_targets() -> void:
 	scouts.stage = "out"
 	assert_eq(Units.camp_targets(scouts), [], "only a party keeping watch")
 	scouts.stage = "station"
-	scouts.job = "scav"
-	assert_eq(Units.camp_targets(scouts), [], "only scouting parties")
+	scouts.job = "caravan"
+	assert_eq(Units.camp_targets(scouts), [], "only scavenger parties")
 
 
 func test_starting_the_attack_opens_a_visit_against_the_camps_dc() -> void:

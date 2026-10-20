@@ -430,7 +430,7 @@ func test_rolling_a_safe_ruin_end_to_end() -> void:
 	assert_eq(Units.visit_do(u.id), 13, "the cache check rolled a 13")
 	assert_eq(Units.visit_view(u).stage, "done")
 	Units.visit_finish(u.id)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_eq(u.carry, {"fuel": 18}, "6 fuel from the dice times the loot scale of 3")
 	assert_eq(Game.tile(ruin)["r"], "picked")
 	assert_false(u.has("visit"))
@@ -448,7 +448,7 @@ func test_leaving_without_searching_leaves_the_ruin_alone() -> void:
 	var u := _party_at_ruin("safe", [], ForcedDice.new())
 	Units.visit_do(u.id, "home")
 	Units.visit_finish(u.id)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_eq(Game.tile(ruin)["r"], "safe")
 	assert_eq(u.carry, {})
 
@@ -501,7 +501,7 @@ func test_a_wiped_out_party_is_gone_for_good() -> void:
 	assert_true(Game.log_lines.any(func(l): return l.contains("wiped out")))
 
 
-func test_a_picked_ruin_sends_the_party_straight_home() -> void:
+func test_a_picked_ruin_leaves_the_party_waiting_for_orders() -> void:
 	Game.tile(ruin)["r"] = "picked"
 	var u: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", ruin, ruin)
 	u.home = hq
@@ -509,7 +509,7 @@ func test_a_picked_ruin_sends_the_party_straight_home() -> void:
 	u.survivors = Units._make_crew(3)
 	Units.units.append(u)
 	Units._begin_visit(u)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_false(u.has("visit"))
 
 

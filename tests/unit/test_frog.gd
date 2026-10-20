@@ -166,7 +166,7 @@ func test_a_good_run_roll_gets_them_away_with_what_they_found() -> void:
 	assert_eq(u.visit.stage, "done")
 	assert_eq(u.visit.outcome, "left")
 	Units.visit_finish(u.id)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_eq(u.carry, {"metal": 9})
 	assert_eq(Units.frog.state, "loose", "the frog is out and the party is gone")
 
@@ -231,7 +231,7 @@ func test_a_failed_track_roll_loses_the_frog() -> void:
 	Units.visit_do(u.id)
 	assert_eq(u.visit.outcome, "cold")
 	Units.visit_finish(u.id)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 
 
 func test_a_natural_1_on_the_track_roll_brings_the_frog_down_on_them() -> void:
@@ -274,7 +274,7 @@ func test_two_parties_of_three_can_kill_it_and_split_its_hides() -> void:
 	assert_eq(int(a.visit.loot.get("hide", 0)) + int(b.visit.loot.get("hide", 0)), Data.FROG.hides)
 	Units.visit_finish(a.id)
 	Units.visit_finish(b.id)
-	assert_eq(a.stage, "back")
+	assert_eq(a.stage, "station")
 	assert_eq(int(a.carry.get("hide", 0)) + int(b.carry.get("hide", 0)), Data.FROG.hides)
 	assert_true(_log_has("GIANT FROG IS DEAD"))
 
@@ -333,7 +333,7 @@ func test_pulling_back_ends_the_fight_and_the_frog_keeps_its_wounds_until_the_se
 	assert_eq(a.visit.outcome, "pulled")
 	assert_eq(Units.frog.wounds, 3)
 	Units.visit_finish(a.id)
-	assert_eq(a.stage, "back")
+	assert_eq(a.stage, "station")
 	Units.dice = load("res://scripts/dice.gd").new()   # the season rolls its own dice (the frog may reach your colony)
 	Units.season_turn()
 	assert_eq(Units.frog.wounds, 0, "it heals fully each season")

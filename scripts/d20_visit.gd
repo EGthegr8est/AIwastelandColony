@@ -319,10 +319,10 @@ static func pending(visit: Dictionary, party: Array) -> Dictionary:
 		"deeper":
 			var next_dc: int = visit.site_dc + Data.SEARCH_DEEPER.dc_step * (visit.depth + 1)
 			out["text"] = "A rich find. Search deeper at DC %d, or head home with it?" % next_dc
-			out["buttons"] = [{"id": "deeper", "label": "Search deeper (DC %d)" % next_dc}, {"id": "home", "label": "Head home"}]
+			out["buttons"] = [{"id": "deeper", "label": "Search deeper (DC %d)" % next_dc}, {"id": "home", "label": "Stop searching"}]
 		_:
 			out["text"] = _outcome_text(visit)
-			out["buttons"] = [{"id": "finish", "label": "Continue" if visit.wiped or visit.ruin in ["building", "camp", "hunt"] else "Head home"}]
+			out["buttons"] = [{"id": "finish", "label": "Continue"}]
 	return out
 
 

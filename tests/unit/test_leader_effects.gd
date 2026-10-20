@@ -268,7 +268,9 @@ func test_eagle_eyes_and_short_sight_change_how_far_scouts_see() -> void:
 	assert_eq(Units.sight_of(scout), Data.SCOUT_SIGHT["foot"] - 1)
 	var scav: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", hq, hq)
 	_lead(["eagle_eyes"])
-	assert_eq(Units.sight_of(scav), Data.UNITS["scav"].sight, "only scouting parties")
+	assert_eq(Units.sight_of(scav), Data.SCOUT_SIGHT["foot"] + 1, "every Scavenger Party sees as scouts do")
+	var caravan: Dictionary = Units._make_unit("caravan", Data.PLAYER, "foot", hq, hq)
+	assert_eq(Units.sight_of(caravan), Data.UNITS["caravan"].sight, "a caravan does not")
 
 
 func test_rad_proof_and_frail_colonists_change_the_dose_rate() -> void:

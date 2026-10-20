@@ -960,7 +960,7 @@ func _refresh_party() -> void:
 		if i > 0:
 			party_row.add_child(VSeparator.new())
 		party_row.add_child(_party_card(parties[i]))
-	_refresh_geiger(here.filter(func(u): return u.job == "scout"))
+	_refresh_geiger(here.filter(func(u): return u.job in Units.PARTY_JOBS))
 
 
 ## The Geiger counter shows the radiation of the tile a scouting party is standing on, and
@@ -1002,7 +1002,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 	for s in u.survivors:
 		var bad: bool = s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2
 		_label(info, Units.survivor_line(s), RED if bad else AMBER)
-	if u.job == "scout":
+	if u.job in Units.PARTY_JOBS:
 		var uid: int = u.id
 		var buttons := HBoxContainer.new()
 		buttons.add_theme_constant_override("separation", 4)
@@ -1013,7 +1013,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 			_button(buttons, "Deselect", Game.deselect_scout).tooltip_text = "Esc. Go back to routes from your HQ"
 		else:
 			_button(buttons, "Pick", func(): Game.pick_scout(uid)).tooltip_text = "Show its route, coloured by how far its food goes"
-	if u.job == "scout" or not u.carry.is_empty():
+	if u.job in Units.PARTY_JOBS or not u.carry.is_empty():
 		card.add_child(VSeparator.new())
 		card.add_child(_inventory_box(u))
 	return card
@@ -1026,7 +1026,7 @@ func _inventory_box(u: Dictionary) -> VBoxContainer:
 	box.custom_minimum_size = Vector2(170, 0)
 	box.add_theme_constant_override("separation", 2)
 	_label(box, "Inventory", BRIGHT)
-	if u.job == "scout":
+	if u.job in Units.PARTY_JOBS:
 		var total := Units.food_total(u)
 		var days := Units.food_days(u)
 		var tone := GREEN if days > 2.0 * Data.SEASON_DAYS else (AMBER if days > Data.SEASON_DAYS else RED)
@@ -2219,7 +2219,7 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 		_visit_panel(box, u)
 	for s in u.survivors:
 		_label(box, "   " + Units.survivor_line(s), RED if s.hunger >= Data.STARVING_AT else DIM)
-	if u.job == "scout":
+	if u.job in Units.PARTY_JOBS:
 		var food := Units.food_total(u)
 		_label(box, "   Food: %s (%s)" % [Units.food_text(u), "lasts %d days" % int(Units.food_days(u)) if food > 0 else "going hungry"],
 			DIM if Units.food_days(u) > 2.0 * Data.SEASON_DAYS else RED)
@@ -2236,9 +2236,11 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 		var slow := Units.load_slowdown(u)
 		_label(box, "   Load: %d / %d%s" % [roundi(Units.load_weight(u)), roundi(Units.load_capacity(u)),
 			" (overloaded: x%.1f slower)" % slow if slow > 1.0 else ""], RED if slow > 1.0 else DIM)
-	if u.job != "scout":
+	if not u.job in Units.PARTY_JOBS:
 		return
 	var uid: int = u.id
+	if Units.scavenge_status(u) == "":
+		_button(box, "Search the %s here" % Units.scavenge_place(u.pos), func(): Units.begin_scavenge(uid))
 	for target in Units.strike_targets(u):
 		var cell: Vector2i = target
 		_button(box, "Attack the %s at %d,%d (DC %d)" % [Data.BUILDINGS[Game.tile(cell)["b"]].name.to_lower(), cell.x, cell.y, Game.building_dc(cell)],
@@ -2262,7 +2264,7 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 	_header(box, "Scouting")
 	_salt_toggle(box)
 	for u in Units.units:
-		if u.owner == Data.PLAYER and u.job == "scout" and not (u.pos == c and u.stage == "station"):
+		if u.owner == Data.PLAYER and u.job in Units.PARTY_JOBS and not (u.pos == c and u.stage == "station"):
 			var uid: int = u.id
 			var why := Units.order_status(u, c)
 			var trip := ""
@@ -2365,8 +2367,8 @@ func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest
 		var trip := ""
 		if why == "":
 			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), target)))
-		var cost_text := Game.cost_text(Units.send_cost(job, mover) if job == "deal" else e.cost)
-		if Units.salt_doses(job) > 0:
+		var cost_text := Units.send_cost_text(job, mover) if job in Units.PARTY_JOBS else Game.cost_text(Units.send_cost(job, mover) if job == "deal" else e.cost)
+		if not job in Units.PARTY_JOBS and Units.salt_doses(job) > 0:
 			cost_text = ("%d Salt" if cost_text == "free" else cost_text + ", %d Salt") % Units.salt_doses(job)
 		_row_button(box, "%s %s" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [Units.crew_for(job), cost_text, trip],
 			func(): Units.send(job, mover, target, dest), why, "", SEND_KEYS.get(mover, "") if keyed else "")

@@ -170,7 +170,7 @@ func test_a_walk_is_noted_tile_by_tile_with_the_day_each_tile_was_reached() -> v
 	Units.season_turn()
 	var a := _actor(u.id)
 	assert_false(a.is_empty(), "the party is in the replay")
-	assert_eq(a.kind, "scout")
+	assert_eq(a.kind, "scav", "every party is drawn as a Scavenger Party")
 	assert_eq(a.owner, Data.PLAYER)
 	assert_eq(a.trail[0], [start, 0.0], "it starts where it was, on day 0")
 	assert_gt(a.trail.size(), 5, "a season's walk is many tiles")

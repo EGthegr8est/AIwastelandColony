@@ -153,9 +153,9 @@ func test_a_party_that_is_gone_is_dropped() -> void:
 	assert_has(Game.preview, "foot", "back to routes from your HQ")
 
 
-func test_other_expeditions_do_not_pick_a_scout() -> void:
+func test_a_scavenger_party_is_picked_like_any_party() -> void:
 	var ruins := World.find_tile(func(c, t): return t["t"] == "ruins" and not Game.route("foot", hq, c).is_empty())
 	assert_ne(ruins, Vector2i(-1, -1))
 	Units.send("scav", "foot", ruins)
 	Game.select(Units.units[-1].pos)
-	assert_eq(Game.selected_scout, -1)
+	assert_eq(Game.selected_scout, Units.units[-1].id)

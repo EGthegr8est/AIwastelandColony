@@ -77,7 +77,7 @@ func test_units_and_camps_carry_their_sprite() -> void:
 	# Units are drawn by the unit layer, not baked into the chunks: they carry their sprite through glyph_kind()
 	var sprite := func(u: Dictionary) -> String: return Sprites.UNITS[Units.glyph_kind(u)]
 	assert_eq(sprite.call(Units.units_at(hq + Vector2i(3, -3))[0]), "scavenger")
-	assert_eq(sprite.call(Units.units_at(hq + Vector2i(4, -3))[0]), "scout")
+	assert_eq(sprite.call(Units.units_at(hq + Vector2i(4, -3))[0]), "scavenger", "a scouting party is a Scavenger Party too")
 	assert_eq(sprite.call(Units.units_at(hq + Vector2i(5, -3))[0]), "caravan")
 	assert_eq(sprite.call(Units.units_at(hq + Vector2i(6, -3))[0]), "raider_band")
 	assert_eq(sprite.call(car), "war_rig")

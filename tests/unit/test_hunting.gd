@@ -194,7 +194,7 @@ func test_a_deer_pays_a_medium_package_of_meat_at_the_loot_scale() -> void:
 	assert_eq(u.visit.loot, {"meat": 21}, "2d6 came to 7, times the loot scale of 3")
 	Units.visit_finish(u.id)
 	assert_eq(u.carry, {"meat": 21})
-	assert_eq(u.stage, "back", "a scavenger party heads home with it")
+	assert_eq(u.stage, "station", "a scavenger party waits for orders with it")
 	assert_true(Units.animals.is_empty(), "the deer is gone")
 	assert_true(_log_has("brought down the deer"))
 
@@ -245,7 +245,7 @@ func test_a_missed_track_roll_loses_the_trail_and_the_animal_wanders_off() -> vo
 	Units.visit_finish(u.id)
 	assert_eq(Units.animals.size(), 1, "the deer is still out there")
 	assert_ne(a.pos, start, "but it has gone")
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_true(u.carry.is_empty())
 
 
@@ -381,13 +381,13 @@ func test_hunters_sent_after_a_deer_walk_there_and_start_the_hunt() -> void:
 	assert_eq(u.visit.animal_id, a.id)
 
 
-func test_hunters_who_arrive_to_find_the_tracks_gone_cold_go_home() -> void:
+func test_hunters_who_arrive_to_find_the_tracks_gone_cold_wait_for_orders() -> void:
 	var u := _party()
 	u.dest = 999
 	u.target = u.pos
 	u.stage = "out"
 	Units._arrive(u)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_false(u.has("visit"))
 	assert_true(_log_has("tracks have gone cold"))
 

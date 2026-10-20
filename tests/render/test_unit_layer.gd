@@ -35,7 +35,7 @@ func after_each() -> void:
 	Game.view = Data.PLAYER
 
 
-func _party(at: Vector2i, job := "scav", owner := Data.PLAYER) -> Dictionary:
+func _party(at: Vector2i, job := "caravan", owner := Data.PLAYER) -> Dictionary:   # a caravan sees little: a Scavenger Party would see further as it moves
 	var u: Dictionary = Units._make_unit(job, owner, "foot", at, at)
 	Units.units.append(u)
 	return u

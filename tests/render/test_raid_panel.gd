@@ -178,7 +178,7 @@ func test_after_a_natural_20_trap_roll_the_panel_offers_the_die_to_search_the_ru
 	await _roll_and_continue()   # the search
 	assert_has(_labels("Tile"), "The ruins are stripped. The party carries", "and says what the trap paid")
 	assert_false(_labels("Tile").contains("There was nothing here"))
-	_press("Head home")
+	_press("Continue")
 	await wait_frames(3)
-	assert_eq(party.stage, "back")
+	assert_eq(party.stage, "station")
 	assert_true(party.carry.has("metal"))

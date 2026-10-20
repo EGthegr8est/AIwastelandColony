@@ -116,9 +116,9 @@ func test_a_whole_visit_through_the_panel() -> void:
 		hud.dice.clicked.emit()
 		await wait_frames(3)
 	assert_has(_tile_labels(), "stripped", "the panel says what the ruins gave up")
-	_press("Head home")
+	_press("Continue")
 	await wait_frames(3)
-	assert_eq(party.stage, "back")
+	assert_eq(party.stage, "station")
 	assert_eq(party.carry, {"fuel": 18})
 
 
@@ -169,9 +169,9 @@ func test_a_site_is_one_check_in_the_panel_and_the_panel_says_what_it_gave() -> 
 	hud.dice.clicked.emit()
 	await wait_frames(3)
 	assert_has(_tile_labels(), "picked clean")
-	_press("Head home")
+	_press("Continue")
 	await wait_frames(3)
-	assert_eq(party.stage, "back")
+	assert_eq(party.stage, "station")
 	assert_eq(party.carry, {"metal": 9})
 
 

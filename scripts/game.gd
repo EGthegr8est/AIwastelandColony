@@ -1649,7 +1649,7 @@ func pop_cap() -> int:
 func select(c: Vector2i) -> void:
 	selected = c
 	if in_bounds(c):
-		var here := Units.units_at(c).filter(func(u): return u.owner == Data.PLAYER and u.job == "scout")
+		var here := Units.units_at(c).filter(func(u): return u.owner == Data.PLAYER and u.job in Units.PARTY_JOBS)
 		if not here.is_empty():
 			if not here.any(func(u): return u.id == selected_scout):
 				selected_scout = here[0].id

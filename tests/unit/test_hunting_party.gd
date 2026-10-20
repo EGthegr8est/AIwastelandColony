@@ -37,10 +37,10 @@ func _send(dest := -1) -> Dictionary:
 	return Units.units[-1]
 
 
-func test_a_war_party_is_three_survivors_and_three_grain() -> void:
+func test_a_war_party_is_three_survivors_and_a_food_pack() -> void:
 	var e: Dictionary = Data.EXPEDITIONS["hunters"]
 	assert_eq(e.crew, 3)
-	assert_eq(e.cost, {"grain": 3})
+	assert_eq(e.cost, {})
 	var pop: int = Game.pop
 	var grain: int = Game.res["grain"]
 	var u := _send()
@@ -49,7 +49,7 @@ func test_a_war_party_is_three_survivors_and_three_grain() -> void:
 	assert_eq(Game.troops, 6, "your troops stay home")
 	assert_eq(Game.pop, pop - 3, "three survivors left")
 	assert_eq(u.number, 1)
-	assert_eq(Game.res["grain"], grain - 3)
+	assert_eq(Game.res["grain"], grain - Data.SCOUT_PACK, "the pack comes from the stores")
 
 
 func test_it_needs_three_colonists_to_spare_and_one_to_stay() -> void:
@@ -66,8 +66,7 @@ func test_a_hunting_party_is_made_of_roster_survivors() -> void:
 		assert_eq(s.state, "away")
 		assert_ge(s.traits.size(), 1)
 		assert_le(s.traits.size(), 3)
-	assert_eq(Units.glyph_kind(u), "soldier")
-	assert_eq(Units.kind_info("soldier").name, "Hunting party")
+	assert_eq(Units.glyph_kind(u), "scav", "every party is drawn as a Scavenger Party")
 
 
 func test_a_war_party_on_a_war_rig_is_drawn_as_the_rig() -> void:
@@ -93,7 +92,7 @@ func test_a_war_party_hunts_what_it_is_sent_after() -> void:
 	Units.visit_do(u.id)
 	Units.visit_finish(u.id)
 	assert_eq(u.carry, {"meat": 21})
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 
 
 func test_the_hunters_come_home_to_the_colony() -> void:
@@ -175,7 +174,7 @@ func test_a_war_party_counts_toward_the_six_it_takes_to_kill_the_frog() -> void:
 	Units.visit_do(a.id)
 	assert_eq(Units.frog.state, "dead")
 	Units.visit_finish(a.id)
-	assert_eq(a.stage, "back")
+	assert_eq(a.stage, "station")
 
 
 func test_a_war_party_survives_saving() -> void:

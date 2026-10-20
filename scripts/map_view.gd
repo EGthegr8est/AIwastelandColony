@@ -702,7 +702,7 @@ func _tick_replay(delta: float) -> void:
 
 
 static func _is_parked(u: Dictionary) -> bool:
-	return u.job == "scout" and u.stage == "station"
+	return u.job in Units.PARTY_JOBS and u.stage == "station"
 
 
 ## Raider bands fade in and out as they cross the edge of what you can see; your own parties are always there.

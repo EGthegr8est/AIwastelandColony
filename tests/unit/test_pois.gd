@@ -177,7 +177,7 @@ func test_a_party_works_a_site_as_one_tile_and_all_four_tiles_read_picked() -> v
 	for p in Game.poi_footprint(a):
 		assert_eq(Game.tile(p)["r"], "picked")
 	var again := _party_at(a + Vector2i(1, 1), ForcedDice.new())
-	assert_eq(again.stage, "back", "a picked-clean site sends the party straight home")
+	assert_eq(again.stage, "station", "a picked-clean site leaves the party waiting for orders")
 
 
 func test_clicking_any_of_a_sites_tiles_sends_the_party_to_the_same_place() -> void:

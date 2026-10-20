@@ -102,7 +102,7 @@ func test_leaving_leaves_the_crater_untouched() -> void:
 	assert_eq(visit.stage, "done")
 	assert_eq(visit.outcome, "left")
 	assert_false(visit.blast)
-	assert_eq(D20Visit.pending(visit, party).buttons[0].label, "Head home")
+	assert_eq(D20Visit.pending(visit, party).buttons[0].label, "Continue")
 
 
 func test_a_natural_1_sets_the_nuke_off_and_the_party_is_wiped_out() -> void:
@@ -338,7 +338,7 @@ func test_a_searched_crater_is_picked_clean_whatever_came_of_it() -> void:
 	Units.visit_finish(u.id)
 	assert_eq(Game.tile(at)["r"], "picked")
 	var second := _party_at(at)
-	assert_eq(second.stage, "back", "a second party turns round")
+	assert_eq(second.stage, "station", "a second party waits for orders")
 	assert_true(Game.log_lines.any(func(l): return l.contains("crater at") and l.contains("already picked clean")))
 
 
@@ -364,14 +364,14 @@ func test_warheads_a_party_cannot_carry_stay_in_the_silo_for_a_later_party() -> 
 	assert_true(Game.log_lines.any(func(l): return l.contains("2 unfired nukes stay in the silo")))
 	# a war rig party comes for them: nothing to roll
 	var rig := _party_at(silo, "car")
-	assert_eq(rig.stage, "back", "it loads and turns for home at once")
+	assert_eq(rig.stage, "station", "it loads and waits for orders at once")
 	assert_eq(rig.carry.nuke, 2)
 	assert_eq(Game.silo_stock(silo), 0)
 	for p in Game.poi_footprint(silo):
 		assert_eq(Game.tile(p)["r"], "picked", "and then it really is picked clean")
 	assert_false(rig.has("visit"), "no visit, no roll")
 	var third := _party_at(silo)
-	assert_eq(third.stage, "back")
+	assert_eq(third.stage, "station")
 	assert_true(third.carry.is_empty())
 
 
@@ -385,7 +385,7 @@ func test_a_party_that_cannot_lift_one_leaves_the_stock_where_it_is() -> void:
 	Units.units.append(u)
 	Units._begin_visit(u)
 	assert_eq(Game.silo_stock(silo), 2)
-	assert_eq(u.stage, "back")
+	assert_eq(u.stage, "station")
 	assert_true(Game.log_lines.any(func(l): return l.contains("could not lift a nuke")))
 
 

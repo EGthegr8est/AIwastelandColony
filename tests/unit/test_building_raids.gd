@@ -352,9 +352,9 @@ func test_a_stationed_party_can_attack_a_raider_wall_it_stands_next_to() -> void
 	u.stage = "station"
 	u.pos = hq
 	assert_eq(Units.strike_targets(u), [], "nothing next to it")
-	var scav: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", wall, wall)
-	scav.stage = "station"
-	assert_eq(Units.strike_targets(scav), [], "scouts only")
+	var caravan: Dictionary = Units._make_unit("caravan", Data.PLAYER, "foot", wall, wall)
+	caravan.stage = "station"
+	assert_eq(Units.strike_targets(caravan), [], "scavenger parties only")
 
 
 func test_a_party_on_the_wall_tile_itself_can_attack_it() -> void:

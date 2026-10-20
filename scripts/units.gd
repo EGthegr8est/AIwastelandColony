@@ -75,7 +75,9 @@ func glyph_kind(u: Dictionary) -> String:
 		return "band"
 	if u.mover in ["car", "boat", "plane", "bomber"]:
 		return u.mover
-	return "soldier" if u.job == "hunters" else ("caravan" if u.job == "deal" else u.job)   # a warhead run is a caravan
+	if u.job in PARTY_JOBS:
+		return "scav"   # one Scavenger Party, whatever it was sent to do
+	return "caravan" if u.job == "deal" else u.job   # a warhead run is a caravan
 
 
 ## What Data.UNITS says of a kind of unit (a hunting party's "soldier" is Data.SOLDIER: it has no atlas sprite).
@@ -96,7 +98,7 @@ func unit_by_id(id: int) -> Dictionary:
 
 ## How far this unit sees. Scouts see by how they travel, everything else by its glyph.
 func sight_of(u: Dictionary) -> int:
-	if u.job == "scout":
+	if u.job in PARTY_JOBS:
 		var sight: int = Data.SCOUT_SIGHT[u.mover]
 		if Game.has_quirk("eagle_eyes"):
 			sight += 1
@@ -219,7 +221,7 @@ func send_cost_text(job: String, mover: String) -> String:
 	var text := Game.cost_text(send_cost(job, mover))
 	if salt_doses(job) > 0:
 		text = ("%d Salt" if text == "free" else text + ", %d Salt") % salt_doses(job)
-	if job != "scout":
+	if not job in PARTY_JOBS:
 		return text
 	var pack := "%d food" % Data.SCOUT_PACK
 	return pack if text == "free" else "%s, %s" % [text, pack]
@@ -271,7 +273,7 @@ func send_status(job: String, mover: String, target: Vector2i, dest := -1, from 
 	var cost := send_cost(job, mover)
 	if not Game.can_afford(cost):
 		return "Need " + Game.cost_text(cost)
-	if job == "scout" and food_stock() < Data.SCOUT_PACK:
+	if job in PARTY_JOBS and food_stock() < Data.SCOUT_PACK:
 		return "Need %d food for the pack" % Data.SCOUT_PACK
 	if outbound_route(job, mover, from, target).is_empty():
 		return Game.no_way_text(mover, from, target)
@@ -308,7 +310,7 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 	u.path = path.slice(1)
 	if tank_size(job, mover) > 0:
 		u.fuel = float(tank_size(job, mover))
-	if job == "scout":
+	if job in PARTY_JOBS:
 		u.food = _pack_food(Data.SCOUT_PACK)
 	units.append(u)
 	if job == "scout":
@@ -450,7 +452,7 @@ func stage_text(u: Dictionary) -> String:
 # ---------------------------------------------------------------- scouting parties
 
 func scouts_out() -> int:
-	return units.filter(func(u): return u.owner == Data.PLAYER and u.job == "scout").size()
+	return units.filter(func(u): return u.owner == Data.PLAYER and u.job in PARTY_JOBS).size()
 
 
 ## Orders for a party already in the field: "" if it can go there, otherwise why not.
@@ -467,6 +469,7 @@ func order_scouts(id: int, target: Vector2i) -> void:
 	if u.is_empty() or order_status(u, target) != "":
 		return
 	u.target = target
+	u.dest = -1   # new orders: it is no longer after the animal it was sent for
 	u.stage = "out"
 	u.path = Game.route(u.mover, u.pos, target).slice(1)
 	if u.path.is_empty():
@@ -934,7 +937,7 @@ func season_turn() -> void:
 		u.age += 1
 		if u.job == "band":
 			_band_turn(u)
-		elif u.job == "scout":
+		elif u.job in PARTY_JOBS:
 			_scout_turn(u)
 		elif u.stage == "site":
 			pass   # waiting at the ruins for the player's roll; _expose below counts the season spent standing there
@@ -1092,12 +1095,12 @@ func _arrive(u: Dictionary) -> void:
 	if u.stage == "back":
 		_come_home(u)
 		return
-	if u.job == "scout":
+	if u.job in PARTY_JOBS:
+		if int(u.dest) > 0 or (u.job != "scout" and scavenge_place(u.target) != ""):
+			_begin_visit(u)   # sent after an animal, or to the ruins
+			return
 		u.stage = "station"
 		Game.add_log("%s reached %d,%d and is keeping watch." % [names_text(u), u.pos.x, u.pos.y])
-		return
-	if u.job in ["scav", "hunters"]:
-		_begin_visit(u)
 		return
 	match u.job:
 		"caravan":
@@ -1208,10 +1211,10 @@ func _collect_warheads(u: Dictionary, anchor: Vector2i) -> void:
 	var took := int(u.carry.get("nuke", 0))
 	Game.set_silo_stock(anchor, stock - took)
 	if took > 0:
-		Game.add_log("%s loaded %d unfired %s from the silo at %d,%d.%s Heading home." % [names_text(u), took, "nuke" if took == 1 else "nukes", u.target.x, u.target.y,
+		Game.add_log("%s loaded %d unfired %s from the silo at %d,%d.%s Waiting for orders." % [names_text(u), took, "nuke" if took == 1 else "nukes", u.target.x, u.target.y,
 			" %d stay behind." % (stock - took) if stock > took else ""])
 	else:
-		Game.add_log("%s could not lift a nuke. It stays in the silo at %d,%d. Heading home." % [names_text(u), u.target.x, u.target.y])
+		Game.add_log("%s could not lift a nuke. It stays in the silo at %d,%d. Waiting for orders." % [names_text(u), u.target.x, u.target.y])
 	_turn_back(u)
 
 
@@ -1339,12 +1342,12 @@ func visit_finish(uid: int) -> void:
 		elif left > 0:
 			Game.add_log("The party could not lift %d of the %d nukes. They are lost." % [left, found])
 	if v.outcome == "left":
-		Game.add_log("The scavengers left the %s at %s untouched. Heading home." % [place, where])
+		Game.add_log("The scavengers left the %s at %s untouched. Waiting for orders." % [place, where])
 	elif u.carry.is_empty():
-		Game.add_log("The scavengers searched the %s at %s and carry no loot. Heading home." % [place, where] if D20Visit.has_rewards(v)
-			else "The scavengers came away from the %s at %s with nothing. Heading home." % [place, where])
+		Game.add_log("The scavengers searched the %s at %s and carry no loot. Waiting for orders." % [place, where] if D20Visit.has_rewards(v)
+			else "The scavengers came away from the %s at %s with nothing. Waiting for orders." % [place, where])
 	else:
-		Game.add_log("Scavengers stripped the %s at %s: %s. Heading home." % [place, where, Game.cost_text(u.carry)])
+		Game.add_log("Scavengers stripped the %s at %s: %s. Waiting for orders." % [place, where, Game.cost_text(u.carry)])
 	_turn_back(u)
 	Game.changed.emit()
 
@@ -1352,7 +1355,7 @@ func visit_finish(uid: int) -> void:
 ## The Rust Kings' buildings a stationed scouting party can attack: the one on its own tile and the ones next to it.
 func strike_targets(u: Dictionary) -> Array:
 	var out := []
-	if u.get("job", "") != "scout" or u.get("stage", "") != "station":
+	if not u.get("job", "") in PARTY_JOBS or u.get("stage", "") != "station":
 		return out
 	for c in [u.pos] + Game.neighbors(u.pos):
 		if Game.tile(c)["o"] == Data.AI and Game.can_hit(c):
@@ -1363,7 +1366,7 @@ func strike_targets(u: Dictionary) -> Array:
 ## The raider camps a stationed scouting party can attack: the one on its own tile and the ones next to it.
 func camp_targets(u: Dictionary) -> Array:
 	var out := []
-	if u.get("job", "") != "scout" or u.get("stage", "") != "station":
+	if not u.get("job", "") in PARTY_JOBS or u.get("stage", "") != "station":
 		return out
 	for c in [u.pos] + Game.neighbors(u.pos):
 		var t := tribe_at(c)
@@ -1495,6 +1498,10 @@ func _site_rewards(v: Dictionary, anchor: Vector2i) -> void:
 func _turn_back(u: Dictionary) -> void:
 	if u.crew <= 0:
 		_lost(u)
+		return
+	if u.job in PARTY_JOBS:
+		u.stage = "station"   # a party stays where it is, with what it carries, until it is given orders
+		u.path = []
 		return
 	u.stage = "back"
 	u.path = Game.route(u.mover, u.pos, u.home).slice(1)
@@ -1883,7 +1890,7 @@ func _bear_fight(bear: Dictionary, u: Dictionary) -> void:
 ## The animals a stationed scouting party can hunt: the one on its own tile and the ones next to it. Not from a plane or a boat.
 func hunt_targets(u: Dictionary) -> Array:
 	var out := []
-	if u.get("job", "") != "scout" or u.get("stage", "") != "station" or u.mover in ["plane", "bomber", "boat"]:
+	if not u.get("job", "") in PARTY_JOBS or u.get("stage", "") != "station" or u.mover in ["plane", "bomber", "boat"]:
 		return out
 	for a in animals:
 		if Vector2(a.pos - u.pos).length() <= 1.5:
@@ -1891,6 +1898,44 @@ func hunt_targets(u: Dictionary) -> Array:
 	if _near_frog(u.pos):
 		out.append(frog_target())
 	return out
+
+
+## What a party could search where `c` is: "ruins", "crater" or "site", or "" for ground with nothing to search (or that was picked clean).
+func scavenge_place(c: Vector2i) -> String:
+	var poi := Game.poi_kind(c)
+	var t: Dictionary = Game.tile(Game.poi_anchor(c) if poi != "" else c)
+	if t["r"] == "picked":
+		return ""
+	if poi != "":
+		return "site"
+	return "crater" if t["t"] == "crater" else ("ruins" if t["t"] == "ruins" else "")
+
+
+## "" if the stationed party can search the ruins it stands on, otherwise why not.
+func scavenge_status(u: Dictionary) -> String:
+	if not u.get("job", "") in PARTY_JOBS or u.get("stage", "") != "station":
+		return "Not waiting for orders"
+	if u.mover in ["plane", "bomber", "boat"]:
+		return "A plane or a boat cannot search the ruins"
+	if scavenge_place(u.pos) == "":
+		return "Nothing to search here"
+	var poi := Game.poi_kind(u.pos)
+	var anchor: Vector2i = Game.poi_anchor(u.pos) if poi != "" else u.pos
+	if units.any(func(p): return p.id != u.id and p.stage == "site" and p.owner == Data.PLAYER and (Game.poi_anchor(p.pos) if Game.poi_kind(p.pos) != "" else p.pos) == anchor):
+		return "A party is already searching here"
+	return ""
+
+
+## A stationed party searches the ruins, crater or site it stands on: the same visit a scavenger party makes on arriving.
+func begin_scavenge(uid: int) -> bool:
+	var u := unit_by_id(uid)
+	if u.is_empty() or scavenge_status(u) != "":
+		return false
+	u.target = u.pos
+	u.dest = -1
+	_begin_visit(u)
+	Game.changed.emit()
+	return true
 
 
 ## A stationed scouting party starts a hunt for an animal beside it: a "visit" with a track roll and then a kill shot.
@@ -1919,7 +1964,7 @@ func _start_hunt(u: Dictionary, a: Dictionary) -> void:
 func _arrive_hunt(u: Dictionary) -> void:
 	var a := animal_by_id(u.dest)
 	if a.is_empty() or Vector2(a.pos - u.pos).length() > 3.0:
-		Game.add_log("%s reached %d,%d, but the tracks have gone cold. Heading home." % [names_text(u), u.pos.x, u.pos.y])
+		Game.add_log("%s reached %d,%d, but the tracks have gone cold. Waiting for orders." % [names_text(u), u.pos.x, u.pos.y])
 		_turn_back(u)
 		return
 	_note_event("ruin", u.pos, _walk_day(u))
@@ -1952,8 +1997,7 @@ func _finish_hunt(u: Dictionary, v: Dictionary) -> void:
 			Game.add_log({"cold": "%s lost the trail of the %s.", "bolted": "The %s bolted when %s came close.",
 				"escaped": "%s wounded the %s, but it got away."}.get(v.outcome, "%s lost the %s.") % (
 					[kind, names_text(u)] if v.outcome == "bolted" else [names_text(u), kind]))
-	if u.job in ["scav", "hunters"]:
-		_turn_back(u)
+	_turn_back(u)
 	Game.changed.emit()
 
 
@@ -2520,7 +2564,7 @@ func _unpack(d: Dictionary) -> Dictionary:
 	if not out.has("rad_days"):
 		out["rad_days"] = 0.0   # saves from before radiation
 		out["moved"] = false
-	if out.get("job", "") == "scout" and not out.has("food"):
+	if out.get("job", "") in PARTY_JOBS and not out.has("food"):
 		out["food"] = {"grain": Data.SCOUT_PACK}   # saves from before food packs: scouts ate from the stores
 	out["path"] = []
 	return out
