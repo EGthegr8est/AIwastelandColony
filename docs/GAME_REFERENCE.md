@@ -136,8 +136,12 @@ behind) and a food pack.
   spent where it stands for radiation, and a vehicle waiting burns its idle fuel.
 - **Acting where it stands.** A party reaching the ruin or the animal it was sent for starts the visit at once; one that reached other ground keeps watch. A waiting party can
   **Search the ruins here**, **Hunt** an animal on or beside it, **Attack** a camp, a building or a hearth beside it (see Building raids). **Rolls cost no days and there is
-  no limit to them**: only the walk is limited. Afterwards it waits where it is, with what it carries, until you send it on or press **Recall to camp** (B); recalled at home,
-  it is disbanded and its people and food come back.
+  no limit to them**: only the walk is limited. Afterwards it waits where it is, with what it carries, until you send it on or recall it.
+- **Recall to camp** (B, or the button on the party's card, on the Tile tab and under Expeditions on the Colony tab: every party has its own, with how many seasons the way home takes).
+  The party turns for home and walks as far as its days this turn allow at once; after that it **walks home by itself**, a turn's days at each END SEASON, for as many seasons as the
+  way takes (`Units._scout_turn`, recorded with the season's walking so the map plays it), with nothing to press. Its card says "Heading home" and "By itself: home in 2 seasons".
+  It eats on the way, so the Tile tab warns when its pack will not last the walk. Orders given to it on the way (send it somewhere) cancel the recall; a party in the middle of a search
+  or an attack finishes that first. At camp it is disbanded: its people, its food and what it carries come home (recalled while already at camp, it is disbanded at once).
 - **The party bar**: a numbered button for each party along the bottom of the map (red when somebody is starving or ill, green in the middle of a search, bright for the
   picked one; the tooltip says who is in it, where it is and its days). Click one, or press **Shift** and its number (0 is the tenth), or its number on the **numpad**; **[** and **]**
   go through them. Parties past ten keep their numbers and are picked by the bar or the brackets.

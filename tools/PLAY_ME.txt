@@ -25,7 +25,7 @@ THE BASICS
 - Menu (top right) goes back to the title screen: Resume, Load, Quit.
 - Your parties are Scavenger Parties, numbered 1, 2, 3 (three survivors each, and you can send as many as you have people for). Send one by clicking a tile, or form one at your HQ on the Colony tab
   (pick who goes, or let the game) and then click where it should go. A party walks the moment you order it and has 40 days a turn: if the way is longer, press Continue (G) next turn. It stays where it
-  stops until you send it on or recall it (B). Click a party, or press Shift and its number, to pick it, then click somewhere to see how far its food goes. Esc lets go.
+  stops until you send it on or recall it: every party has a Recall to camp button (or press B for the picked one), and a recalled party walks home by itself, a season at a time, however far it is. Click a party, or press Shift and its number, to pick it, then click somewhere to see how far its food goes. Esc lets go.
 - The colony's people have names and traits and stay the same people. Everyone who dies is remembered on the Colony tab.
 - You raid the Rust Kings, camps and Dustwell by sending parties to attack their buildings: take down the walls round a fort and then the fort itself to win. Protect your own HQ the same way: walls and towers
   round it, or a Citadel. The Rust Kings take time to make a raid, and then it has to walk to you: you can meet it on the road.

@@ -66,7 +66,7 @@ const KEY_SHEET := [
 		["Tab", "Next tab (Shift+Tab: back)"], ["1 - 9, 0", "The panel's first ten buttons"], ["Backspace", "Leave / back off / cancel"], ["Del", "Demolish"],
 		["F  P  O  L", "Build: farm, wall, road, hunting lodge"], ["Z  X  C", "Send a party: foot, horse, war rig"],
 		["Q", "Form a party at your HQ"], ["Shift+1-9  Numpad", "Pick Scavenger Party 1 to 9 (0: party 10)"], ["[  ]", "The party before / after"],
-		["G  B", "Picked party: walk on, recall"], ["?", "This sheet"]],
+		["G  B", "Picked party: walk on, recall to camp"], ["?", "This sheet"]],
 ]
 const SONAR_TABLET_SHEET := "res://art/sonar_tablet_sheet.png"   # the map-art switch in the top bar: this tablet, laid on its side like the meter
 const SONAR_TABLET_BLIP := "res://audio/sonar_tablet_blip.wav"   # its click: a short 8-bit blip (tools/make_sonar_blip.py)
@@ -1012,7 +1012,7 @@ func _refresh_party_bar() -> void:
 			for state in ["normal", "hover", "pressed"]:
 				b.add_theme_stylebox_override(state, style)
 		b.tooltip_text = "%s (Shift+%d)\n%s\n%s, %s\n%s" % [Units.party_label(u), int(u.number) % 10, Units.members_text(u), Data.MOVERS[u.mover].name,
-			Units.stage_text(u), Units.days_left_text(u)]
+			Units.stage_text(u), Units.days_left_text(u) if u.stage != "back" else "Walking home by itself: " + Units.home_trip_text(u)]
 		b.pressed.connect(func(): _pick_party_id(id))
 		parties_bar.add_child(b)
 
@@ -1075,15 +1075,17 @@ func _continue_picked() -> bool:
 	return true
 
 
-## B: the picked party turns for home (at home already, it is disbanded: its people and its food come back to the colony).
+## B: the picked party turns for home and walks there by itself, as many seasons as it takes (at home already, it is disbanded: its people and its food come
+## back to the colony).
 func _recall_picked() -> bool:
 	var u := _picked_party()
 	if u.is_empty():
 		Game.add_log("Pick a Scavenger Party first (Shift and its number).")
 		Game.changed.emit()
 		return true
-	if u.stage in ["back", "site"]:
-		Game.add_log("%s: %s." % [Units.party_label(u), "already on its way home" if u.stage == "back" else "in the middle of a search"])
+	var why := Units.recall_status(u)
+	if why != "":
+		Game.add_log("%s: %s." % [Units.party_label(u), why])
 		Game.changed.emit()
 	else:
 		Units.recall_scouts(u.id)
@@ -1152,7 +1154,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 		card.add_child(_gauge_box(u))
 	var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
 	var info := VBoxContainer.new()
-	info.custom_minimum_size = Vector2(210, 0)
+	info.custom_minimum_size = Vector2(240, 0)   # wide enough for "Scavenger Party 12  [picked]" on one line
 	info.add_theme_constant_override("separation", 1)   # up to four survivors, the days and the buttons all have to fit the strip
 	card.add_child(info)
 	var is_picked: bool = u.id == Game.selected_scout
@@ -1161,7 +1163,10 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 	if u.job in Units.PARTY_JOBS:
 		var left := float(u.get("move_left", Data.SEASON_DAYS))
 		info.add_child(_bar(left / Data.SEASON_DAYS, GREEN if left >= 10.0 else (AMBER if left > 0.0 else RED), Units.days_left_text(u)))
-		_small_label(info, Units.days_left_text(u), DIM)
+		if u.stage == "back":
+			_small_label(info, "By itself: %s" % Units.home_trip_text(u), GREEN)   # short: the card has little width
+		else:
+			_small_label(info, Units.days_left_text(u), DIM)
 	for s in u.survivors:
 		var bad: bool = s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2
 		var line := _small_label(info, Units.survivor_brief(s), RED if bad else AMBER)
@@ -1176,8 +1181,9 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 		info.add_child(buttons)
 		if Units.continue_status(u) == "":
 			_button(buttons, "Continue", func(): Units.continue_orders(uid)).tooltip_text = "G. Walk on along its route with the days it has left this turn"
-		if u.stage != "back":
-			_button(buttons, "Recall to camp", func(): Units.recall_scouts(uid)).tooltip_text = "B. Turn for home (at home already: disband the party)"
+		var recall := _button(buttons, "Heading home" if u.stage == "back" else "Recall to camp", func(): Units.recall_scouts(uid), Units.recall_status(u))
+		if recall.tooltip_text == "":
+			recall.tooltip_text = "B. Turn for home and walk there by itself, as many seasons as it takes (%s). At camp the party is disbanded." % Units.home_trip_text(u)
 		if is_picked:
 			_button(buttons, "Deselect", Game.deselect_scout).tooltip_text = "Esc. Go back to routes from your HQ"
 		else:
@@ -1192,7 +1198,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 ## hauling home, and how heavy that is against what it can carry.
 func _inventory_box(u: Dictionary) -> VBoxContainer:
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(170, 0)
+	box.custom_minimum_size = Vector2(150, 0)
 	box.add_theme_constant_override("separation", 2)
 	_label(box, "Inventory", BRIGHT)
 	if u.job in Units.PARTY_JOBS:
@@ -2440,8 +2446,12 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 		var animal_id: int = animal.id
 		_button(box, "Hunt the %s at %d,%d (track DC %d, kill DC %d)" % [Units.animal_name(animal), animal.pos.x, animal.pos.y,
 			D20Data.HUNT[animal.kind].track_dc, Units.kill_dc(animal.kind)], func(): Units.begin_hunt(uid, animal_id))
-	if u.stage != "back" and u.stage != "site":
-		_button(box, "Recall %s to camp" % Units.names_text(u), func(): Units.recall_scouts(uid))
+	if u.stage == "back":
+		_label(box, "   Walking home by itself: %s." % Units.home_trip_text(u), GREEN)
+	elif u.stage != "site":
+		_row_button(box, "Recall %s to camp" % Units.names_text(u), Units.home_trip_text(u), func(): Units.recall_scouts(uid), "",
+			"B. It walks home by itself, a turn's days at each END SEASON, however many seasons that takes. At camp the party is disbanded.")
+		_food_warning(box, u, u.home)
 
 
 ## Scouting from this tile: send a new party, or redirect one that is already out.
@@ -2794,6 +2804,14 @@ func _refresh_colony() -> void:
 			Units.stage_text(u), pos.x, pos.y, u.crew],
 			func(): Game.focus.emit(pos); Game.select(pos))
 		_label(box, "   " + Units.members_text(u) + (" (starving!)" if u.survivors.any(func(s): return s.hunger >= Data.STARVING_AT) else ""), DIM)
+		if u.job in Units.PARTY_JOBS:   # every party has its own recall: it walks home by itself, as many seasons as it takes
+			var uid: int = u.id
+			if u.stage == "back":
+				_label(box, "   Walking home by itself: %s." % Units.home_trip_text(u), GREEN)
+			else:
+				var recall := _row_button(box, "Recall %s to camp" % Units.names_text(u), Units.home_trip_text(u), func(): Units.recall_scouts(uid), Units.recall_status(u),
+					"It walks home by itself, a turn's days at each END SEASON, however many seasons that takes. At camp the party is disbanded.")
+				recall.set_meta("unnumbered", true)   # the digit keys stay with the buttons above
 	_header(box, "Scouting")
 	_label(box, "Parties out: %d. Click a tile to send scouts or move a party there; they stay and keep watch." % Units.scouts_out())
 

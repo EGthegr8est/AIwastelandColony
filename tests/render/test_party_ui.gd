@@ -191,7 +191,7 @@ func test_b_recalls_the_picked_party() -> void:
 	assert_eq(u.stage, "back")
 	Game.log_lines = []
 	_key(KEY_B)
-	assert_true(_log_has("already on its way home"))
+	assert_true(_log_has("Already on its way to camp"))
 
 
 func test_q_forms_a_party_on_foot_and_picks_it() -> void:
@@ -362,3 +362,93 @@ func test_the_party_card_keeps_its_buttons_on_screen_with_three_or_four_survivor
 			assert_eq(lines.size(), 1, "%s has a line" % s.name)
 			assert_eq(lines[0].autowrap_mode, TextServer.AUTOWRAP_OFF, "one line, never wrapped")
 			assert_eq(lines[0].tooltip_text, Units.survivor_line(s), "the whole line is on hover")
+
+
+# ---------------------------------------------------------------- recall to camp
+
+## A party that has walked all the way out to the far tile, picked, with a whole turn's days.
+func _out_party() -> Dictionary:
+	Units.send("scout", "foot", far)
+	var u: Dictionary = Units.units[-1]
+	World.finish_trip(u)
+	u.move_left = float(Data.SEASON_DAYS)
+	Game.select(u.pos)
+	Game.pick_scout(u.id)
+	Game.changed.emit()
+	await wait_frames(3)
+	return u
+
+
+func _buttons_named(box: Node, start: String) -> Array:
+	return box.find_children("*", "Button", true, false).filter(func(b): return b.text.begins_with(start))
+
+
+func test_every_party_card_has_a_clear_recall_button_that_says_how_long_the_walk_home_is() -> void:
+	var u: Dictionary = await _out_party()
+	var buttons := _buttons_named(hud.party_row, "Recall to camp")
+	assert_eq(buttons.size(), 1)
+	var recall: Button = buttons[0]
+	assert_false(recall.disabled)
+	assert_true(recall.is_visible_in_tree())
+	assert_true(recall.tooltip_text.contains(Units.home_trip_text(u)), recall.tooltip_text)
+	assert_true(recall.tooltip_text.contains("by itself"), "it says it walks home on its own")
+	recall.pressed.emit()
+	assert_eq(u.stage, "back")
+	await wait_frames(3)
+	var texts := _button_texts(hud.party_row)
+	assert_true(texts.has("Heading home"), "the card says it is on its way")
+	assert_false(texts.has("Recall to camp"))
+	assert_false(texts.has("Continue"), "nothing to press: it walks home by itself")
+	assert_true(_buttons_named(hud.party_row, "Heading home")[0].disabled)
+	assert_true(_labels(hud.party_row).contains("By itself: home in"))
+
+
+func test_the_tile_tab_recall_shows_the_seasons_home_and_a_warning_when_the_food_will_not_last() -> void:
+	var u: Dictionary = await _out_party()
+	u.food = {"grain": 1}   # a day's worth: the way home is much longer
+	Game.changed.emit()
+	await wait_frames(3)
+	var rows := _buttons_named(hud.boxes["Tile"], "Recall %s to camp" % Units.names_text(u))
+	assert_eq(rows.size(), 1)
+	var detail := ""
+	for l in rows[0].find_children("*", "Label", true, false):
+		detail += l.text
+	assert_true(detail.contains(Units.home_trip_text(u)), detail)
+	assert_true(_labels(hud.boxes["Tile"]).contains("Not enough food"), "the pack will not last the walk home")
+	rows[0].pressed.emit()
+	assert_eq(u.stage, "back")
+	Game.select(u.pos)   # it walked: look at where it stands now
+	await wait_frames(3)
+	assert_eq(_buttons_named(hud.boxes["Tile"], "Recall").size(), 0)
+	assert_true(_labels(hud.boxes["Tile"]).contains("Walking home by itself"))
+
+
+func test_the_colony_tab_has_a_recall_for_each_party_out_and_the_digit_keys_stay_put() -> void:
+	Units.send("scout", "foot", far)
+	var a: Dictionary = Units.units[-1]
+	World.finish_trip(a)
+	Units.send("scout", "foot", far)
+	var b: Dictionary = Units.units[-1]
+	World.finish_trip(b)
+	await _show_tab("Colony")
+	var rows := _buttons_named(hud.boxes["Colony"], "Recall Scavenger Party")
+	assert_eq(rows.size(), 2, "one for each party")
+	assert_ne(rows[0].text, rows[1].text)
+	for r in rows:
+		assert_false(r.disabled)
+		assert_false(hud.numbered["Colony"].has(r), "they take no digit key")
+	assert_true(hud.numbered["Colony"][0].text.begins_with("Train troop"), "1 still trains a troop")
+	_press_in(hud.boxes["Colony"], "Recall %s to camp" % Units.names_text(b))
+	assert_eq(b.stage, "back")
+	assert_eq(a.stage, "station", "only that one")
+	await wait_frames(3)
+	assert_eq(_buttons_named(hud.boxes["Colony"], "Recall Scavenger Party").size(), 1, "the other still has its button")
+	assert_true(_labels(hud.boxes["Colony"]).contains("Walking home by itself"))
+
+
+func test_the_party_bar_tooltip_says_a_party_is_walking_home_by_itself() -> void:
+	var u: Dictionary = await _out_party()
+	Units.recall_scouts(u.id)
+	await wait_frames(3)
+	var button: Button = hud.parties_bar.get_child(0)
+	assert_true(button.tooltip_text.contains("Walking home by itself"), button.tooltip_text)

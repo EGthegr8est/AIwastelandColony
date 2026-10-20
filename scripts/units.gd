@@ -550,9 +550,22 @@ func order_scouts(id: int, target: Vector2i) -> void:
 	Game.changed.emit()
 
 
+## Why a party cannot be recalled right now ("" if it can).
+func recall_status(u: Dictionary) -> String:
+	if not u.get("job", "") in PARTY_JOBS or u.owner != Data.PLAYER:
+		return "Not one of your parties"
+	if u.stage == "back":
+		return "Already on its way to camp"
+	if u.stage == "site":
+		return "Finish what it is doing first"   # an attack or a search in progress is finished first
+	return ""
+
+
+## Turns a party for camp. It walks as far as its days this turn allow at once and then keeps going by itself, a turn's days at each END SEASON,
+## for as many seasons as the way takes; at camp it is disbanded (its people, its food and what it carries come home). One at camp already is disbanded now.
 func recall_scouts(id: int) -> void:
 	var u := unit_by_id(id)
-	if u.is_empty() or u.stage in ["back", "site"]:   # an attack in progress is finished first
+	if u.is_empty() or recall_status(u) != "":
 		return
 	u.stage = "back"
 	u.path = Game.route(u.mover, u.pos, u.home).slice(1)
@@ -560,9 +573,28 @@ func recall_scouts(id: int) -> void:
 		_come_home(u)
 		units.erase(u)
 	else:
-		Game.add_log("%s is heading back to camp." % names_text(u))
+		Game.add_log("%s is heading back to camp: %s." % [names_text(u), home_trip_text(u)])
 		_go(u)
 	Game.changed.emit()
+
+
+## The way home for a party: {"days": how long the walk takes by the way it travels (the days a turn's end cuts off included), "seasons": how many
+## END SEASONs it needs after the days it has left this turn, 0 if it can be at camp this turn}. A party that is at camp has a trip of nothing.
+func home_trip(u: Dictionary) -> Dictionary:
+	var path: Array = [u.pos] + u.path if u.stage == "back" else Game.route(u.mover, u.pos, u.home)
+	if path.size() < 2:
+		return {"days": 0.0, "seasons": 0}
+	var left := float(u.get("move_left", Data.SEASON_DAYS))
+	var days: float = arrival_days(u.mover, path, party_slowdown(u), left)[-1]
+	return {"days": days, "seasons": 0 if days <= left else ceili((days - left) / float(Data.SEASON_DAYS))}
+
+
+## "home this turn", "home in 1 season", "home in 3 seasons": the trip home in words (see home_trip).
+func home_trip_text(u: Dictionary) -> String:
+	var seasons: int = home_trip(u).seasons
+	if seasons <= 0:
+		return "home this turn"
+	return "home in %d season%s" % [seasons, "" if seasons == 1 else "s"]
 
 
 ## Each survivor eats from the party's pack. Going hungry builds up, and starving ones eventually die.
@@ -988,17 +1020,26 @@ func _crash(u: Dictionary, where: String) -> void:
 
 
 ## The end of a season for one of your parties: it eats, its engine idles if it waits (a party in the middle of a visit does not),
-## the days it did not walk were spent where it stands, and it has all its days again. It does not walk: it goes where you send it.
+## the days it did not walk were spent where it stands, and it has all its days again. It goes where you send it and does not walk on its
+## own, except home: a party you recalled keeps walking a turn's days a season until it is at camp, however many seasons that takes.
 func _scout_turn(u: Dictionary) -> void:
 	_feed(u)
 	if u.crew <= 0:
 		_lost(u)
 		return
-	if u.stage != "site":
+	var homeward: bool = u.stage == "back" and not u.path.is_empty()
+	if u.stage != "site" and not homeward:
 		_idle(u)
 	if u.get("moved", false):
 		u.rad_days += Game.radiation(u.pos) * float(u.move_left)
 	u.move_left = float(Data.SEASON_DAYS)
+	if homeward:
+		var arrived := _advance(u)   # noted with the season's walking, which the map plays back
+		if not u.get("gone", false):
+			if arrived:
+				_arrive(u)
+			elif u.crew <= 0:
+				_lost(u)
 
 
 ## Walks a party as far as its days allow and does what arriving means (a visit, keeping watch, coming home). True if it got there.
@@ -1041,6 +1082,8 @@ func continue_status(u: Dictionary) -> String:
 		return "Not one of your parties"
 	if u.stage == "site":
 		return "In the middle of a search"
+	if u.stage == "back":
+		return "Already walking home by itself"   # a recalled party does not wait to be told: it walks on at each END SEASON
 	if u.path.is_empty():
 		return "No orders to carry on with"
 	if float(u.move_left) <= 0.0:

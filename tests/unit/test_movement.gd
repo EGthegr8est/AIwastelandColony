@@ -179,3 +179,102 @@ func test_the_preview_starts_from_the_days_a_party_has_left_this_turn() -> void:
 	var tired := Units.arrival_days("foot", path, 1.0, 0.5)   # half a day left: the first step waits for the next turn
 	assert_almost_eq(tired[1], 0.5 + fresh[1], 0.0001)
 	assert_almost_eq(tired[-1], fresh[-1] + 0.5, 0.0001, "everything after it is that much later")
+
+
+# ---------------------------------------------------------------- recall: the party walks itself home
+
+## A party that has walked all the way out to the far tile (turns of walking) and keeps watch there, at the start of a turn.
+func _far_party() -> Dictionary:
+	Units.send("scout", "foot", far)
+	var u: Dictionary = Units.units[-1]
+	World.finish_trip(u)
+	assert_eq(u.pos, far)
+	assert_eq(u.stage, "station")
+	u.move_left = float(Data.SEASON_DAYS)
+	return u
+
+
+func test_recall_status_says_why_a_party_cannot_be_recalled() -> void:
+	var u := _far_party()
+	assert_eq(Units.recall_status(u), "", "out on the road it can be called back")
+	u.stage = "site"
+	assert_eq(Units.recall_status(u), "Finish what it is doing first")
+	u.stage = "back"
+	assert_eq(Units.recall_status(u), "Already on its way to camp")
+	var caravan: Dictionary = Units._make_unit("caravan", Data.PLAYER, "foot", ruin, ruin)
+	assert_eq(Units.recall_status(caravan), "Not one of your parties")
+
+
+func test_a_recalled_party_walks_home_by_itself_at_each_end_season_however_many_it_takes() -> void:
+	var u := _far_party()
+	Units.recall_scouts(u.id)
+	assert_eq(u.stage, "back")
+	assert_eq(Units.continue_status(u), "Already walking home by itself", "there is nothing to press")
+	var trip: Dictionary = Units.home_trip(u)
+	assert_gt(trip.seasons, 0, "it is far enough to need END SEASONs")
+	var survivors: Array = u.survivors.duplicate()
+	var pop := Game.pop
+	var seasons := 0
+	var last := Vector2(u.pos - hq).length()
+	while Units.units.has(u) and seasons < 30:
+		Units.season_turn()
+		seasons += 1
+		if Units.units.has(u):
+			assert_lt(Vector2(u.pos - hq).length(), last, "each season it is nearer camp")
+			last = Vector2(u.pos - hq).length()
+	assert_false(Units.units.has(u), "it got there with nobody pressing Continue")
+	assert_eq(seasons, trip.seasons, "in as many seasons as the trip said")
+	assert_eq(Game.pop, pop + 3, "its people are home")
+	for s in survivors:
+		assert_eq(s.state, "home")
+
+
+func test_the_walk_home_is_in_the_seasons_replay_so_the_map_plays_it_at_the_normal_pace() -> void:
+	var u := _far_party()
+	Units.recall_scouts(u.id)
+	var uid: int = u.id
+	Units.season_turn()
+	var actors: Array = Units.replay.actors.filter(func(a): return a.id == uid)
+	assert_eq(actors.size(), 1)
+	assert_gt(actors[0].trail.size(), 2, "it walked, in steps the map can play")
+	assert_le(actors[0].trail.back()[1], float(Data.SEASON_DAYS), "inside the season's days")
+
+
+func test_a_party_on_its_way_home_keeps_going_after_a_save_and_a_load() -> void:
+	var u := _far_party()
+	Units.recall_scouts(u.id)
+	Game.save_game("recall_test")
+	assert_true(Game.load_game("recall_test"))
+	DirAccess.remove_absolute(Game._path("recall_test"))
+	var loaded: Dictionary = Units.units[0]
+	assert_eq(loaded.stage, "back")
+	assert_false(loaded.path.is_empty(), "its way home is rebuilt")
+	var before := Vector2(loaded.pos - hq).length()
+	Units.season_turn()
+	assert_lt(Vector2(loaded.pos - hq).length(), before, "and it walks on at the next END SEASON")
+
+
+func test_a_party_you_did_not_recall_still_waits_where_it_is() -> void:
+	var u := _far_party()
+	var where: Vector2i = u.pos
+	Units.season_turn()
+	Units.season_turn()
+	assert_eq(u.pos, where, "only a recall sends a party home on its own")
+	assert_eq(u.stage, "station")
+
+
+func test_new_orders_cancel_the_walk_home() -> void:
+	var u := _far_party()
+	Units.recall_scouts(u.id)
+	assert_eq(u.stage, "back")
+	Units.order_scouts(u.id, far)
+	assert_eq(u.stage, "out", "it is going where it was sent now")
+
+
+func test_the_trip_home_is_worded_in_seasons() -> void:
+	var u := _far_party()
+	var text := Units.home_trip_text(u)
+	assert_true(text.begins_with("home in ") and text.ends_with(" seasons") or text == "home in 1 season", text)
+	var near := Units._make_unit("scout", Data.PLAYER, "foot", hq + Vector2i(0, 3), hq + Vector2i(0, 3))
+	near.stage = "station"
+	assert_eq(Units.home_trip_text(near), "home this turn")
