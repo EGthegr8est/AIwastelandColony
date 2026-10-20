@@ -68,10 +68,10 @@ func test_stone_walls_make_your_walls_harder_but_not_the_rust_kings() -> void:
 	assert_eq(Game.building_dc(theirs), 12)
 
 
-func test_hqs_the_fort_dustwell_the_citadel_and_sites_cannot_be_destroyed() -> void:
-	assert_eq(Game.building_dc(hq), 0)
-	assert_eq(Game.building_dc(Game.home(Data.AI)), 0)
-	assert_eq(Game.building_dc(Game.home(Data.TOWN)), 0)
+func test_the_hearths_have_their_own_dcs_and_the_citadel_and_sites_cannot_be_destroyed() -> void:
+	assert_eq(Game.building_dc(hq), 16, "your hearth")
+	assert_eq(Game.building_dc(Game.home(Data.AI)), 16, "the Rust Kings' fort")
+	assert_eq(Game.building_dc(Game.home(Data.TOWN)), 14, "Dustwell")
 	assert_eq(Game.building_dc(_player_building("citadel")), 0)
 	for p in Game.poi_footprint(_poi_anchor()):
 		assert_eq(Game.building_dc(p), 0)
@@ -218,7 +218,7 @@ func test_a_natural_20_always_hits_and_a_natural_1_always_misses() -> void:
 
 func test_a_building_that_cannot_be_hit_uses_no_dice() -> void:
 	Units.dice = ForcedDice.new([])   # any roll would be an error
-	assert_false(Game.attack_building(hq, 5, "A test party"))
+	assert_false(Game.attack_building(_player_building("citadel"), 5, "A test party"))
 	assert_false(Game.attack_building(_free_tile(4), 5, "A test party"))
 
 

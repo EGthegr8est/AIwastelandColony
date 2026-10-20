@@ -1873,11 +1873,38 @@ func building_dc(c: Vector2i) -> int:
 	return dc
 
 
-## Can `c` be attacked now? Your own buildings stop being targets once RAID_LOSS_CAP of them fell this season.
+## Can `c` be attacked now? Your own buildings stop being targets once RAID_LOSS_CAP of them fell this season, and a hearth only
+## once the defences round it are down (see is_hearth).
 func can_hit(c: Vector2i) -> bool:
 	if building_dc(c) <= 0:
 		return false
-	return tile(c)["o"] != Data.PLAYER or buildings_lost < Data.RAID_LOSS_CAP
+	var t := tile(c)
+	if t["o"] == Data.PLAYER and buildings_lost >= Data.RAID_LOSS_CAP:
+		return false
+	if is_hearth(c):
+		if t["b"] == "town" and (town["status"] != "neutral" or not knows(Data.PLAYER, Data.TOWN)):
+			return false   # an ally is not attacked, and a settlement you have not found is not a target
+		if count_building(t["o"], "citadel") > 0:
+			return false   # the last stand: nothing brings a hearth down while its citadel stands
+		return hearth_guards(c).is_empty()
+	return true
+
+
+## The heart of a colony: your HQ, the Rust Kings' fort, Dustwell (D20Data.HEARTHS).
+func is_hearth(c: Vector2i) -> bool:
+	return in_bounds(c) and tile(c)["b"] in D20Data.HEARTHS
+
+
+## The defences of the hearth at `c` that stand in the way: walls, towers, outposts and keeps of its owner within
+## D20Data.HEARTH_GUARD_RADIUS tiles. Destroy them (one roll each) before the hearth can be attacked.
+func hearth_guards(c: Vector2i) -> Array:
+	var owner: int = tile(c)["o"]
+	var out := []
+	for p in _circle(c, D20Data.HEARTH_GUARD_RADIUS):
+		var t := tile(p)
+		if t["o"] == owner and t["b"] in D20Data.HEARTH_GUARDS:
+			out.append(p)
+	return out
 
 
 ## What a raid or a raider band brings to an attack roll: RAID_BONUS for the first row its strength reaches, in
@@ -1933,10 +1960,10 @@ func raid_roll(att: float, def: float, who: String) -> Dictionary:
 
 
 ## The buildings of `owner` that can be destroyed, nearest to `from` first.
-func buildings_of(owner: int, from: Vector2i) -> Array:
+func buildings_of(owner: int, from: Vector2i, hearths := false) -> Array:
 	var out := []
 	for c in owned(owner):
-		if building_dc(c) > 0:
+		if building_dc(c) > 0 and (hearths or not is_hearth(c)):   # a raid or a wandering band does not go for the hearth
 			out.append(c)
 	out.sort_custom(func(a, b):
 		var da := Vector2(a - from).length()
@@ -1969,6 +1996,9 @@ func destroy_building(c: Vector2i) -> void:
 		return
 	var t := tile(c)
 	var b: String = t["b"]
+	if b in D20Data.HEARTHS:
+		_hearth_falls(c)
+		return
 	t["b"] = ""
 	refinery_on.erase(idx(c))
 	if t["o"] == Data.PLAYER:
@@ -1981,6 +2011,34 @@ func destroy_building(c: Vector2i) -> void:
 			ai["walls"] = maxi(ai["walls"] - Data.WALLS_PER_TILE, 0)
 			_sync_ai_walls()
 		_after_ai_loss(b)
+	changed.emit()
+
+
+## A hearth comes down: the Rust Kings' fort (you win), your HQ (you lose) or Dustwell (it is yours).
+func _hearth_falls(c: Vector2i) -> void:
+	var t := tile(c)
+	var b: String = t["b"]
+	match b:
+		"ai_hq":
+			t["b"] = ""
+			note("enemy_buildings_destroyed")
+			add_log("The Rust Kings' fort has fallen.")
+			_end("raiders_defeated", "stormed")
+		"hq":
+			t["b"] = ""
+			buildings_lost += 1
+			note("buildings_lost")
+			add_log("Your colony's heart has been torn out: the colony is overrun.")
+			_end("defeat", "overrun")
+		"town":
+			var rules: Dictionary = D20Data.RAID_DICE.town
+			for p in owned(Data.TOWN):
+				tile(p)["o"] = Data.PLAYER
+			prisoners += int(rules.prisoners)
+			note("prisoners_taken", int(rules.prisoners))
+			town["status"] = "conquered"
+			ai["relations"] = maxi(ai["relations"] - 15, -100)
+			add_log("You took Dustwell by force. Its land and %d prisoners are yours. Your name darkens." % int(rules.prisoners))
 	changed.emit()
 
 

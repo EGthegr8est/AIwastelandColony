@@ -209,7 +209,14 @@ const BUILDING_DC := {
 	"farm": 8, "lodge": 8, "horse_farm": 8, "salvage": 8, "market": 8,
 	"mine": 10, "refinery": 10, "motor_pool": 10, "port": 10, "airfield": 10,
 	"outpost": 11, "wall": 12, "tower": 12, "keep": 15, "ai_wall": 12, "ai_airfield": 12, "drug_factory": 10,
+	"hq": 16, "ai_hq": 16, "town": 14,   # the hearths: see HEARTHS
 }
+# A hearth is the heart of a colony: your HQ, the Rust Kings' fort and Dustwell. It is attacked like any building (one roll a press against
+# its DC), but only once the defences within HEARTH_GUARD_RADIUS tiles of it have come down, and never while its owner has a citadel.
+# Bringing one down ends a colony: the fort falling ends the game as a win, your HQ as a loss, and Dustwell is conquered.
+const HEARTHS := ["hq", "ai_hq", "town"]
+const HEARTH_GUARDS := ["wall", "ai_wall", "tower", "outpost", "keep"]
+const HEARTH_GUARD_RADIUS := 4
 const STONE_WALL_DC := 2
 const RAID_BONUS := [[2.0, 4], [1.5, 2], [1.0, 0]]
 const RAID_PENALTY := -2

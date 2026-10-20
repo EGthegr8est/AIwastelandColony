@@ -2245,6 +2245,11 @@ func _party_details(box: VBoxContainer, u: Dictionary) -> void:
 		var cell: Vector2i = target
 		_button(box, "Attack the %s at %d,%d (DC %d)" % [Data.BUILDINGS[Game.tile(cell)["b"]].name.to_lower(), cell.x, cell.y, Game.building_dc(cell)],
 			func(): Units.begin_strike(uid, cell))
+	for blocked in Units.guarded_hearths(u):
+		var guards: Array = blocked.guards
+		var cell: Vector2i = blocked.cell
+		_label(box, "   The %s at %d,%d is guarded: bring down the %d defence%s round it first (DC %d to attack it)." % [
+			Data.BUILDINGS[Game.tile(cell)["b"]].name.to_lower(), cell.x, cell.y, guards.size(), "" if guards.size() == 1 else "s", Game.building_dc(cell)], RED)
 	for camp in Units.camp_targets(u):
 		var camp_id: int = camp.id
 		_button(box, "Attack the %s at %d,%d (DC %d, strength %d)" % [camp.name, camp.pos.x, camp.pos.y, D20Visit.enemy_dc(int(camp.strength)), camp.strength],

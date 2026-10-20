@@ -1411,8 +1411,20 @@ func strike_targets(u: Dictionary) -> Array:
 	if not u.get("job", "") in PARTY_JOBS or u.get("stage", "") != "station":
 		return out
 	for c in [u.pos] + Game.neighbors(u.pos):
-		if Game.tile(c)["o"] == Data.AI and Game.can_hit(c):
+		if Game.tile(c)["o"] in [Data.AI, Data.TOWN] and Game.can_hit(c):
 			out.append(c)
+	return out
+
+
+## The hearths beside a stationed party (its own tile and the four round it) that it cannot attack yet because defences still stand round
+## them: [{"cell", "guards"}], the guards being the cells still to bring down.
+func guarded_hearths(u: Dictionary) -> Array:
+	var out := []
+	if not u.get("job", "") in PARTY_JOBS or u.get("stage", "") != "station":
+		return out
+	for c in [u.pos] + Game.neighbors(u.pos):
+		if Game.tile(c)["o"] in [Data.AI, Data.TOWN] and Game.is_hearth(c) and Game.building_dc(c) > 0 and not Game.can_hit(c):
+			out.append({"cell": c, "guards": Game.hearth_guards(c)})
 	return out
 
 
@@ -1514,8 +1526,10 @@ func _finish_strike(u: Dictionary, v: Dictionary) -> void:
 	if not _strike_aftermath(u, v, what, "%d,%d" % [cell.x, cell.y]):
 		return
 	if v.destroyed:
+		var theirs: bool = Game.tile(cell)["o"] == Data.AI
 		Game.destroy_building(cell)
-		Game.add_log("%s destroyed the %s at %d,%d. Relations with the Rust Kings fall by %d." % [names_text(u), what, cell.x, cell.y, Data.RAID_RELATIONS])
+		Game.add_log("%s destroyed the %s at %d,%d.%s" % [names_text(u), what, cell.x, cell.y,
+			" Relations with the Rust Kings fall by %d." % Data.RAID_RELATIONS if theirs else ""])
 	elif v.outcome == "left":
 		Game.add_log("%s backed off from the %s at %d,%d." % [names_text(u), what, cell.x, cell.y])
 	else:
