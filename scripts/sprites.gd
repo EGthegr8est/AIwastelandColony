@@ -32,7 +32,6 @@ const CHOICES := [CLEAN, 0]
 static var _atlas: Image
 static var _atlas_texture: ImageTexture
 static var _meta := {}
-static var _soldier_texture: ImageTexture
 static var _loaded := false
 static var _cache := {}
 static var _rects := {}
@@ -84,14 +83,12 @@ static func unit(id: String) -> Texture2D:
 			t.region = unit32_rect(id)
 			_cache[key] = t
 		return _cache[key]
-	if id == "soldier":
-		return soldier()
 	return texture(UNITS.get(id, ""))
 
 
 ## The units drawn at twice the detail (32 x 32 pixels in one tile's space), one row left to right: see tools/make_units32.gd.
 const UNITS32_PNG := "res://art/units32.png"
-const UNITS32 := {"scav": 0, "scout": 1, "car": 2, "soldier": 3, "band": 4}
+const UNITS32 := {"scav": 0, "scout": 1, "car": 2, "band": 4}
 const UNIT32_SIZE := 32
 
 
@@ -105,17 +102,6 @@ static func unit32_rect(kind: String) -> Rect2:
 	if not UNITS32.has(kind) or not units32_available():
 		return Rect2()
 	return Rect2(UNITS32[kind] * UNIT32_SIZE, 0, UNIT32_SIZE, UNIT32_SIZE)
-
-
-## The troop marker (and a hunting party): a 16 x 16 picture drawn from the rows in season_replay.gd, since it is not in the atlas.
-static func soldier() -> ImageTexture:
-	if _soldier_texture == null:
-		var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
-		for y in SIZE:
-			for x in SIZE:
-				img.set_pixel(x, y, SeasonReplay.SOLDIER_COLORS.get(SeasonReplay.SOLDIER[y][x], Color(0, 0, 0, 0)))
-		_soldier_texture = ImageTexture.create_from_image(img)
-	return _soldier_texture
 
 
 static func camp(tribe_class: String) -> Texture2D:

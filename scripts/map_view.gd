@@ -315,7 +315,6 @@ func _ready() -> void:
 	Game.blasted.connect(_on_blasted)
 	Game.strike_preview_changed.connect(overlay_layer.queue_redraw)
 	Game.season_played.connect(_on_season_played)
-	Game.troops_marched.connect(_on_troops_marched)
 	Game.replay_skip.connect(finish_replay)
 	# A monospace glyph is narrower than our square cell, so pipes would leave gaps.
 	# Scale them so the glyph box exactly covers the cell, like a square DF tileset.
@@ -634,13 +633,6 @@ func _on_season_played(r: Dictionary) -> void:
 	_begin_replay(r, SeasonReplay.seconds())
 
 
-func _on_troops_marched(path: Array, count: int) -> void:
-	finish_replay()
-	if SeasonReplay.mode == "off":
-		return
-	_begin_replay(SeasonReplay.march(path, count), SeasonReplay.seconds())
-
-
 func _begin_replay(r: Dictionary, secs: float) -> void:
 	replay = r
 	replay_secs = secs
@@ -839,22 +831,11 @@ func _draw_unit(layer: CanvasItem, kind: String, at: Vector2, hop: float, tint: 
 	if art and big.size != Vector2.ZERO:
 		layer.draw_texture_rect_region(Sprites.picture(Sprites.UNITS32_PNG), Rect2(at + up, CELL), big, tint)
 		return
-	if kind == "soldier":
-		if art:
-			layer.draw_texture_rect(_soldier(), Rect2(at + up, CELL), false, tint)
-		else:
-			layer.draw_string(font, at + up + Vector2(0, CELL.y * 0.8), "♠", HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, SeasonReplay.SOLDIER_COLORS["1"] * tint)
-		return
 	if art:
 		layer.draw_texture_rect_region(Sprites.atlas_texture(), Rect2(at + up, CELL), rects[Sprites.UNITS[kind]], tint)
 	else:
 		var info: Dictionary = Units.kind_info(kind)
 		layer.draw_string(font, at + up + Vector2(0, CELL.y * 0.8), info.glyph, HORIZONTAL_ALIGNMENT_CENTER, CELL.x, FONT_SIZE, info.color * tint)
-
-
-## The troop marker as a texture (see Sprites.soldier).
-func _soldier() -> ImageTexture:
-	return Sprites.soldier()
 
 
 ## A few faint dots behind a unit that is walking, where it has just been.

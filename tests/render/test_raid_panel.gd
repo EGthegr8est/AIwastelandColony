@@ -79,33 +79,23 @@ func _roll_and_continue() -> void:
 
 # ---------------------------------------------------------------- the buttons
 
-func test_the_camp_attack_button_shows_the_dc_and_the_chance() -> void:
+func test_there_are_no_raid_buttons_and_the_tab_sends_you_to_your_parties() -> void:
 	var t: Dictionary = Units._spawn_tribe()
 	t["class"] = "raider"
 	t["strength"] = 6
 	t["found"] = true
-	Game.troops = 10
-	Game.changed.emit()
-	await _show_tab("Diplomacy")   # known camps are listed there
-	var text := _button_with("Diplomacy", "Attack their camp")
-	var att := Game.player_attack(t.pos)
-	assert_ne(text, "", "the button is there")
-	assert_has(text, D20.plain(Game.raid_odds_text(att, 6.0)))
-	assert_has(text, "% to win")
-
-
-func test_the_fort_raid_and_dustwell_buttons_show_the_dc_and_the_chance() -> void:
 	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
 	Game.contacts["%d:%d" % [Data.PLAYER, Data.TOWN]] = true
 	Game.troops = 10
 	Game.changed.emit()
 	await _show_tab("Diplomacy")
-	var raid := _button_with("Diplomacy", "RAID them")
-	assert_ne(raid, "")
-	assert_has(raid, D20.plain(Game.raid_odds_text(Game.player_attack(Game.home(Data.AI)), Game.ai_defense(Game.wall_breach()))))
-	var conquer := _button_with("Diplomacy", "Conquer")
-	assert_ne(conquer, "")
-	assert_has(conquer, D20.plain(Game.raid_odds_text(Game.player_attack(Game.home(Data.TOWN)), Game.TOWN_DEFENSE)))
+	assert_eq(_button_with("Diplomacy", "Attack their camp"), "", "no army raid on a camp")
+	assert_eq(_button_with("Diplomacy", "RAID them"), "", "none on the fort")
+	assert_eq(_button_with("Diplomacy", "Conquer"), "", "and none on Dustwell")
+	var text := _labels("Diplomacy")
+	assert_has(text, "Send a Scavenger Party beside the camp", "the camp says to send a party")
+	assert_has(text, "To raid them, send a Scavenger Party", "so does the fort")
+	assert_has(text, "Or take it by force", "and Dustwell")
 
 
 # ---------------------------------------------------------------- a scouting party attacks a camp

@@ -142,38 +142,6 @@ func test_the_walk_plays_at_normal_speed_and_has_no_setting() -> void:
 		assert_false(names.has(gone), "SeasonReplay no longer has %s: the speed is not a setting" % gone)
 
 
-# ---------------------------------------------------------------- a march of troops
-
-func test_a_march_goes_down_the_road_to_the_target_and_back() -> void:
-	var path := [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0), Vector2i(4, 0)]
-	var r := SeasonReplay.march(path, 3)
-	assert_eq(r.actors.size(), 3, "a marker for each of three troops")
-	for a in r.actors:
-		assert_eq(a.kind, "soldier")
-		assert_eq(a.trail[0], [Vector2i(0, 0), 0.0], "they muster at the HQ")
-		assert_eq(a.trail.back()[0], Vector2i(0, 0), "and come home")
-		var at_target: Array = a.trail.filter(func(p): return p[0] == Vector2i(4, 0))
-		assert_eq(at_target.size(), 1, "each reaches the target once")
-		assert_eq(a.gone_day, a.trail.back()[1], "and leaves the map at the HQ")
-	assert_gt(SeasonReplay.position_at(r.actors[0].trail, 5.0).x, SeasonReplay.position_at(r.actors[2].trail, 5.0).x, "a column: the last marker is behind the first")
-	assert_eq(r.events.size(), 1)
-	assert_eq(r.events[0].kind, "clash")
-	assert_eq(r.events[0].cell, Vector2i(4, 0), "the fight flashes at the target")
-	assert_true(SeasonReplay.has_motion(r))
-
-
-func test_a_march_is_at_most_six_markers_and_at_least_one() -> void:
-	var path := [Vector2i(0, 0), Vector2i(3, 0)]
-	assert_eq(SeasonReplay.march(path, 40).actors.size(), SeasonReplay.MARCH_MAX)
-	assert_eq(SeasonReplay.march(path, 0).actors.size(), 1)
-
-
-func test_a_march_to_where_you_already_are_does_not_divide_by_zero() -> void:
-	var r := SeasonReplay.march([Vector2i(2, 2)], 2)
-	assert_eq(r.actors.size(), 2)
-	assert_eq(SeasonReplay.position_at(r.actors[0].trail, 5.0), Vector2(2, 2))
-
-
 # ---------------------------------------------------------------- what Units notes while it walks
 
 func test_a_walk_is_noted_tile_by_tile_with_the_day_each_tile_was_reached() -> void:
@@ -317,7 +285,7 @@ func test_revealing_ground_says_which_tiles_were_new() -> void:
 	assert_eq(Game.reveal(Data.PLAYER, c, 2), [], "nothing is new the second time")
 
 
-# ---------------------------------------------------------------- what END SEASON and a raid hand to the map
+# ---------------------------------------------------------------- what END SEASON hands to the map
 
 func test_ending_the_season_hands_the_replay_to_the_map_with_the_old_sight() -> void:
 	var before: PackedByteArray = Game.sight[Data.PLAYER].duplicate()
@@ -335,41 +303,3 @@ func test_ending_the_season_does_not_wait_for_a_replay() -> void:
 	assert_eq(Game.season, season + 1)
 
 
-func test_a_raid_on_the_fort_sends_a_column_of_troops_down_the_road() -> void:
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-	Game.troops = 4
-	var w := watch(Game, "troops_marched")
-	Game.raid_ai()
-	assert_eq(w.count, 1)
-	var path: Array = w.emissions[0][0]
-	assert_eq(path[0], hq, "from your HQ")
-	assert_eq(path.back(), Game.home(Data.AI), "to the fort")
-	assert_eq(w.emissions[0][1], 4, "all the troops that were home")
-
-
-func test_a_raid_that_is_refused_sends_nobody() -> void:
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-	Game.troops = 0
-	var w := watch(Game, "troops_marched")
-	Game.raid_ai()
-	assert_eq(w.count, 0)
-
-
-func test_an_attack_on_a_camp_marches_to_the_camp() -> void:
-	var at := hq + Vector2i(8, 0)
-	Units.tribes.append({"id": 77, "class": "raider", "name": "Test camp", "pos": at, "strength": 3, "relations": 0, "found": true})
-	Game.troops = 3
-	var w := watch(Game, "troops_marched")
-	Units.attack_tribe(77)
-	assert_eq(w.count, 1)
-	assert_eq(w.emissions[0][0].back(), at)
-
-
-func test_taking_dustwell_marches_to_dustwell() -> void:
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.TOWN]] = true
-	Game.troops = 5
-	var w := watch(Game, "troops_marched")
-	Game.conquer_town()
-	assert_eq(w.count, 1)
-	assert_eq(w.emissions[0][0].back(), Game.home(Data.TOWN))
-	assert_eq(w.emissions[0][1], 5)

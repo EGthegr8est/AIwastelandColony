@@ -1,7 +1,7 @@
 extends "res://tests/framework/test_case.gd"
 ## The real game's map and HUD playing a season back: the replay starts at END SEASON, runs on its own clock, can be skipped
 ## (a click, Enter, or END SEASON again), raider bands in the fog stay hidden, the ground a party uncovers stays dark
-## until it gets there, a raid sends a column of troops, and the ending screen waits for all of it.
+## until it gets there, and the ending screen waits for all of it.
 
 const Data = preload("res://scripts/data.gd")
 const World = preload("res://tests/helpers/world.gd")
@@ -317,37 +317,6 @@ func test_a_party_that_left_the_map_fades_away_after_it_goes() -> void:
 	assert_eq(map._actor_alpha(a, 9.0), 1.0)
 	assert_almost_eq(map._actor_alpha(a, 11.0), 0.5, 0.001)
 	assert_le(map._actor_alpha(a, 13.0), 0.0, "gone")
-
-
-# ---------------------------------------------------------------- a march of troops
-
-func test_a_raid_sends_a_column_of_troops_across_the_map() -> void:
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-	Game.troops = 4
-	Game.raid_ai()
-	assert_true(map.playing)
-	assert_true(map.replay.get("march", false))
-	assert_eq(map.replay.actors.size(), 4, "a marker for each troop")
-	assert_eq(map.replay.actors[0].kind, "soldier")
-	assert_true(Game.replaying)
-
-
-func test_a_raid_with_the_animation_off_sends_nobody() -> void:
-	SeasonReplay.mode = "off"
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-	Game.troops = 4
-	Game.raid_ai()
-	assert_false(map.playing)
-
-
-func test_end_season_while_the_troops_march_only_skips_the_march() -> void:
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-	Game.troops = 3
-	Game.raid_ai()
-	var season := Game.season
-	hud.end_season_pressed()
-	assert_eq(Game.season, season)
-	assert_false(map.playing)
 
 
 # ---------------------------------------------------------------- the ending

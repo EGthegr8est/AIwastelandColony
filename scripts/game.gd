@@ -8,7 +8,6 @@ signal focus(cell: Vector2i)
 signal tile_selected
 signal game_ended(kind: String)   # the game has ended: "raiders_defeated", "colony_prospers" or "defeat"
 signal season_played(replay: Dictionary)   # END SEASON is done: here is how the units walked it, for the map to play back (season_replay.gd)
-signal troops_marched(path: Array, count: int)   # a raid is under way: a column of troops walks `path` (cells, HQ to target) and back
 signal replay_skip     # finish the replay or march that is playing at once
 signal replay_done     # the map has finished playing (or skipped) a replay or march
 signal blasted(cell: Vector2i)   # a nuke went off here: the map plays the explosion (a crater's once the die has landed, a bomber's in the season replay instead)
@@ -53,7 +52,6 @@ var leader := "builder"          # the class: a key of Data.LEADERS
 var leader_info: Dictionary = {}  # the person: name, picture, perks and flaw (see leaders.gd)
 var upgrades: Array = []
 var vehicles: Dictionary = {}
-var raided_this_season := false
 var ai: Dictionary = {}
 var town: Dictionary = {}
 var log_lines: Array = []
@@ -101,7 +99,6 @@ func new_game(leader_id: String, info := {}) -> void:
 	troops = 3
 	prisoners = 0
 	upgrades = []
-	raided_this_season = false
 	log_lines = []
 	ending = {}
 	stats = new_stats()
@@ -2077,15 +2074,6 @@ func _ai_scout_strike(at: Vector2i) -> void:
 	attack_building(near[0], 0, "A Rust Kings scout")
 
 
-## A won raid on the Rust Kings also rolls at their walls nearest your HQ: once, twice if you had double their defense, and
-## `extra` more after a natural 20.
-func _raid_strikes(att: float, def: float, extra := 0) -> void:
-	var rolls := (2 if att >= def * 2.0 else 1) + extra
-	var mod := raid_modifier(att, def)
-	for c in buildings_of(Data.AI, home(Data.PLAYER)).slice(0, rolls):
-		attack_building(c, mod, "Your raid")
-
-
 ## The Rust Kings' walls are a number, and one Raider wall tile stands for WALLS_PER_TILE of them. This makes the tiles
 ## match the number: any missing ones go on their land nearest your HQ (the side facing you), any extra ones go.
 func _sync_ai_walls() -> void:
@@ -2338,26 +2326,7 @@ func disband_troop() -> void:
 		changed.emit()
 
 
-## Raid strength once your forces reach `target`. Troops march on foot, horses take their own
-## route, and war rigs that can't find a way around steep inclines stay home. Boats and planes
-## don't care about slopes. With no target, it's your strength at home.
-func player_attack(target := Vector2i(-1, -1)) -> float:
-	var foot: float = troops * Data.LEADERS[leader].attack
-	if has("w1"):
-		foot *= 1.25
-	if has("w3"):
-		foot *= 1.5
-	# Vehicles away on expeditions can't fight
-	var horse: float = Units.free_vehicles("horse") * vehicle_attack("horse")
-	var car: float = Units.free_vehicles("car") * vehicle_attack("car")
-	if in_bounds(target):
-		foot *= march_factor("foot", home(Data.PLAYER), target)
-		horse *= march_factor("horse", home(Data.PLAYER), target)
-		car *= march_factor("car", home(Data.PLAYER), target)
-	return foot + horse + car + Units.free_vehicles("boat") * vehicle_attack("boat") + Units.free_vehicles("plane") * vehicle_attack("plane")
-
-
-## How much of the Rust Kings' walls still count when you attack.
+## How much of the Rust Kings' walls still count against the Giant Frog.
 func wall_breach() -> float:
 	if has("wv4") and vehicles["plane"] > 0:
 		return 0.0
@@ -2421,49 +2390,6 @@ func _take_land(from: int, to: int, count: int, keep_buildings: bool) -> int:
 			t["b"] = ""
 		taken += 1
 	return taken
-
-
-func raid_ai() -> void:
-	if troops <= 0 or raided_this_season or not knows(Data.PLAYER, Data.AI) or not ending.is_empty():
-		return
-	raided_this_season = true
-	_march_to(home(Data.AI))
-	var att := player_attack(home(Data.AI))
-	var def := ai_defense(wall_breach())
-	if Units.free_vehicles("car") > 0 and route("car", home(Data.PLAYER), home(Data.AI)).is_empty():
-		add_log("Your war rigs couldn't find a way around the steep inclines and stayed home.")
-	ai["relations"] = maxi(ai["relations"] - 30, -100)
-	ai["truce"] = 0
-	var roll := raid_roll(att, def, "Your raid on the Rust Kings")
-	var rules: Dictionary = D20Data.RAID_DICE.fort
-	if roll.won:
-		var loot := {}
-		for k in ["wood", "stone", "metal", "gold"]:
-			loot[k] = int(ai[k] * 0.25)
-			ai[k] -= loot[k]
-			res[k] += loot[k]
-		var caught := 1 + randi() % 3 + (2 if has("w2") else 0)
-		if roll.crit == "success":
-			caught += rules.crit_prisoners
-		prisoners += caught
-		note("prisoners_taken", caught)
-		note("raids_won")
-		ai["troops"] -= int(ceil(ai["troops"] * 0.3))
-		troops -= int(troops * 0.15)
-		var land := _take_land(Data.AI, Data.PLAYER, 3 if has("w5") else 1, has("w5"))
-		add_log("RAID WON! Looted %s, took %d prisoners and %d tiles." % [cost_text(loot), caught, land])
-		_raid_strikes(att, def, rules.crit_strikes if roll.crit == "success" else 0)
-		if att >= def * Data.ENDINGS.decisive_win:
-			add_log("Your attack was overwhelming: the Rust Kings' fort has fallen.")
-			_end("raiders_defeated", "stormed")
-	else:
-		var lost := int(ceil(troops * (rules.crit_troops_lost if roll.crit == "fail" else rules.troops_lost)))
-		troops -= lost
-		ai["troops"] -= int(ai["troops"] * 0.1)
-		note("raids_lost")
-		add_log("Raid failed. %d troops lost in the dust." % lost)
-	check_ending()
-	changed.emit()
 
 
 func _ai_raid() -> void:
@@ -2665,35 +2591,6 @@ func befriend_town() -> void:
 		add_log("Dustwell is now your ally! They will send tribute each season.")
 	else:
 		add_log("Dustwell appreciates your gifts. (Relations %d/60)" % town["relations"])
-	changed.emit()
-
-
-const TOWN_DEFENSE := 8.0   # what Dustwell's militia count for against your attack
-
-
-func conquer_town() -> void:
-	if town["status"] != "neutral" or troops <= 0 or raided_this_season or not knows(Data.PLAYER, Data.TOWN):
-		return
-	raided_this_season = true
-	_march_to(home(Data.TOWN))
-	var att := player_attack(home(Data.TOWN))
-	var def := TOWN_DEFENSE
-	var roll := raid_roll(att, def, "Your attack on Dustwell")
-	var rules: Dictionary = D20Data.RAID_DICE.town
-	if roll.won:
-		for c in owned(Data.TOWN):
-			tile(c)["o"] = Data.PLAYER
-		var caught: int = rules.crit_prisoners if roll.crit == "success" else rules.prisoners
-		prisoners += caught
-		note("prisoners_taken", caught)
-		town["status"] = "conquered"
-		ai["relations"] = maxi(ai["relations"] - 15, -100)
-		add_log("You took Dustwell by force. Its land and %d prisoners are yours. Your name darkens." % caught)
-	else:
-		var lost := int(ceil(troops * (rules.crit_troops_lost if roll.crit == "fail" else rules.troops_lost)))
-		troops -= lost
-		town["relations"] -= 30
-		add_log("Dustwell's militia held. You lost %d troops." % lost)
 	changed.emit()
 
 
@@ -2937,16 +2834,6 @@ func skip_replay() -> void:
 		replay_skip.emit()
 
 
-## A column of troops sets out for `target`: the map plays them walking there and back. The fight itself is already
-## decided where this is called; troops stay a number, this is only the picture.
-func _march_to(target: Vector2i) -> void:
-	var from := home(Data.PLAYER)
-	var path := route("foot", from, target)
-	if path.size() < 2:
-		path = [from, target]
-	troops_marched.emit(path, troops)
-
-
 func cycle_view() -> void:
 	var order := [Data.PLAYER, Data.AI, Data.NONE]
 	view = order[(order.find(view) + 1) % order.size()]
@@ -2970,7 +2857,6 @@ func end_season() -> void:
 	if (season - 1) % 4 == 0:
 		for s in living_survivors():
 			s["age"] += 1   # a new year
-	raided_this_season = false
 	buildings_lost = 0
 	update_fog()
 	_update_peaks()
@@ -3502,7 +3388,7 @@ func airfield_text() -> String:
 
 ## What the stats screen shows, all counted from the start of the colony.
 func new_stats() -> Dictionary:
-	return {"raids_won": 0, "raids_lost": 0, "raids_beaten_back": 0, "raids_suffered": 0, "bands_driven_off": 0,
+	return {"raids_beaten_back": 0, "raids_suffered": 0, "bands_driven_off": 0,
 		"tribes_scattered": 0, "tribes_joined": 0, "prisoners_taken": 0, "troops_trained": 0, "survivors_lost": 0,
 		"colonists_starved": 0, "buildings_lost": 0, "enemy_buildings_destroyed": 0, "ruins_scavenged": 0, "sites_scavenged": 0,
 		"craters_searched": 0, "nukes_found": 0, "nukes_dropped": 0, "blasts": 0, "nukes_suffered": 0, "airfields_destroyed": 0, "nukes_bought": 0, "rolls": 0, "natural_20s": 0, "natural_1s": 0,
@@ -3537,9 +3423,9 @@ func _update_peaks() -> void:
 	stats["peak_land"] = maxi(stats.get("peak_land", 0), owned(Data.PLAYER).size())
 
 
-## Raids fought between you and the Rust Kings, whoever won.
+## Fights between you and the Rust Kings: their raids you beat back or suffered, and the buildings of theirs you brought down.
 func battles() -> int:
-	return stats.get("raids_won", 0) + stats.get("raids_lost", 0) + stats.get("raids_beaten_back", 0) + stats.get("raids_suffered", 0)
+	return stats.get("raids_beaten_back", 0) + stats.get("raids_suffered", 0) + stats.get("enemy_buildings_destroyed", 0)
 
 
 ## Your defense as the Rust Kings meet it: walls and towers plus your troops.
@@ -3610,7 +3496,7 @@ func save_game(slot: String) -> void:
 	var data := {
 		"version": 3, "w": w, "h": h, "leader": leader, "season": season, "pop": pop, "troops": troops,
 		"prisoners": prisoners, "res": res, "items": items, "salt_on": salt_on, "upgrades": upgrades, "vehicles": vehicles,
-		"units": Units.to_save(), "raided": raided_this_season, "ai": ai, "town": town,
+		"units": Units.to_save(), "ai": ai, "town": town,
 		"log": log_lines, "catastrophes": catastrophes.map(_pack_catastrophe), "tiles": packed, "contacts": contacts, "hollow_found": hollow_found,
 		"refineries_on": refinery_on.keys(), "stats": stats, "prosper_streak": prosper_streak, "buildings_lost": buildings_lost, "leader_info": leader_info,
 		"roster": roster, "memory": Data.FOG_VIEWERS.map(func(v): return memory[v]), "measured": _measured_cells(),
@@ -3644,7 +3530,6 @@ func load_game(slot: String) -> bool:
 	prisoners = int(data["prisoners"])
 	w = int(data.get("w", 60))   # saves from before the bigger map were 60 x 36
 	h = int(data.get("h", 36))
-	raided_this_season = data["raided"]
 	res = _ints(data["res"])
 	items = {}
 	for item in Data.ITEMS:   # saves from before frog hides and Salt have none

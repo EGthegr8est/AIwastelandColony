@@ -1294,7 +1294,6 @@ func _legend() -> VBoxContainer:
 	_label(box, " ●    Click a scouting party to see its route from where it stands: white while its food lasts, yellow as it runs low, red once it's gone", Color("ffe03a"))
 	for kind in Data.UNITS:
 		_legend_row(box, Sprites.unit(kind), Data.UNITS[kind].glyph, Data.UNITS[kind].name, Data.UNITS[kind].color)
-	_legend_row(box, null, Data.SOLDIER.glyph, Data.SOLDIER.name + " (your troops: hunt with them)", Data.SOLDIER.color)
 	for cls in Data.TRIBE_CLASSES:
 		_legend_row(box, Sprites.camp(cls), Data.TRIBE_CLASSES[cls].glyph, "%s camp" % Data.TRIBE_CLASSES[cls].name, Data.TRIBE_CLASSES[cls].color)
 	for kind in Data.ANIMALS:
@@ -1714,7 +1713,6 @@ func _fill_stats() -> void:
 			["Buildings built", str(s.buildings_built)], ["Upgrades researched", str(s.upgrades)],
 			["Vehicles built", str(s.vehicles_built)], ["Resources gathered", str(gathered)]]],
 		["War", [
-			["Raids on the Rust Kings", "%d won, %d lost" % [s.raids_won, s.raids_lost]],
 			["Their raids on you", "%d beaten back, %d got through" % [s.raids_beaten_back, s.raids_suffered]],
 			["Raider bands driven off", str(s.bands_driven_off)], ["Tribe camps scattered", str(s.tribes_scattered)],
 			["Troops trained", str(s.troops_trained)], ["Prisoners taken", str(s.prisoners_taken)],
@@ -2430,9 +2428,7 @@ func _tribe_info(box: VBoxContainer, t: Dictionary) -> void:
 	_label(box, "%s %s at %d,%d. %s" % [cls.glyph, cls.name, t.pos.x, t.pos.y, cls.desc], cls.color)
 	match t.class:
 		"raider":
-			var att := Game.player_attack(t.pos)
-			_button(box, "Attack their camp (your attack %.1f vs ~%d, %s)" % [att, t.strength, Game.raid_odds_text(att, float(t.strength))],
-				func(): Units.attack_tribe(t.id), Units.attack_tribe_status(t))
+			_label(box, "Send a Scavenger Party beside the camp and attack it from there (DC %d, strength %d)." % [D20Visit.enemy_dc(int(t.strength)), t.strength], DIM)
 		"trader":
 			_expedition_buttons(box, "caravan", t.pos, t.id)
 			if t.get("warhead_known", false) and t.get("warhead", false):
@@ -2581,8 +2577,7 @@ func _refresh_colony() -> void:
 	_head_row(box, "Colony", "Land: %d tiles   Population: %d / %d" % [Game.owned(Data.PLAYER).size(), Game.pop, Game.pop_cap()], AMBER, _colony_help())
 	_header(box, "Military")
 	_label(box, "Troops: %d (each eats %d meat/season)" % [Game.troops, 2 if Game.has("w3") else 1])
-	_label(box, "Attack %.1f   Defense %.1f (walls %.1f)" % [Game.player_attack(),
-		Game.player_wall_defense() + Game.player_troop_defense(), Game.player_wall_defense()])
+	_label(box, "Defense %.1f (walls %.1f)" % [Game.player_wall_defense() + Game.player_troop_defense(), Game.player_wall_defense()])
 	_row_button(box, "Train troop", "1 pop, " + Game.cost_text(Game.train_troop_cost()), Game.train_troop,
 		"" if Game.pop > 2 and Game.can_afford(Game.train_troop_cost()) else "Need 3+ pop and " + Game.cost_text(Game.train_troop_cost()))
 	_row_button(box, "Disband troop", "back to pop", Game.disband_troop, "" if Game.troops > 0 else "No troops")
@@ -2632,13 +2627,12 @@ func _refresh_diplomacy() -> void:
 	var box: VBoxContainer = boxes["Diplomacy"]
 	_clear(box)
 	var ai := Game.ai
-	var raid_why := "No troops" if Game.troops <= 0 else ("Already attacked this season" if Game.raided_this_season else "")
 	if not Game.knows(Data.PLAYER, Data.AI):
 		_header(box, "Unknown colony")
 		_label(box, "Your scouts haven't found any other colony yet. Scout east through the fog.", DIM)
 	else:
-		_diplomacy_ai(box, ai, raid_why)
-	_diplomacy_town(box, raid_why)
+		_diplomacy_ai(box, ai)
+	_diplomacy_town(box)
 	var found := Units.known_tribes()
 	if found.is_empty():
 		_header(box, "Tribes")
@@ -2647,7 +2641,7 @@ func _refresh_diplomacy() -> void:
 		_tribe_info(box, t)
 
 
-func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void:
+func _diplomacy_ai(box: VBoxContainer, ai: Dictionary) -> void:
 	_header(box, ai["name"])
 	_label(box, "Relations: %d   Troops: ~%d   Walls: %d" % [ai["relations"], ai["troops"], ai["walls"]],
 		RED if ai["relations"] < 0 else AMBER)
@@ -2659,10 +2653,9 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void
 		Game.player_wall_defense() + Game.player_troop_defense()], DIM)
 	if ai["truce"] > 0:
 		_label(box, "Bribed: no raids for %d seasons." % ai["truce"], GREEN)
-	var raid_att := Game.player_attack(Game.home(Data.AI))
-	var raid_def := Game.ai_defense(Game.wall_breach())
-	_button(box, "RAID them (your attack %.1f vs their defense ~%.1f, %s)" % [raid_att, raid_def, Game.raid_odds_text(raid_att, raid_def)],
-		Game.raid_ai, raid_why)
+	var guards := Game.hearth_guards(Game.home(Data.AI)).size()
+	_label(box, "To raid them, send a Scavenger Party beside their fort: its walls fall first (%d standing), then the fort itself (DC %d)." % [
+		guards, D20Data.BUILDING_DC["ai_hq"]], RED if guards > 0 else AMBER)
 	_label(box, "Caravans out: %d/%d. Gold comes home with them; raider bands may ambush them on the road." % [
 		Units.trade_runs(), Game.caravan_slots()], DIM)
 	_expedition_buttons(box, "caravan", Game.home(Data.AI))
@@ -2696,7 +2689,7 @@ func _diplomacy_ai(box: VBoxContainer, ai: Dictionary, raid_why: String) -> void
 			_button(salt_row, "Buy 1 -%dg (%d for sale)" % [buy_price, stock], Game.buy_salt, "" if stock > 0 and Game.res["gold"] >= buy_price else ("None for sale" if stock <= 0 else "Not enough gold"))
 
 
-func _diplomacy_town(box: VBoxContainer, raid_why: String) -> void:
+func _diplomacy_town(box: VBoxContainer) -> void:
 	var town := Game.town
 	if not Game.knows(Data.PLAYER, Data.TOWN):
 		_header(box, "Unknown settlement")
@@ -2709,8 +2702,6 @@ func _diplomacy_town(box: VBoxContainer, raid_why: String) -> void:
 		_button(box, "Send gifts (%s)" % Game.cost_text(Game.befriend_cost()), Game.befriend_town,
 			"" if Game.can_afford(Game.befriend_cost()) else "Need " + Game.cost_text(Game.befriend_cost()))
 		_travel_lines(box, _routes_between(Game.home(Data.PLAYER), Game.home(Data.TOWN)))
-		var town_att := Game.player_attack(Game.home(Data.TOWN))
-		_button(box, "Conquer (attack %.1f vs %d, %s)" % [town_att, int(Game.TOWN_DEFENSE), Game.raid_odds_text(town_att, Game.TOWN_DEFENSE)],
-			Game.conquer_town, raid_why)
+		_label(box, "Or take it by force: a Scavenger Party attacks its centre (DC %d)." % D20Data.BUILDING_DC["town"], DIM)
 	elif town["status"] == "ally":
 		_label(box, "Allied: sends 2 gold + 3 grain each season.", GREEN)

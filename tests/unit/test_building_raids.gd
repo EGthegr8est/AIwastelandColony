@@ -293,35 +293,6 @@ func test_a_raider_band_with_nothing_to_hit_rolls_nothing() -> void:
 	assert_eq(Game.buildings_lost, 0)
 
 
-func test_a_won_raid_rolls_once_at_the_wall_nearest_you_and_twice_at_double_their_defense() -> void:
-	Game.ai["walls"] = 12
-	Game._sync_ai_walls()
-	Units.dice = ForcedDice.new([20])
-	Game._raid_strikes(15.0, 10.0)
-	assert_eq(Game.ai["walls"], 8, "one roll, one tile")
-	Units.dice = ForcedDice.new([20, 20])
-	Game._raid_strikes(25.0, 10.0)
-	assert_eq(Game.ai["walls"], 0, "two rolls, two tiles")
-	assert_eq(_wall_tiles().size(), 0)
-
-
-func test_a_won_raid_rolls_at_their_walls_through_the_real_raid() -> void:
-	Game.contacts["%d:%d" % [Data.PLAYER, Data.AI]] = true
-	Game.ai["walls"] = 8
-	Game._sync_ai_walls()
-	Game.troops = 1
-	var per_troop := Game.player_attack(Game.home(Data.AI))   # the march to their fort takes some of it
-	Game.troops = ceili(2.2 * Game.ai_defense(Game.wall_breach()) / per_troop)   # double their defense, but not a decisive win
-	# the raid's own d20 (15, a plain win), then the two rolls at their walls
-	Units.dice = ForcedDice.new([15, 20, 20])
-	Game.raid_ai()
-	assert_eq(Game.stats.raids_won, 1)
-	assert_false(Game.ended(), "not overwhelming")
-	assert_eq(Game.ai["walls"], 0, "both rolls hit")
-	assert_true(Game.log_lines.any(func(l): return l.contains("Your raid struck the raider wall")))
-	assert_eq(Units.dice.d20_calls, 3, "one roll for the raid, two for the walls")
-
-
 # ---------------------------------------------------------------- scouting parties
 
 func _scout_next_to_a_wall(traits := []) -> Dictionary:

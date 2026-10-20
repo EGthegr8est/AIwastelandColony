@@ -28,21 +28,12 @@ func after_each() -> void:
 	D20.permadeath = D20Data.PERMADEATH
 
 
-## Player raids until the game ends (or 40 tries), as a player would, one a season.
-func _raid_until_over() -> void:
-	for i in 40:
-		if Game.ended():
-			return
-		Game.raided_this_season = false
-		Game.raid_ai()
-
-
 # ---------------------------------------------------------------- the start
 
 func test_a_new_game_has_not_ended_and_has_clean_stats() -> void:
 	assert_false(Game.ended())
 	assert_eq(Game.ending, {})
-	assert_eq(Game.stats.raids_won, 0)
+	assert_eq(Game.stats.enemy_buildings_destroyed, 0)
 	assert_eq(Game.stats.peak_pop, Game.pop)
 	assert_eq(Game.stats.sent, {"scav": 0, "scout": 0, "caravan": 0, "boat": 0, "plane": 0})
 	assert_eq(Game.prosper_streak, 0)
@@ -63,9 +54,12 @@ func test_every_ending_has_its_picture_and_its_music_side() -> void:
 
 # ---------------------------------------------------------------- you win by force
 
-func test_an_overwhelming_raid_storms_the_fort() -> void:
-	Game.troops = 500   # attack far past 2.5 times their defense
-	_raid_until_over()
+func test_destroying_the_fort_storms_it_and_ends_the_game() -> void:
+	var fort := Game.home(Data.AI)
+	for p in Game.hearth_guards(fort):
+		Game.tile(p)["b"] = ""
+	Units.dice = load("res://tests/helpers/forced_dice.gd").new([20])
+	assert_true(Game.attack_building(fort, 0, "A test party"))
 	assert_true(Game.ended())
 	assert_eq(Game.ending.kind, "raiders_defeated")
 	assert_eq(Game.ending.why, "stormed")
@@ -73,16 +67,13 @@ func test_an_overwhelming_raid_storms_the_fort() -> void:
 	assert_true(Game.log_lines.any(func(l): return l.contains("fort has fallen")))
 
 
-func test_an_ordinary_raid_win_does_not_end_the_game() -> void:
-	Game.troops = 8   # about 1.2 times their defense: a win is not decisive
-	for i in 30:
-		Game.raided_this_season = false
-		Game.troops = 8
-		Game.ai["troops"] = 6
-		Game.raid_ai()
+func test_a_missed_attack_on_the_fort_does_not_end_the_game() -> void:
+	var fort := Game.home(Data.AI)
+	for p in Game.hearth_guards(fort):
+		Game.tile(p)["b"] = ""
+	Units.dice = load("res://tests/helpers/forced_dice.gd").new([4])
+	assert_false(Game.attack_building(fort, 0, "A test party"))
 	assert_false(Game.ended())
-	assert_gt(Game.stats.raids_won, 0)
-	assert_gt(Game.stats.raids_lost, 0)
 
 
 func test_leaving_the_rust_kings_almost_no_land_ends_the_game() -> void:
@@ -150,7 +141,7 @@ func test_losing_nearly_all_your_land_is_the_end() -> void:
 func _long_game_state() -> void:
 	Game.season = Data.ENDINGS.prosper.season
 	Game.pop = 25
-	Game.stats["raids_won"] = 2
+	Game.stats["enemy_buildings_destroyed"] = 2
 	Game.ai["troops"] = 0
 	for v in ["horse", "car", "boat", "plane"]:
 		Game.ai[v] = 0
@@ -188,7 +179,7 @@ func test_it_needs_the_late_game_and_a_war_behind_you() -> void:
 	Game.check_ending()
 	assert_eq(Game.prosper_streak, 0, "too early in the game")
 	Game.season = Data.ENDINGS.prosper.season
-	Game.stats["raids_won"] = 0
+	Game.stats["enemy_buildings_destroyed"] = 0
 	Game.check_ending()
 	assert_eq(Game.prosper_streak, 0, "no battle has been fought")
 
@@ -224,11 +215,11 @@ func test_leaving_the_game_clears_it() -> void:
 
 
 func test_a_new_game_after_an_ending_starts_fresh() -> void:
-	Game.stats["raids_won"] = 9
+	Game.stats["enemy_buildings_destroyed"] = 9
 	Game._end("defeat", "overrun")
 	World.new_game(8)
 	assert_false(Game.ended())
-	assert_eq(Game.stats.raids_won, 0)
+	assert_eq(Game.stats.enemy_buildings_destroyed, 0)
 
 
 # ---------------------------------------------------------------- the stats
@@ -273,22 +264,20 @@ func test_rolls_and_natural_20s_are_counted() -> void:
 	assert_eq(Game.stats.ruins_scavenged, 1)
 
 
-func test_raids_both_ways_are_counted() -> void:
-	Game.ai["troops"] = 0
-	Game.troops = 20
-	for i in 5:
-		Game.raided_this_season = false
-		Game.raid_ai()
-		if Game.ended():
-			break
-	assert_gt(Game.stats.raids_won + Game.stats.raids_lost, 0)
-	assert_eq(Game.battles(), Game.stats.raids_won + Game.stats.raids_lost)
-	Game.ending = {}
+func test_fights_both_ways_are_counted() -> void:
+	assert_eq(Game.battles(), 0)
+	Game.tile(Game.owned(Data.AI).filter(func(c): return Game.tile(c)["b"] == "")[0])["b"] = "ai_wall"
+	var wall: Vector2i = Game.owned(Data.AI).filter(func(c): return Game.tile(c)["b"] == "ai_wall")[0]
+	Units.dice = load("res://tests/helpers/forced_dice.gd").new([20])
+	assert_true(Game.attack_building(wall, 0, "A test party"))
+	assert_eq(Game.battles(), 1, "a building of theirs brought down is a fight")
+	Units.dice = load("res://scripts/dice.gd").new()
 	Game.ai["troops"] = 1
 	Game.troops = 100
 	for i in 10:
 		Game._ai_raid()
 	assert_gt(Game.stats.raids_beaten_back + Game.stats.raids_suffered, 0)
+	assert_eq(Game.battles(), 1 + Game.stats.raids_beaten_back + Game.stats.raids_suffered)
 
 
 func test_starvation_peaks_and_gathering_are_counted() -> void:
@@ -304,15 +293,15 @@ func test_starvation_peaks_and_gathering_are_counted() -> void:
 
 
 func test_stats_survive_saving_as_whole_numbers() -> void:
-	Game.stats["raids_won"] = 4
+	Game.stats["enemy_buildings_destroyed"] = 4
 	Game.stats["sent"]["scav"] = 7
 	Game.stats["gathered"]["wood"] = 99
 	Game.save_game("stats_test")
 	World.new_game(99)
 	assert_true(Game.load_game("stats_test"))
 	DirAccess.remove_absolute(Game._path("stats_test"))
-	assert_eq(Game.stats.raids_won, 4)
-	assert_eq(typeof(Game.stats.raids_won), TYPE_INT)
+	assert_eq(Game.stats.enemy_buildings_destroyed, 4)
+	assert_eq(typeof(Game.stats.enemy_buildings_destroyed), TYPE_INT)
 	assert_eq(Game.stats.sent.scav, 7)
 	assert_eq(typeof(Game.stats.sent.scav), TYPE_INT)
 	assert_eq(Game.stats.gathered.wood, 99)
@@ -330,5 +319,5 @@ func test_a_save_from_before_stats_loads_with_zeroes() -> void:
 	World.new_game(99)
 	assert_true(Game.load_game("old_stats_test"))
 	DirAccess.remove_absolute(path)
-	assert_eq(Game.stats.raids_won, 0)
+	assert_eq(Game.stats.enemy_buildings_destroyed, 0)
 	assert_false(Game.ended())

@@ -474,8 +474,6 @@ const EXPEDITIONS := {
 	# A caravan sent to buy a trader camp's warhead (Data.TRADERS): the usual caravan's cost, and the price in gold on top (Game.warhead_price).
 	"deal":    {"name": "Warhead run",     "verb": "Buy the warhead", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 }
-# What a hunting party on foot or horseback is drawn as (it has no sprite in the atlas: the troop marker's own picture).
-const SOLDIER := {"name": "Hunting party", "glyph": "♠", "color": Color("c9e07a"), "sight": 3}
 
 # Scouting parties stay where you send them until you give new orders. They leave with a pack of
 # SCOUT_PACK food taken from your stores (FOOD_KINDS, in that order) and each survivor eats

@@ -124,12 +124,9 @@ func test_the_upkeep_is_paid_every_season_and_a_bomber_that_cannot_be_kept_is_lo
 
 
 func test_a_bomber_does_nothing_but_carry_a_nuke() -> void:
-	Game.vehicles["bomber"] = 0
-	var attack := Game.player_attack()
 	Game.vehicles["bomber"] = 2
 	assert_eq(Game.vehicle_attack("bomber"), 0)
 	assert_eq(Game.vehicle_trade("bomber"), 0)
-	assert_eq(Game.player_attack(), attack, "no raid strength")
 	Game.upgrades = ["w1", "w2", "w3", "w4", "wv4"]
 	assert_eq(Game.vehicle_attack("bomber"), 0, "and Bombing runs does nothing for it")
 

@@ -80,9 +80,9 @@ func glyph_kind(u: Dictionary) -> String:
 	return "caravan" if u.job == "deal" else u.job   # a warhead run is a caravan
 
 
-## What Data.UNITS says of a kind of unit (a hunting party's "soldier" is Data.SOLDIER: it has no atlas sprite).
+## What Data.UNITS says of a kind of unit.
 func kind_info(kind: String) -> Dictionary:
-	return Data.UNITS.get(kind, Data.SOLDIER)
+	return Data.UNITS[kind]
 
 
 func units_at(c: Vector2i) -> Array:
@@ -2516,45 +2516,6 @@ func check_discoveries() -> void:
 
 func known_tribes() -> Array:
 	return tribes.filter(func(t): return t.found)
-
-
-func attack_tribe_status(t: Dictionary) -> String:
-	if Game.troops <= 0:
-		return "No troops"
-	if Game.raided_this_season:
-		return "Already attacked this season"
-	return ""
-
-
-func attack_tribe(id: int) -> void:
-	var t := tribe_by_id(id)
-	if t.is_empty() or attack_tribe_status(t) != "":
-		return
-	Game.raided_this_season = true
-	Game._march_to(t.pos)
-	var att := Game.player_attack(t.pos)
-	var rules: Dictionary = D20Data.RAID_DICE.camp
-	var roll := Game.raid_roll(att, float(t.strength), "Your attack on the %s" % t.name)
-	if roll.won:
-		var loot := {"gold": randi_range(5, 15), "metal": randi_range(5, 10), "meat": randi_range(5, 10)}
-		if roll.crit == "success":
-			for k in loot:
-				loot[k] = int(loot[k] * rules.crit_loot_mult)
-		for k in loot:
-			Game.res[k] += loot[k]
-		var caught: int = rules.crit_prisoners if roll.crit == "success" else rules.prisoners
-		Game.prisoners += caught
-		Game.note("prisoners_taken", caught)
-		Game.note("tribes_scattered")
-		tribes.erase(t)
-		Game.add_log("You scattered the %s! Took %s and %d prisoners." % [t.name, Game.cost_text(loot), caught])
-	else:
-		var lost := int(ceil(Game.troops * (rules.crit_troops_lost if roll.crit == "fail" else rules.troops_lost)))
-		Game.troops -= lost
-		if roll.crit == "fail":
-			t["strength"] += rules.crit_camp_grows
-		Game.add_log("The %s beat back your attack. %d troops lost.%s" % [t.name, lost, " The camp grows bolder." if roll.crit == "fail" else ""])
-	Game.changed.emit()
 
 
 const GIFT := {"grain": 10}

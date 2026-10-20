@@ -26,21 +26,6 @@ const FADE_DAYS := 2.0         # a unit that leaves the map (home, wiped out) fa
 const STILL := -2.0            # gone_day of a unit that stayed on the map
 const AT_END := -1.0           # gone_day or event day meaning "when the walking is done"
 
-# A march: up to MARCH_MAX troop markers walk a column from your HQ to the target (a new marker sets off every MARCH_STEP
-# days), the fight flashes, and they come home. They go at MARCH_PACE tiles a day (a party on horseback does two), so the
-# way out takes between MARCH_OUT_MIN and MARCH_OUT_MAX days (a far fort is a long, quick march), and the way back is a little quicker.
-const MARCH_MAX := 6
-const MARCH_STEP := 0.9
-const MARCH_PACE := 2.0
-const MARCH_OUT_MIN := 6.0
-const MARCH_OUT_MAX := 24.0
-const MARCH_PAUSE := 2.0
-const MARCH_BACK_SHARE := 0.85
-
-# The troop marker, 8 x 8 (1 = body, 2 = dark)
-const SOLDIER := ["................", ".....111111.....", "....11111111....", "....11222211....", "....11222211....", ".....111111.....", "......1111......", "...1111111111...", "..111111111111..", ".11.11111111.11.", ".11.11111111.11.", ".11..111111..11.", ".....111111.....", ".....11..11.....", ".....11..11.....", "....111..111...."]
-const SOLDIER_COLORS := {"1": Color("c9e07a"), "2": Color("1d2814")}
-
 static var mode := "normal"   # the game always plays the walk at normal speed (there is no setting for it any more); tests set "off" so they do not wait for it
 
 
@@ -129,28 +114,3 @@ static func length(r: Dictionary, secs: float) -> float:
 ## How long a flash of this kind lasts, in real seconds.
 static func pop_seconds(kind: String) -> float:
 	return BLAST_SECONDS if kind == "blast" else POP_SECONDS
-
-
-## The replay of a column of troops going down `path` (cells from your HQ to the target) and back: the
-## fight is already decided, this is only the picture.
-static func march(path: Array, count: int) -> Dictionary:
-	if path.size() < 2:
-		path = [path[0], path[0]]
-	var n := clampi(count, 1, MARCH_MAX)
-	var last := path.size() - 1
-	var out_days := clampf(float(last) / MARCH_PACE, MARCH_OUT_MIN, MARCH_OUT_MAX)
-	var back_days := out_days * MARCH_BACK_SHARE
-	var turn := out_days + float(n - 1) * MARCH_STEP + MARCH_PAUSE
-	var actors := []
-	for k in n:
-		var delay := float(k) * MARCH_STEP
-		var trail := [[path[0], 0.0]]
-		for i in range(1, path.size()):
-			trail.append([path[i], delay + out_days * float(i) / float(last)])
-		for i in range(path.size() - 2, -1, -1):
-			trail.append([path[i], turn + back_days * float(last - i) / float(last)])
-		actors.append({"id": -1 - k, "kind": "soldier", "owner": Data.PLAYER, "mover": "foot", "parked": false,
-			"trail": trail, "gone_day": AT_END})
-	var r := {"actors": actors, "events": [{"kind": "clash", "cell": path[last], "day": turn - MARCH_PAUSE * 0.5}],
-		"reveals": [], "sight_before": PackedByteArray(), "march": true}
-	return settle(r)
