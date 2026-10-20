@@ -143,7 +143,8 @@ behind) and a food pack.
   go through them. Parties past ten keep their numbers and are picked by the bar or the brackets.
 - Click a party on the map and a **portrait** of each member appears in the bottom
   panel, with a hunger bar under it. Faces are drawn in code (`scripts/portrait.gd`) from a per-survivor seed, so the same person
-  always looks the same, and they go grey and gaunt as they age or starve.
+  always looks the same, and they go grey and gaunt as they age or starve. The card lists each survivor on one short line (`Units.survivor_brief`: name, traits,
+  and how they are doing only when that is more than fed); hover the line or the portrait for the whole thing (`Units.survivor_line`, with the age).
 - **Food pack**: every party leaves with `SCOUT_PACK` (10, what one survivor can carry) food taken from your stores (grain, then veg, then meat), whatever it is
   sent to do, and each survivor eats 1 a season from that pack, so a party of three lasts about 3 seasons. The **Inventory** column beside the portraits shows what's in the pack
   and how many days it will last. Nothing resupplies them in the field: when the pack is empty they go hungry, then starve, and die

@@ -334,3 +334,31 @@ func test_the_pick_forgets_people_who_left_and_starts_again_with_a_new_game() ->
 	Game.map_version += 1   # a new game or a load
 	hud._clean_draft()
 	assert_eq(hud.draft, [], "a new game or a load starts the pick again")
+
+
+func test_the_party_card_keeps_its_buttons_on_screen_with_three_or_four_survivors_one_line_each() -> void:
+	var p := Units.form_party("foot")
+	Game.selected_scout = p.id
+	Game.selected = p.pos
+	var window: Vector2 = main.get_viewport().get_visible_rect().size
+	for n in [3, 4]:
+		if n == 4:
+			var extra: Dictionary = Game.home_survivors()[0]
+			extra["state"] = "away"
+			p.survivors.append(extra)
+			p.crew = 4
+		for s in p.survivors:
+			s["traits"] = ["trigger_happy", "sharp_eyed", "light_footed"]   # the longest lines the game makes
+		Game.changed.emit()
+		await wait_frames(3)
+		assert_true(hud.party_panel.visible)
+		assert_le(hud.party_panel.get_global_rect().end.y, window.y, "the card ends inside the window with %d survivors" % n)
+		var buttons: Array = hud.party_row.find_children("*", "Button", true, false)
+		assert_ge(buttons.size(), 2, "Recall and Deselect")
+		for b in buttons:
+			assert_le(b.get_global_rect().end.y, window.y, "%s is on screen with %d survivors" % [b.text, n])
+		for s in p.survivors:
+			var lines: Array = hud.party_row.find_children("*", "Label", true, false).filter(func(l): return l.text == Units.survivor_brief(s))
+			assert_eq(lines.size(), 1, "%s has a line" % s.name)
+			assert_eq(lines[0].autowrap_mode, TextServer.AUTOWRAP_OFF, "one line, never wrapped")
+			assert_eq(lines[0].tooltip_text, Units.survivor_line(s), "the whole line is on hover")

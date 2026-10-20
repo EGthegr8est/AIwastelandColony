@@ -1153,6 +1153,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 	var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
 	var info := VBoxContainer.new()
 	info.custom_minimum_size = Vector2(210, 0)
+	info.add_theme_constant_override("separation", 1)   # up to four survivors, the days and the buttons all have to fit the strip
 	card.add_child(info)
 	var is_picked: bool = u.id == Game.selected_scout
 	_label(info, "%s %s%s" % [kind.glyph, Units.unit_title(u), "  [picked]" if is_picked else ""], BRIGHT)
@@ -1163,7 +1164,11 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 		_small_label(info, Units.days_left_text(u), DIM)
 	for s in u.survivors:
 		var bad: bool = s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2
-		_label(info, Units.survivor_line(s), RED if bad else AMBER)
+		var line := _small_label(info, Units.survivor_brief(s), RED if bad else AMBER)
+		line.autowrap_mode = TextServer.AUTOWRAP_OFF   # one line each, or the buttons fall off the bottom of the window
+		line.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		line.mouse_filter = Control.MOUSE_FILTER_PASS
+		line.tooltip_text = Units.survivor_line(s)
 	if u.job in Units.PARTY_JOBS:
 		var uid: int = u.id
 		var buttons := HBoxContainer.new()

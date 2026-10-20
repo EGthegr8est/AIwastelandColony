@@ -189,3 +189,23 @@ func test_an_old_save_with_no_roster_gets_one() -> void:
 	assert_true(Game.load_game("roster_old"))
 	assert_eq(Game.pop, 12)
 	assert_eq(Game.roster.size(), 12)
+
+
+func test_a_brief_line_is_the_name_and_traits_with_the_status_only_when_it_is_more_than_fed() -> void:
+	var s: Dictionary = Game.home_survivors()[0]
+	s["name"] = "Mara"
+	s["age"] = 34
+	s["traits"] = ["sharp_eyed", "lucky"]
+	s["hunger"] = 0
+	s["hp"] = float(Data.SURVIVOR_HP)
+	s["hurt"] = false
+	s["leg"] = false
+	s["injury"] = "none"
+	assert_eq(Units.survivor_status(s), "fed")
+	assert_eq(Units.survivor_brief(s), "Mara, Sharp-Eyed, Lucky")
+	assert_eq(Units.survivor_line(s), "Mara, 34, Sharp-Eyed, Lucky (fed)", "the long line is what it always was")
+	s["hunger"] = 1
+	assert_eq(Units.survivor_brief(s), "Mara, Sharp-Eyed, Lucky (hungry)")
+	s["traits"] = []
+	s["hunger"] = 0
+	assert_eq(Units.survivor_brief(s), "Mara", "no traits, no comma")

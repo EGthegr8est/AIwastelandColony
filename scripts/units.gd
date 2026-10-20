@@ -464,8 +464,8 @@ func hunger_text(s: Dictionary) -> String:
 	return "hungry" if s.hunger > 0 else "fed"
 
 
-## One line about a survivor for the info panels.
-func survivor_line(s: Dictionary) -> String:
+## How a survivor is doing in a few words: how hungry, then sick, hurt or salted.
+func survivor_status(s: Dictionary) -> String:
 	var status := hunger_text(s)
 	if sick_level(s) > 0:
 		status += ", " + sick_text(s)
@@ -479,8 +479,21 @@ func survivor_line(s: Dictionary) -> String:
 		status += ", salted (%d seasons)" % int(s.salted)
 	if s.hp < Data.SURVIVOR_HP:
 		status += ", %d hp" % ceili(s.hp)
+	return status
+
+
+## One line about a survivor for the info panels.
+func survivor_line(s: Dictionary) -> String:
 	var traits := D20.trait_names(s)
-	return "%s, %d, %s(%s)" % [s.name, s.age, traits + " " if traits != "" else "", status]
+	return "%s, %d, %s(%s)" % [s.name, s.age, traits + " " if traits != "" else "", survivor_status(s)]
+
+
+## The short line on a party's card: the name and the traits, and how they are doing only when that is more than "fed".
+func survivor_brief(s: Dictionary) -> String:
+	var traits := D20.trait_names(s)
+	var line: String = s.name + (", " + traits if traits != "" else "")
+	var status := survivor_status(s)
+	return line if status == "fed" else "%s (%s)" % [line, status]
 
 
 ## Takes one survivor out of the party (a random one, or `who`) and returns their name.

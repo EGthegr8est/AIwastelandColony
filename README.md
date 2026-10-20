@@ -5,7 +5,8 @@ raider kingdom across the river, and try not to get nuked. Pixel-art tiles at 16
 
 **Status (2026-10-20): the turn overhaul is built.** Your parties walk on your orders with a days-per-turn budget and are numbered; the colony's people are named survivors who stay the same people
 (and are remembered when they fall); raids are made by parties on both sides, through the building attack rolls, down to the hearths. What is left is under "What's next". The commit history
-since `2ecf5b5` has one commit for each step.
+since `2ecf5b5` has one commit for each step. Tests: headless 1490 passed and 27 skipped (they need a GPU), windowed render 473, snapshots 12; a long soak of three
+unattended games (one defended) ran with no errors.
 
 - [How the game works](docs/GAME_REFERENCE.md): every system, with the code that does it and the tests that pin it.
 - [`tools/PLAY_ME.txt`](tools/PLAY_ME.txt): the player's one-page guide that ships with the Windows build.
@@ -97,6 +98,8 @@ game loads), and zips it with `tools/PLAY_ME.txt` into `..\WastelandColony-relea
 ## Working on it: things that will bite
 - **Engine errors fail a test**, including `push_error`, a null access and a bad dictionary key. If the error is the point, call `expect_error("text")` first.
 - **The roster has its own random numbers** (`Roster`), so making a survivor never moves a seeded map; the test runner pins them (`Roster.fixed_seed`), so tests that depend on a survivor's traits stay the same.
+- **One audio test is timing-sensitive.** `test_a_click_plays_the_blip_either_way` (sonar tablet) asks whether a 90 ms blip is still playing right after the click; it failed once in a
+  full headless run and passes on its own, so run it again before suspecting a change.
 - **Settings leak into tests.** `Daylight.enabled` (the Night switch), `KeyHints.enabled` and the music volume are saved to `settings.cfg`, and `SeasonReplay.mode` is a static. A test that depends on one sets it
   itself (the tests set the walk to `"off"`; the light still fades, in 1.2 s).
 - `Input.parse_input_event` mouse events do not move the viewport's mouse: use `Input.warp_mouse`. `watch()` on a node that is freed with the scene prints "Lambda capture freed": count in an array from a lambda.
