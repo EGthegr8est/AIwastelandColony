@@ -14,8 +14,8 @@ func after_each() -> void:
 	Leaders.offered = []
 
 
-func test_there_are_22_perks_and_13_flaws_in_the_four_themes() -> void:
-	assert_eq(Leaders.PERKS.size(), 22)
+func test_there_are_23_perks_and_13_flaws_in_the_four_themes() -> void:
+	assert_eq(Leaders.PERKS.size(), 23)
 	assert_eq(Leaders.FLAWS.size(), 13)
 	for table in [Leaders.PERKS, Leaders.FLAWS]:
 		for id in table:

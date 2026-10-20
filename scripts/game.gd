@@ -2847,10 +2847,6 @@ func _contact_log(viewer: int, other: int) -> void:
 
 
 ## How many scouting parties you can have in the field at once.
-func scout_parties() -> int:
-	return 2 + mini(vehicles["horse"] + vehicles["car"], 3)
-
-
 ## Rust Kings outriders push into the unknown, heading west toward you. Returns where this one ended its move (off the
 ## map, (-1, -1), if there was nowhere left to go).
 func _ai_scout() -> Vector2i:

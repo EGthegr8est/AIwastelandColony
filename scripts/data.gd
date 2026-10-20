@@ -462,15 +462,15 @@ const UNITS := {
 
 # Expeditions you can send out. Crew leave your population until they come home.
 const EXPEDITIONS := {
-	"scav":    {"name": "Scavenger party", "verb": "Scavenge", "crew": 3, "cost": {"grain": 3}},
+	"scav":    {"name": "Scavenger Party", "verb": "Scavenge", "crew": 3, "cost": {"grain": 3}},
 	"caravan": {"name": "Trade caravan",   "verb": "Send caravan", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 	"boat":    {"name": "River trader",    "verb": "Send boat downriver", "crew": 2, "cost": {"grain": 3}},
 	"plane":   {"name": "Recon flight",    "verb": "Fly recon", "crew": 1, "cost": {}},   # the tank it fills is its cost
 	"bomb":    {"name": "Bombing run",     "verb": "Drop a nuke here", "crew": 2, "cost": {}},   # the same: the tank is its cost, and the nuke leaves the stores
-	"scout":   {"name": "Scouting party",  "verb": "Send scouts", "crew": 2, "cost": {}},
-	# A hunting party is troops, not colonists: its crew leave your troops (not your people) and come back to them, and a death is a troop
-	# lost for good. They are trained: every one has the Veteran trait (see Units._make_crew). They only go hunting.
-	"hunters": {"name": "Hunting party", "verb": "Send hunting party", "crew": 3, "cost": {"grain": 3}},
+	"scout":   {"name": "Scavenger Party",  "verb": "Send scouts", "crew": 3, "cost": {}},
+	# Scavenging, scouting and hunting are one kind of party: a Scavenger Party of 3 survivors from the roster (see Units.crew_for),
+	# numbered 1, 2, 3... (Units.party_label).
+	"hunters": {"name": "Scavenger Party", "verb": "Send hunting party", "crew": 3, "cost": {"grain": 3}},
 	# A caravan sent to buy a trader camp's warhead (Data.TRADERS): the usual caravan's cost, and the price in gold on top (Game.warhead_price).
 	"deal":    {"name": "Warhead run",     "verb": "Buy the warhead", "crew": 2, "cost": {"grain": 5, "wood": 3}},
 }
@@ -483,7 +483,7 @@ const SOLDIER := {"name": "Hunting party", "glyph": "♠", "color": Color("c9e07
 # empty they go hungry: a survivor who goes hungry for STARVE_DEATH seasons in a row dies, and at
 # STARVING_AT they are starving. Unspent food goes back to your stores when they come home.
 const SCOUT_RATION := 1
-const SCOUT_PACK := 8
+const SCOUT_PACK := 10   # what one survivor can carry (CARRY_PER_PERSON): a party down to its last person still moves at full speed
 const FOOD_KINDS := ["grain", "veg", "meat"]
 # The route a selected party would take fades from white to yellow to red as its pack runs down:
 # yellow once FOOD_WARN of the food would be eaten by that point, red from where it runs out.

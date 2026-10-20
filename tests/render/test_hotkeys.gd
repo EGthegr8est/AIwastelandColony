@@ -301,23 +301,23 @@ func test_z_sends_a_hunting_party_to_the_animal_on_the_picked_tile() -> void:
 	await _look_at(free_tile)
 	assert_eq(_cap_of(_row("Send hunting party on foot")), "Z", "the hunting party's row wears the letter")
 	assert_eq(_cap_of(_row("Hunt with scavengers on foot")), "1", "scavengers hunting keep their digit, not the letter")
-	var troops := Game.troops
+	var pop := Game.pop
 	_key(KEY_Z)
 	assert_eq(Units.units.size(), 1)
 	var party: Dictionary = Units.units[-1]
 	assert_eq(party.job, "hunters")
 	assert_eq(party.mover, "foot")
 	assert_eq(party.dest, deer.id, "they go after that animal")
-	assert_eq(Game.troops, troops - Data.EXPEDITIONS["hunters"].crew, "a hunting party is troops")
+	assert_eq(Game.pop, pop - Units.crew_for("hunters"), "a hunting party is survivors")
 
 
-func test_the_hunting_keys_say_why_without_troops_or_a_horse() -> void:
+func test_the_hunting_keys_say_why_without_survivors_to_spare_or_a_horse() -> void:
 	Units._add_animal("deer", free_tile)
 	Game.update_fog()
 	await _look_at(free_tile)
-	Game.troops = 0
+	Game.pop = 2
 	_key(KEY_Z)
-	assert_true(_log_has("A hunting party on foot: Need"), "no troops: %s" % str(Game.log_lines.slice(-2)))
+	assert_true(_log_has("A hunting party on foot: Need"), "too few at home: %s" % str(Game.log_lines.slice(-2)))
 	_key(KEY_X)
 	assert_true(_log_has("A hunting party on horseback"))
 	assert_eq(Units.units.size(), 0)

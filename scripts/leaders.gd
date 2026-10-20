@@ -52,6 +52,7 @@ const PERKS := {
 	"sharp_nose": {"name": "Sharp nose", "theme": "Exploring", "text": "+1 on every scavenge, trap, cache and site roll."},
 	"lucky_streak": {"name": "Lucky streak", "theme": "Exploring", "text": "Every party gets one free reroll, like the Lucky trait."},
 	"field_medic": {"name": "Field medic", "theme": "Exploring", "text": "Injuries from rolls are one step lighter."},
+	"big_party": {"name": "Big party", "theme": "Exploring", "text": "Scavenging and hunting parties take 4 survivors instead of 3."},
 	"silver_tongue": {"name": "Silver tongue", "theme": "Trade", "text": "Dustwell started 20 relations friendlier, and befriending it costs half."},
 	"caravan_master": {"name": "Caravan master", "theme": "Trade", "text": "Caravan and boat trade runs bring home 25% more gold."},
 }

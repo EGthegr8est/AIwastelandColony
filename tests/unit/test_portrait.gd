@@ -57,5 +57,6 @@ func test_every_survivor_gets_a_portrait_seed() -> void:
 		and not Game.route("foot", hq, c).is_empty())
 	Units.send("scout", "foot", target)
 	var faces: Array = Units.units[-1].survivors.map(func(s): return s.face)
-	assert_eq(faces.size(), 2)
+	assert_eq(faces.size(), 3)
 	assert_ne(faces[0], faces[1])
+	assert_ne(faces[1], faces[2])

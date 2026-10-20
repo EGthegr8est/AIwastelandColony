@@ -228,7 +228,7 @@ func send_cost_text(job: String, mover: String) -> String:
 ## "" if this expedition can leave, otherwise why not. Boats leave from `from` (your port).
 ## How many doses of Salt a party of this job takes with it: one for each survivor, if "Take Salt" is on and the stores have enough.
 func salt_doses(job: String) -> int:
-	var crew: int = Data.EXPEDITIONS[job].crew
+	var crew: int = crew_for(job)
 	return crew if Game.salt_on and int(Game.items.get("salt", 0)) >= crew else 0
 
 
@@ -248,13 +248,8 @@ func send_status(job: String, mover: String, target: Vector2i, dest := -1, from 
 		var trip := bomb_trip_fuel(from, target)
 		if trip > float(tank_size(job, mover)):
 			return "Too far: the round trip burns %.1f fuel and the tank holds %d" % [trip, tank_size(job, mover)]
-	if job == "scout" and scouts_out() >= Game.scout_parties():
-		return "All %d scouting parties are out" % Game.scout_parties()
-	if job == "hunters":
-		if Game.troops < e.crew:
-			return "Need %d troops to spare" % e.crew
-	elif Game.pop <= e.crew + 1:
-		return "Need %d colonists to spare" % e.crew
+	if Game.pop <= crew_for(job) + 1:
+		return "Need %d colonists to spare" % crew_for(job)
 	if job in ["caravan", "boat", "deal"] and trade_runs() >= Game.caravan_slots():
 		return "All %d caravan slots in use" % Game.caravan_slots()
 	if job == "caravan" and dest == -1:
@@ -291,16 +286,17 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 	if job == "boat":
 		from = launch_tile(from)
 	var e: Dictionary = Data.EXPEDITIONS[job]
+	var crew := crew_for(job)
 	Game.pay(send_cost(job, mover))
 	if job == "bomb":
 		Game.items["nuke"] = int(Game.items["nuke"]) - 1   # it is loaded: it leaves the stores now
 	Game.note_sent(job)
-	if job == "hunters":
-		Game.troops -= e.crew
 	var path := outbound_route(job, mover, from, target)
 	var u := _make_unit(job, Data.PLAYER, mover, from, path[-1])
-	u.crew = e.crew
-	u.survivors = _make_crew(e.crew, true) if job == "hunters" else Game.take_crew(e.crew)
+	u.crew = crew
+	u.survivors = Game.take_crew(crew)
+	if job in PARTY_JOBS:
+		u["number"] = _next_party_number()
 	var doses := salt_doses(job)
 	if doses > 0:
 		Game.items["salt"] = int(Game.items["salt"]) - doses
@@ -317,9 +313,9 @@ func send(job: String, mover: String, target: Vector2i, dest := -1, from := Vect
 	units.append(u)
 	if job == "scout":
 		Game.measure(from)
-		Game.add_log("%s set out %s toward %d,%d as a scouting party." % [names_text(u), Data.MOVERS[mover].by, u.target.x, u.target.y])
+		Game.add_log("%s (%s) set out %s toward %d,%d as scouts." % [names_text(u), members_text(u), Data.MOVERS[mover].by, u.target.x, u.target.y])
 	else:
-		Game.add_log("%s (%s) set out %s toward %d,%d." % [e.name, names_text(u), Data.MOVERS[mover].by, u.target.x, u.target.y])
+		Game.add_log("%s (%s) set out %s toward %d,%d." % [names_text(u) if int(u.get("number", 0)) > 0 else e.name, members_text(u), Data.MOVERS[mover].by, u.target.x, u.target.y])
 	Game.changed.emit()
 
 
@@ -351,8 +347,48 @@ func _wipe(u: Dictionary, cause: String) -> void:
 
 ## "Mara", "Mara and Dex", "Mara, Dex and Odo"; "the crew" if nobody is named.
 func names_text(u: Dictionary) -> String:
+	return party_label(u) if int(u.get("number", 0)) > 0 else members_text(u)
+
+
+## "Mara", "Mara and Dex", "Mara, Dex and Odo"; "the crew" if nobody is named.
+func members_text(u: Dictionary) -> String:
 	var names: Array = u.survivors.map(func(s): return s.name)
 	return list_text(names) if not names.is_empty() else "the crew"
+
+
+## "Scavenger Party 2": your parties are numbered 1, 2, 3... for as long as they are out, and the number goes to the next party when
+## one comes home or is lost (the party bar and its keys use the same numbers).
+func party_label(u: Dictionary) -> String:
+	return "%s %d" % [Data.EXPEDITIONS[u.job].name, int(u.number)]
+
+
+## What to call a unit of yours in a panel: "Scavenger Party 2", or its kind of expedition ("Trade caravan") when it has no number.
+func unit_title(u: Dictionary) -> String:
+	return party_label(u) if int(u.get("number", 0)) > 0 else Data.EXPEDITIONS[u.job].name
+
+
+const PARTY_JOBS := ["scav", "scout", "hunters"]   # the three ways to use a Scavenger Party
+
+
+## The lowest number no party of yours is using.
+func _next_party_number() -> int:
+	var used := {}
+	for other in units:
+		if other.owner == Data.PLAYER and int(other.get("number", 0)) > 0:
+			used[int(other.number)] = true
+	var n := 1
+	while used.has(n):
+		n += 1
+	return n
+
+
+## How many survivors an expedition takes: a Scavenger Party's 3, or 4 for a leader with Big party on a scavenging or hunting run
+## (a scouting party stays light), and what Data.EXPEDITIONS says for everything else.
+func crew_for(job: String) -> int:
+	var crew: int = Data.EXPEDITIONS[job].crew
+	if job in ["scav", "hunters"] and Game.has_quirk("big_party"):
+		crew += 1
+	return crew
 
 
 ## "Mara", "Mara and Dex", "Mara, Dex and Odo".
@@ -435,7 +471,7 @@ func order_scouts(id: int, target: Vector2i) -> void:
 	u.path = Game.route(u.mover, u.pos, target).slice(1)
 	if u.path.is_empty():
 		u.stage = "station"
-	Game.add_log("%s head for %d,%d." % [names_text(u), target.x, target.y])
+	Game.add_log("%s heads for %d,%d." % [names_text(u), target.x, target.y])
 	Game.changed.emit()
 
 
@@ -449,7 +485,7 @@ func recall_scouts(id: int) -> void:
 		_come_home(u)
 		units.erase(u)
 	else:
-		Game.add_log("%s are heading back to camp." % names_text(u))
+		Game.add_log("%s is heading back to camp." % names_text(u))
 	Game.changed.emit()
 
 
@@ -470,9 +506,9 @@ func _feed(u: Dictionary) -> void:
 		else:
 			Game.add_log("%s has gone hungry: the pack is empty." % s.name)
 	if food_total(u) == 0 and before > 0:
-		Game.add_log("%s have eaten the last of their food at %d,%d." % [names_text(u), u.pos.x, u.pos.y])
+		Game.add_log("%s has eaten the last of its food at %d,%d." % [names_text(u), u.pos.x, u.pos.y])
 	elif food_total(u) > 0 and food_days(u) <= 2.0 * Data.SEASON_DAYS:
-		Game.add_log("%s are low on food (%d left)." % [names_text(u), food_total(u)])
+		Game.add_log("%s is low on food (%d left)." % [names_text(u), food_total(u)])
 
 
 # ---------------------------------------------------------------- food packs
@@ -823,9 +859,9 @@ func _strand(u: Dictionary) -> void:
 		"plane", "bomber":
 			_crash(u, where)
 		"boat":
-			Game.add_log("OUT OF FUEL: the boat ran dry at %s and was abandoned. %s wade ashore and head home on foot." % [where, names_text(u)])
+			Game.add_log("OUT OF FUEL: the boat ran dry at %s and was abandoned. %s wades ashore and heads home on foot." % [where, names_text(u)])
 		_:
-			Game.add_log("OUT OF FUEL: the war rig ran dry at %s and was abandoned. %s continue on foot." % [where, names_text(u)])
+			Game.add_log("OUT OF FUEL: the war rig ran dry at %s and was abandoned. %s continues on foot." % [where, names_text(u)])
 	if u.crew <= 0:
 		_lost(u)   # nobody walked away from the wreck
 		return
@@ -1058,7 +1094,7 @@ func _arrive(u: Dictionary) -> void:
 		return
 	if u.job == "scout":
 		u.stage = "station"
-		Game.add_log("%s reached %d,%d and are keeping watch." % [names_text(u), u.pos.x, u.pos.y])
+		Game.add_log("%s reached %d,%d and is keeping watch." % [names_text(u), u.pos.x, u.pos.y])
 		return
 	if u.job in ["scav", "hunters"]:
 		_begin_visit(u)
@@ -1102,10 +1138,7 @@ func _come_home(u: Dictionary) -> void:
 		else:
 			Game.res[k] += u.carry[k]
 	var legs := broken_legs(u)   # counted before they are home and healed
-	if u.job == "hunters":
-		Game.troops += u.crew   # troops go back to being troops
-	else:
-		Game.welcome_home(u.survivors, u.crew)
+	Game.welcome_home(u.survivors, u.crew)
 	var name: String = Data.EXPEDITIONS[u.job].name
 	if u.carry.is_empty():
 		Game.add_log("%s came home." % name)
@@ -1129,7 +1162,7 @@ func _come_home(u: Dictionary) -> void:
 func _lost(u: Dictionary, at_end := false) -> void:
 	if u.mover in Data.VEHICLES:
 		Game.vehicles[u.mover] = maxi(Game.vehicles[u.mover] - 1, 0)
-	Game.add_log("Your %s was wiped out in the wastes." % Data.EXPEDITIONS[u.job].name.to_lower())
+	Game.add_log("%s was wiped out in the wastes." % (party_label(u) if int(u.get("number", 0)) > 0 else "Your " + Data.EXPEDITIONS[u.job].name.to_lower()))
 	_mark_gone(u, at_end)
 
 
@@ -1349,7 +1382,7 @@ func begin_camp_strike(uid: int, tribe_id: int) -> bool:
 	Game.measure(u.pos)
 	u["visit"] = D20Visit.begin_camp_strike(visit_ctx(u), D20.loot_scale, dice, u.survivors, t.id, int(t.strength))
 	u.stage = "site"
-	Game.add_log("%s get ready to attack the %s at %d,%d." % [names_text(u), t.name, t.pos.x, t.pos.y])
+	Game.add_log("%s gets ready to attack the %s at %d,%d." % [names_text(u), t.name, t.pos.x, t.pos.y])
 	_sync_visit(u)
 	Game.changed.emit()
 	return true
@@ -1364,7 +1397,7 @@ func begin_strike(uid: int, cell: Vector2i) -> bool:
 	Game.measure(u.pos)
 	u["visit"] = D20Visit.begin_strike(visit_ctx(u), D20.loot_scale, dice, u.survivors, cell, building, Game.building_dc(cell))
 	u.stage = "site"
-	Game.add_log("%s get ready to attack the %s at %d,%d." % [names_text(u), Data.BUILDINGS[building].name.to_lower(), cell.x, cell.y])
+	Game.add_log("%s gets ready to attack the %s at %d,%d." % [names_text(u), Data.BUILDINGS[building].name.to_lower(), cell.x, cell.y])
 	_sync_visit(u)
 	Game.changed.emit()
 	return true
@@ -2083,7 +2116,7 @@ func _frog_do(u: Dictionary, choice: String) -> int:
 			if choice == "fight":
 				v["stage"] = "frog_fight"
 				v.last.append("You stand and fight.")
-				Game.add_log("%s stand and fight the Giant Frog." % names_text(u))
+				Game.add_log("%s stands and fights the Giant Frog." % names_text(u))
 			else:
 				_frog_run(u)
 		"frog_wait":
@@ -2259,7 +2292,7 @@ func _finish_frog(u: Dictionary, v: Dictionary) -> void:
 		"left":
 			Game.add_log("%s backed off from the Giant Frog." % names_text(u))
 		_:
-			Game.add_log("%s limp away from the Giant Frog, hurt." % names_text(u))
+			Game.add_log("%s limps away from the Giant Frog, hurt." % names_text(u))
 	if u.job in ["scav", "hunters"]:
 		_turn_back(u)
 	Game.changed.emit()
@@ -2448,6 +2481,8 @@ func load_from(data: Dictionary) -> void:
 	for u in units:
 		if u.job != "band" and u.stage != "station" and u.stage != "site":
 			u.path = Game.route(u.mover, u.pos, u.target if u.stage == "out" else u.home).slice(1)
+		if u.owner == Data.PLAYER and u.job in PARTY_JOBS and int(u.get("number", 0)) <= 0:
+			u["number"] = _next_party_number()   # a save from before parties were numbered
 
 
 ## JSON can't store Vector2i, so cells are saved as [x, y] and paths are rebuilt on load.

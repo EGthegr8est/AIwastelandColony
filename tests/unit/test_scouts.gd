@@ -39,15 +39,16 @@ func test_survivors_get_names_and_details() -> void:
 	var pop := Game.pop
 	Units.send("scout", "foot", target)
 	var u: Dictionary = Units.units[-1]
-	assert_eq(Game.pop, pop - 2)
-	assert_eq(u.survivors.size(), 2)
-	assert_eq(u.crew, 2)
+	assert_eq(Game.pop, pop - 3)
+	assert_eq(u.survivors.size(), 3)
+	assert_eq(u.crew, 3)
 	assert_ne(u.survivors[0].name, u.survivors[1].name)
 	for s in u.survivors:
 		assert_has(Data.SURVIVOR_NAMES, s.name)
 		assert_gt(s.age, 16)
 		assert_eq(s.hunger, 0)
-	assert_has(Units.names_text(u), " and ")
+	assert_has(Units.members_text(u), " and ")
+	assert_eq(Units.names_text(u), "Scavenger Party 1", "a party is called by its number")
 
 
 func test_scouts_stay_at_the_tile_until_recalled() -> void:
@@ -65,7 +66,7 @@ func test_scouts_stay_at_the_tile_until_recalled() -> void:
 	for i in 12:
 		Units.season_turn()
 	assert_eq(Units.scouts_out(), 0)
-	assert_eq(Game.pop, pop + 2)
+	assert_eq(Game.pop, pop + 3)
 
 
 func test_scouts_can_be_sent_elsewhere() -> void:
@@ -110,14 +111,14 @@ func test_scouts_eat_from_their_pack_every_season() -> void:
 	var stores := Game.res.duplicate()
 	var pack := Units.food_total(u)
 	Units.season_turn()
-	assert_eq(Units.food_total(u), pack - 2 * Data.SCOUT_RATION)
+	assert_eq(Units.food_total(u), pack - u.crew * Data.SCOUT_RATION)
 	assert_eq(Game.res, stores, "the stores aren't touched once they've left")
 
 
 func test_the_pack_feeds_a_party_for_pack_over_crew_seasons() -> void:
 	var u := _send("foot")
 	u.food = {"grain": 4, "veg": 2}
-	assert_almost_eq(Units.food_days(u), 6.0 * Data.SEASON_DAYS / (2 * Data.SCOUT_RATION), 0.001)
+	assert_almost_eq(Units.food_days(u), 6.0 * Data.SEASON_DAYS / (3 * Data.SCOUT_RATION), 0.001)
 	u.food = {}
 	assert_eq(Units.food_days(u), 0.0)
 	u.survivors = []
@@ -176,7 +177,7 @@ func test_war_rig_that_runs_dry_becomes_a_party_on_foot() -> void:
 	assert_false(u.has("fuel"))
 	assert_eq(u.stage, "station")
 	assert_eq(Game.vehicles["car"], 0)
-	assert_eq(u.crew, 2)
+	assert_eq(u.crew, 3)
 	assert_eq(Units.units.size(), 1)
 
 
@@ -186,7 +187,7 @@ func test_war_rig_that_runs_dry_is_lost_and_nobody_is_hurt() -> void:
 	Units.season_turn()
 	assert_eq(u.mover, "foot")
 	assert_eq(Game.vehicles["car"], 0)
-	assert_eq(u.survivors.size(), 2)
+	assert_eq(u.survivors.size(), 3)
 	for s in u.survivors:
 		assert_false(s.hurt)
 		assert_eq(s.hp, Data.SURVIVOR_HP)
@@ -202,7 +203,7 @@ func test_a_plane_that_runs_dry_crashes_and_the_survivors_walk_on_injured() -> v
 	assert_eq(u.mover, "foot")
 	assert_false(u.has("fuel"))
 	assert_eq(Game.vehicles["plane"], 0, "the plane is lost")
-	assert_eq(u.survivors.size(), 2)
+	assert_eq(u.survivors.size(), 3)
 	assert_eq(u.pos, target)
 	assert_eq(u.stage, "station")
 	for s in u.survivors:

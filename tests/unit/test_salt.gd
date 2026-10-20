@@ -146,7 +146,9 @@ func test_not_enough_salt_for_the_whole_party_means_none_is_taken() -> void:
 	Game.items["salt"] = 2
 	Game.salt_on = true
 	assert_eq(Units.salt_doses("scav"), 0, "three survivors need three doses")
-	assert_eq(Units.salt_doses("scout"), 2)
+	assert_eq(Units.salt_doses("scout"), 0, "a scouting party is three too")
+	Game.items["salt"] = 3
+	assert_eq(Units.salt_doses("scout"), 3)
 
 
 func test_salt_halves_the_radiation_a_survivor_takes_in() -> void:

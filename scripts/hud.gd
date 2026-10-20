@@ -997,7 +997,7 @@ func _party_card(u: Dictionary) -> HBoxContainer:
 	info.custom_minimum_size = Vector2(210, 0)
 	card.add_child(info)
 	var is_picked: bool = u.id == Game.selected_scout
-	_label(info, "%s %s%s" % [kind.glyph, Data.EXPEDITIONS[u.job].name, "  [picked]" if is_picked else ""], BRIGHT)
+	_label(info, "%s %s%s" % [kind.glyph, Units.unit_title(u), "  [picked]" if is_picked else ""], BRIGHT)
 	_label(info, "%s, %s" % [Data.MOVERS[u.mover].name, Units.stage_text(u)], DIM)
 	for s in u.survivors:
 		var bad: bool = s.hunger >= Data.STARVING_AT or Units.sick_level(s) >= 2
@@ -1380,7 +1380,7 @@ func _refresh_tile() -> void:
 			if u.job == "band":
 				_label(box, "%s Raider band here (strength %d)!" % [kind.glyph, u.strength], kind.color)
 			else:
-				_label(box, "%s Your %s, %s (%d crew)" % [kind.glyph, Data.EXPEDITIONS[u.job].name.to_lower(),
+				_label(box, "%s Your %s, %s (%d crew)" % [kind.glyph, Units.unit_title(u) if int(u.get("number", 0)) > 0 else Data.EXPEDITIONS[u.job].name.to_lower(),
 					Units.stage_text(u), u.crew], kind.color)
 				_party_details(box, u)
 	var tribe := Units.tribe_at(c)
@@ -1410,7 +1410,7 @@ func _refresh_tile() -> void:
 	if known[0] == Data.PLAYER and known[1] == "port":
 		_header(box, "River trade")
 		var e: Dictionary = Data.EXPEDITIONS["boat"]
-		_button(box, "%s (%d crew, %s)" % [e.verb, e.crew, Units.send_cost_text("boat", "boat")],
+		_button(box, "%s (%d crew, %s)" % [e.verb, Units.crew_for("boat"), Units.send_cost_text("boat", "boat")],
 			func(): Units.send("boat", "boat", c, -1, c), Units.send_status("boat", "boat", c, -1, c))
 		var tank := Units.tank_size("boat", "boat")
 		if tank > 0 and Units.boat_trip_fuel(c) > tank:
@@ -2280,9 +2280,9 @@ func _scout_orders(box: VBoxContainer, c: Vector2i) -> void:
 		var trip := ""
 		if why == "":
 			trip = ", %d days there" % ceili(Game.party_route_days(mover, Game.route(mover, Game.home(Data.PLAYER), c)))
-		_row_button(box, "%s %s" % [e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [e.crew, Units.send_cost_text("scout", mover), trip],
+		_row_button(box, "%s %s" % [e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [Units.crew_for("scout"), Units.send_cost_text("scout", mover), trip],
 			func(): Units.send("scout", mover, c), why, "", SEND_KEYS.get(mover, "") if keyed else "")
-	_label(box, "   Parties out: %d/%d" % [Units.scouts_out(), Game.scout_parties()], DIM)
+	_label(box, "   Parties out: %d" % Units.scouts_out(), DIM)
 
 
 ## Days for a party already in the field to reach `c`, counting the time lost at the end of each season.
@@ -2368,7 +2368,7 @@ func _expedition_buttons(box: VBoxContainer, job: String, target: Vector2i, dest
 		var cost_text := Game.cost_text(Units.send_cost(job, mover) if job == "deal" else e.cost)
 		if Units.salt_doses(job) > 0:
 			cost_text = ("%d Salt" if cost_text == "free" else cost_text + ", %d Salt") % Units.salt_doses(job)
-		_row_button(box, "%s %s" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [e.crew, cost_text, trip],
+		_row_button(box, "%s %s" % [verb if verb != "" else e.verb, Data.MOVERS[mover].by], "%d crew, %s%s" % [Units.crew_for(job), cost_text, trip],
 			func(): Units.send(job, mover, target, dest), why, "", SEND_KEYS.get(mover, "") if keyed else "")
 
 
@@ -2603,13 +2603,12 @@ func _refresh_colony() -> void:
 	for u in mine:
 		var kind: Dictionary = Units.kind_info(Units.glyph_kind(u))
 		var pos: Vector2i = u.pos
-		_button(box, "%s %s %s, %s at %d,%d (%d crew)" % [kind.glyph, Data.EXPEDITIONS[u.job].name, Data.MOVERS[u.mover].by,
+		_button(box, "%s %s %s, %s at %d,%d (%d crew)" % [kind.glyph, Units.unit_title(u), Data.MOVERS[u.mover].by,
 			Units.stage_text(u), pos.x, pos.y, u.crew],
 			func(): Game.focus.emit(pos); Game.select(pos))
-		_label(box, "   " + Units.names_text(u) + (" (starving!)" if u.survivors.any(func(s): return s.hunger >= Data.STARVING_AT) else ""), DIM)
+		_label(box, "   " + Units.members_text(u) + (" (starving!)" if u.survivors.any(func(s): return s.hunger >= Data.STARVING_AT) else ""), DIM)
 	_header(box, "Scouting")
-	_label(box, "Parties out: %d/%d. Click a tile to send scouts or move a party there; they stay and keep watch." % [
-		Units.scouts_out(), Game.scout_parties()])
+	_label(box, "Parties out: %d. Click a tile to send scouts or move a party there; they stay and keep watch." % Units.scouts_out())
 
 
 ## What the "?" on the Colony tab says.
