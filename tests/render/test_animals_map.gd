@@ -129,7 +129,7 @@ func test_every_animal_has_its_picture_in_the_animals_file() -> void:
 
 func test_an_animal_walks_in_the_season_replay_without_deciding_how_long_it_lasts() -> void:
 	var a := _near("deer")
-	var party: Dictionary = Units._make_unit("scav", Data.PLAYER, "foot", hq + Vector2i(1, 0), hq)
+	var party: Dictionary = Units._make_unit("caravan", Data.PLAYER, "foot", hq + Vector2i(1, 0), hq)   # a caravan walks at END SEASON (your parties walk when you order it)
 	party.crew = 3
 	party.survivors = Units._make_crew(3)
 	party.stage = "back"

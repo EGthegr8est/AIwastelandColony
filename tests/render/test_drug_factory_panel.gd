@@ -108,7 +108,7 @@ func test_switching_take_salt_on_puts_the_doses_on_the_scouting_buttons() -> voi
 	await wait_frames(3)
 	assert_true(Game.salt_on)
 	assert_true(_button_texts().any(func(t): return t.begins_with("Take Salt: on")))
-	assert_true(_button_texts().any(func(t): return t.contains("2 Salt")), "a scouting party of two takes two doses")
+	assert_true(_button_texts().any(func(t): return t.contains("3 Salt")), "a Scavenger Party of three takes three doses")
 
 
 func test_the_market_row_for_salt_sells_and_buys() -> void:

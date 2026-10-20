@@ -8,8 +8,9 @@ signal focus(cell: Vector2i)
 signal tile_selected
 signal game_ended(kind: String)   # the game has ended: "raiders_defeated", "colony_prospers" or "defeat"
 signal season_played(replay: Dictionary)   # END SEASON is done: here is how the units walked it, for the map to play back (season_replay.gd)
-signal replay_skip     # finish the replay or march that is playing at once
-signal replay_done     # the map has finished playing (or skipped) a replay or march
+signal walk_played(replay: Dictionary)   # one of your parties has just walked (it moves the moment you order it): here is the walk, for the map to play at the normal pace (the same kind of replay as a season's)
+signal replay_skip     # finish the replay that is playing at once
+signal replay_done     # the map has finished playing (or skipped) a replay
 signal blasted(cell: Vector2i)   # a nuke went off here: the map plays the explosion (a crater's once the die has landed, a bomber's in the season replay instead)
 signal strike_preview_changed    # the red square over the tile a Nuclear strike would hit (strike_preview) has moved
 signal hollow_mile_found(cell: Vector2i, hot: bool)   # your scouts saw the first tile of the old highway (once a game): the HUD shows its picture; `hot` is whether the party that found it is taking high radiation
@@ -64,7 +65,8 @@ var stats := {}                # what the stats screen after an ending shows, se
 var prosper_streak := 0        # seasons in a row the Rust Kings have been too weak to threaten you
 var starved_now := false       # the colony starved this season
 var buildings_lost := 0        # your buildings destroyed this season, by anyone (capped by RAID_LOSS_CAP)
-var replaying := false         # the map is playing back a season or a march (the map sets it); END SEASON then skips it
+var replaying := false         # the map is playing back a season or a walk (the map sets it); END SEASON then skips a season's replay
+var replay_is_walk := false    # what is playing is the walk of one of your parties, not a season: END SEASON then skips it and goes on
 
 # Fog of war. memory[viewer] has one entry per tile: null if that colony has never
 # seen it, otherwise [owner, building] as it looked the last time it was in sight.

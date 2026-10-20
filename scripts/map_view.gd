@@ -315,6 +315,7 @@ func _ready() -> void:
 	Game.blasted.connect(_on_blasted)
 	Game.strike_preview_changed.connect(overlay_layer.queue_redraw)
 	Game.season_played.connect(_on_season_played)
+	Game.walk_played.connect(_on_walk_played)
 	Game.replay_skip.connect(finish_replay)
 	# A monospace glyph is narrower than our square cell, so pipes would leave gaps.
 	# Scale them so the glyph box exactly covers the cell, like a square DF tileset.
@@ -633,6 +634,57 @@ func _on_season_played(r: Dictionary) -> void:
 	_begin_replay(r, SeasonReplay.seconds())
 
 
+## One of your parties has walked the moment you ordered it (Units._go): the map plays the walk at the normal pace, as a season's walk
+## is played. A walk that starts while another is still playing joins it, so every party you send is seen walking, together.
+func _on_walk_played(r: Dictionary) -> void:
+	if SeasonReplay.mode == "off" or not SeasonReplay.has_motion(r):
+		return
+	if playing and replay.get("walk", false):
+		_join_walk(r)
+		return
+	finish_replay()   # a season's replay still playing is over
+	_begin_replay(r, SeasonReplay.seconds())
+
+
+## Adds a walk to the one playing: it starts now, at the day the playing one has got to, or, for a party that is still walking in the
+## replay, when it has finished that walk: it carries on along its trail from where it stopped.
+func _join_walk(r: Dictionary) -> void:
+	var offset := replay_day()
+	for a in r.actors:
+		var already := _replay_actor(int(a.id))
+		if not already.is_empty():
+			offset = maxf(offset, already.trail.back()[1])
+	for a in r.actors:
+		var trail: Array = a.trail.map(func(step): return [step[0], step[1] + offset])
+		var gone: float = a.gone_day if a.gone_day < 0.0 else a.gone_day + offset
+		var mine := _replay_actor(int(a.id))
+		if mine.is_empty():
+			a["trail"] = trail
+			a["gone_day"] = gone
+			replay.actors.append(a)
+			replay_ids[a.id] = true
+		else:
+			mine.trail.append_array(trail)
+			mine["gone_day"] = gone
+			mine["parked"] = a.parked
+	for e in r.events:
+		replay.events.append({"kind": e.kind, "cell": e.cell, "day": e.day + offset})
+	for reveal in r.reveals:
+		replay.reveals.append([reveal[0], reveal[1] + offset])
+	replay.reveals.sort_custom(func(a, b): return a[1] < b[1])
+	SeasonReplay.settle(replay)
+	replay_length = SeasonReplay.length(replay, replay_secs)
+	_update_fades()
+	unit_layer.queue_redraw()
+
+
+func _replay_actor(id: int) -> Dictionary:
+	for a in replay.actors:
+		if int(a.id) == id:
+			return a
+	return {}
+
+
 func _begin_replay(r: Dictionary, secs: float) -> void:
 	replay = r
 	replay_secs = secs
@@ -646,6 +698,7 @@ func _begin_replay(r: Dictionary, secs: float) -> void:
 	r.reveals.sort_custom(func(a, b): return a[1] < b[1])
 	playing = true
 	Game.replaying = true
+	Game.replay_is_walk = bool(r.get("walk", false))
 	_update_fades()
 	unit_layer.queue_redraw()
 
@@ -665,11 +718,12 @@ func finish_replay() -> void:
 	replay_ids = {}
 	_fade = {}
 	Game.replaying = false
+	Game.replay_is_walk = false
 	unit_layer.queue_redraw()
 	Game.replay_done.emit()
 
 
-## Which day of the season the replay has got to (-1 when none is playing).
+## Which day of the replay has got to (-1 when none is playing): a season's 40 days take 3 seconds, so a walk of 10 days takes less than a second.
 func replay_day() -> float:
 	return clock * Data.SEASON_DAYS / replay_secs if playing else -1.0
 
@@ -694,7 +748,7 @@ func _tick_replay(delta: float) -> void:
 
 
 static func _is_parked(u: Dictionary) -> bool:
-	return u.job in Units.PARTY_JOBS and u.stage == "station"
+	return Units.is_parked(u)
 
 
 ## Raider bands fade in and out as they cross the edge of what you can see; your own parties are always there.

@@ -1250,10 +1250,10 @@ func _set_art_style(n: int) -> void:
 	Game.changed.emit()   # redraws the map (and, a moment later, every panel)
 
 
-## END SEASON. While the map is still playing the last season (or a march) back, the press only skips that: it does not
-## end another season behind your back.
+## END SEASON. While the map is still playing the last season back, the press only skips that: it does not end another season
+## behind your back. A party's walk is not a season: the press skips it (Game.end_season does) and ends the season.
 func end_season_pressed() -> void:
-	if Game.replaying:
+	if Game.replaying and not Game.replay_is_walk:
 		Game.skip_replay()
 		return
 	Game.end_season()

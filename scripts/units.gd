@@ -932,18 +932,35 @@ func _scout_turn(u: Dictionary) -> void:
 
 
 ## Walks a party as far as its days allow and does what arriving means (a visit, keeping watch, coming home). True if it got there.
+## The walk is noted the way a season's is (one actor, its days counted from the start of this walk) and handed to the map, which plays
+## it at the normal pace: Game.walk_played.
 func _go(u: Dictionary) -> bool:
 	if u.path.is_empty():
 		return false
+	var sight_before: PackedByteArray = Game.sight[Data.PLAYER].duplicate() if Game.sight.has(Data.PLAYER) else PackedByteArray()
+	var outer := [_recording, replay, _actors]   # a season's own notes are put back as they were
+	var actor := {"id": u.id, "kind": glyph_kind(u), "owner": u.owner, "mover": u.mover, "parked": false,
+		"trail": [[u.pos, 0.0]], "gone_day": SeasonReplay.STILL}
+	replay = {"actors": [actor], "events": [], "reveals": [], "sight_before": PackedByteArray()}
+	_actors = {u.id: actor}
+	_recording = true
 	var arrived := _advance(u)
 	if not u.get("gone", false):
 		if arrived:
 			_arrive(u)
 		elif u.crew <= 0:
 			_lost(u)
+	actor["parked"] = not u.get("gone", false) and is_parked(u)
+	var walk := SeasonReplay.settle(replay)
+	walk["sight_before"] = sight_before
+	walk["walk"] = true
+	_recording = outer[0]
+	replay = outer[1]
+	_actors = outer[2]
 	if u.get("gone", false):
 		units.erase(u)
 	Game.update_fog()
+	Game.walk_played.emit(walk)
 	Game.changed.emit()
 	return arrived
 
@@ -1011,7 +1028,7 @@ func _record_start() -> void:
 	_actors = {}
 	for u in units:
 		var actor := {"id": u.id, "kind": glyph_kind(u), "owner": u.owner, "mover": u.mover,
-			"parked": u.job in PARTY_JOBS and u.stage == "station", "trail": [[u.pos, 0.0]], "gone_day": SeasonReplay.STILL}
+			"parked": is_parked(u), "trail": [[u.pos, 0.0]], "gone_day": SeasonReplay.STILL}
 		replay.actors.append(actor)
 		_actors[u.id] = actor
 	if frog.get("state", "") == "loose":
@@ -1025,6 +1042,11 @@ func _record_start() -> void:
 		replay.actors.append(wild)
 		_actors[a.id] = wild
 	_recording = true
+
+
+## Is this one of your parties standing about, waiting for its orders? (The map bobs it up and down.) A party in the middle of a search is busy, not waiting.
+func is_parked(u: Dictionary) -> bool:
+	return u.job in PARTY_JOBS and u.stage in ["station", "out", "back"]
 
 
 ## The day (0 to Data.SEASON_DAYS) this unit last moved on: where its walk has got to.
@@ -1105,6 +1127,7 @@ func _note_event(kind: String, cell: Vector2i, day: float) -> void:
 func _advance(u: Dictionary) -> bool:
 	var immediate: bool = u.job in PARTY_JOBS   # your parties walk when you order it, with the days they have left this turn
 	var budget: float = float(u.move_left) if immediate else float(Data.SEASON_DAYS)
+	var start := budget   # the notes for the map count the days of this walk from here
 	var days_per_tile: float = Data.MOVERS[u.mover].days * party_slowdown(u)   # a heavy load or a broken leg takes longer
 	if u.owner == Data.PLAYER:
 		days_per_tile *= Game.travel_mult()
@@ -1117,12 +1140,15 @@ func _advance(u: Dictionary) -> bool:
 			var burn: float = Data.VEHICLE_FUEL[u.mover].burn * fuel_mult() * Vector2(next - u.pos).length()
 			if u.fuel < burn:
 				_strand(u)
+				if immediate:
+					u.move_left = budget   # the days it did walk before the tank ran dry are spent
+					u.moved = true
 				return false
 			u.fuel -= burn
 		budget -= cost
 		u.pos = next
 		u.path.pop_front()
-		_note_step(u, Data.SEASON_DAYS - budget)
+		_note_step(u, start - budget)
 		if _climb_check(u, next):   # a broken leg: every step from here takes longer
 			days_per_tile = Data.MOVERS[u.mover].days * party_slowdown(u) * (Game.travel_mult() if u.owner == Data.PLAYER else 1.0)
 		if _highway_check(u, next) and (u.get("gone", false) or u.crew <= 0):
@@ -1131,7 +1157,7 @@ func _advance(u: Dictionary) -> bool:
 			var fresh: Array = Game.reveal(Data.PLAYER, u.pos, sight_of(u))
 			if _recording:
 				for c in fresh:
-					replay.reveals.append([c, Data.SEASON_DAYS - budget])
+					replay.reveals.append([c, start - budget])
 			u.rad_days += Game.radiation(u.pos) * cost
 			if u.job == "scout":
 				Game.measure(u.pos)   # the party's counter clicks away: that reading is kept for good

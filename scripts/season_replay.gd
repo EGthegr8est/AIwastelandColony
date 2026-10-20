@@ -1,7 +1,8 @@
 extends RefCounted
-## The season, played back. END SEASON still decides everything at once (units.gd walks every party its whole
-## season in one go), but while it does, Units notes where each unit was and on which day. The map then replays those
-## notes so you watch the parties walk, at their real speeds, instead of seeing them jump.
+## The walking, played back. END SEASON still decides everything at once (units.gd walks every caravan, boat, plane, raider band and
+## animal its whole season in one go), and one of your Scavenger Parties walks the moment you order it (Units._go); either way Units notes
+## where each unit was and on which day. The map then replays those notes so you watch them walk, at their real speeds and the same
+## normal pace (a season's 40 days take 3 seconds), instead of seeing them jump.
 ##
 ## A replay is a Dictionary:
 ##   actors     one per unit that was on the map at the start of the season:
@@ -13,7 +14,7 @@ extends RefCounted
 ##   reveals    ground your parties uncovered, [[cell, day], ...]: it stays dark until the party gets there
 ##   sight_before   what the player could see when the season began (a band is shown while it was in sight then or is now)
 ##   end_day    the day the last unit stopped (settle() works it out)
-## A march (troops going to raid something) is a replay too: see march().
+##   walk       true for the walk of one of your parties (days counted from the start of that walk) rather than a season
 
 const Data = preload("res://scripts/data.gd")
 
